@@ -1,0 +1,119 @@
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+@media (max-width: 900px) {
+  .device-grid { grid-template-columns: 1fr; }
+}
+
+.device-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  padding: 18px;
+  box-shadow: var(--shadow-sm);
+}
+.device-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.device-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  background: var(--accent-tint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-strong);
+  flex-shrink: 0;
+}
+.device-card-icon svg {
+  width: 19px;
+  height: 19px;
+}
+.device-card-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.device-card-sub {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  font-family: var(--font-mono);
+}
+.device-status-pill {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.device-status-pill.online { background: var(--safe-tint); color: var(--safe); }
+.device-status-pill.standby { background: var(--bg-inset); color: var(--text-secondary); }
+
+.device-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.device-meta-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.device-meta-row .k { color: var(--text-secondary); }
+.device-meta-row .v { font-family: var(--font-mono); color: var(--text-primary); }
+
+.device-card-actions {
+  display: flex;
+  gap: 8px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 13px;
+}
+.device-action {
+  flex: 1;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  border-radius: var(--r-sm);
+  padding: 8px 0;
+  text-align: center;
+  cursor: pointer;
+}
+.device-action:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.device-action.danger { color: var(--alarm); }
+
+.add-device-card {
+  background: var(--bg-panel);
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--r-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  cursor: pointer;
+  min-height: 180px;
+  width: 100%;
+}
+.add-device-card:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+.add-device-card svg {
+  width: 22px;
+  height: 22px;
+}
