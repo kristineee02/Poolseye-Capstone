@@ -1,0 +1,136 @@
+.camera-panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.camera-head {
+  display: flex;
+  align-items: center;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 10px;
+}
+.camera-head .name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.camera-head .id {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.live-tag {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--alarm-tint);
+  color: var(--alarm);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  padding: 4px 9px;
+  border-radius: 999px;
+}
+.live-tag .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--alarm);
+  animation: pulse-dot 1.4s infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.camera-head-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.telemetry-inline {
+  display: flex;
+  gap: 16px;
+}
+.telemetry-inline .t-item {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  display: flex;
+  gap: 5px;
+  align-items: baseline;
+}
+.telemetry-inline .t-item span {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.camera-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 8.2;
+  background: #f3f1ec;
+  overflow: hidden;
+}
+.camera-stage svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.camera-footbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 18px;
+  border-top: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.camera-controls {
+  display: flex;
+  gap: 8px;
+}
+.ctrl-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.ctrl-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.ctrl-btn svg {
+  width: 15px;
+  height: 15px;
+}
