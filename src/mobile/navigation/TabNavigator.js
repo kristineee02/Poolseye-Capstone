@@ -8,10 +8,10 @@ import {
 } from 'react-native';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 
-import AlertsScreen  from '../screens/AlertsScreen';
-import ZonesScreen   from '../screens/ZonesScreen';
-import LogScreen     from '../screens/LogScreen';
-import ProfileScreen from '../screens/ProfileScreen';
+import AlertsScreen  from '../screen/AlertsScreen';
+import ZonesScreen   from '../screen/ZonesScreen';
+import LogScreen     from '../screen/LogScreen';
+import ProfileScreen from '../screen/ProfileScreen';
 import AppShell      from '../components/AppShell';
 
 // ── Tab icon SVGs (inline paths via View shapes) ──────────────────────────────

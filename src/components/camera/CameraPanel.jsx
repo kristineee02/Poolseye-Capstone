@@ -3,7 +3,17 @@ import CameraFeedIllustration from './CameraFeedIllustration'
 import { telemetry } from '../../data/site'
 import './CameraPanel.css'
 
-export default function CameraPanel() {
+export default function CameraPanel({ compact = false }) {
+  if (compact) {
+    return (
+      <div className="camera-panel camera-panel-compact">
+        <div className="camera-stage" style={{ maxHeight: 120 }}>
+          <CameraFeedIllustration />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="camera-panel">
       <div className="camera-head">

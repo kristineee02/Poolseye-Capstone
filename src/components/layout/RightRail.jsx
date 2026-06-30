@@ -1,8 +1,13 @@
 import { Icon } from '../ui/Icon'
-import { todaySummary, networkDevices } from '../../data/site'
+import { todaySummary } from '../../data/site'
 import './RightRail.css'
 
 export default function RightRail() {
+  // Only keep: Intrusions flagged, Supervised visits
+  const filteredSummary = todaySummary.filter((s) =>
+    s.label === 'Intrusions flagged' || s.label === 'Supervised visits'
+  )
+
   return (
     <aside className="rightrail">
       <section>
@@ -36,7 +41,7 @@ export default function RightRail() {
       <section>
         <div className="rr-title">Today's summary</div>
         <div className="mini-stat-grid">
-          {todaySummary.map((s) => (
+          {filteredSummary.map((s) => (
             <div className="mini-stat" key={s.label}>
               <div className="ml">{s.label}</div>
               <div className="mv">{s.value}</div>
@@ -46,33 +51,11 @@ export default function RightRail() {
       </section>
 
       <section>
-        <div className="rr-title">Network</div>
-        {networkDevices.map((d) => (
-          <div className="device-row" key={d.name}>
-            <span className="dname">{d.name}</span>
-            {d.status === 'online' ? (
-              <span className="online-tag"><span className="dot" />Online</span>
-            ) : (
-              <span className="dping">{d.ping}</span>
-            )}
-          </div>
-        ))}
-      </section>
-
-      <section>
         <div className="rr-title">Quick actions</div>
         <div className="quick-actions">
           <button className="qa-btn danger">
             <Icon.Power />
             Trigger manual alarm
-          </button>
-          <button className="qa-btn">
-            <Icon.Aperture />
-            Snapshot current frame
-          </button>
-          <button className="qa-btn">
-            <Icon.Clock />
-            Switch to standby mode
           </button>
         </div>
       </section>

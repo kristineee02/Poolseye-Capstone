@@ -1,0 +1,78 @@
+.prh-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Bar chart row */
+.prh-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 140px;
+}
+
+.prh-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+}
+
+.prh-bar-track {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  background: var(--bg-inset);
+  border-radius: 4px 4px 0 0;
+  overflow: hidden;
+  min-height: 4px;
+}
+
+.prh-bar-fill {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  transition: height 0.3s ease;
+  min-height: 2px;
+}
+
+.prh-label {
+  font-size: 9.5px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  height: 28px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+}
+
+/* Legend row */
+.prh-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.prh-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.prh-legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,0.06);
+}

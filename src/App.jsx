@@ -4,16 +4,16 @@ import NavRail from './components/layout/NavRail'
 import RightRail from './components/layout/RightRail'
 import LiveMonitoringPage from './pages/LiveMonitoringPage'
 import GeofenceEditorPage from './pages/GeofenceEditorPage'
-import DevicesPage from './pages/DevicesPage'
-import RulesPage from './pages/RulesPage'
+import CamerasPage from './pages/CamerasPage'
+import LifeguardsPage from './pages/LifeguardsPage'
 import HistoryPage from './pages/HistoryPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 
 const PAGES = {
   live: LiveMonitoringPage,
   geofence: GeofenceEditorPage,
-  devices: DevicesPage,
-  rules: RulesPage,
+  cameras: CamerasPage,
+  lifeguards: LifeguardsPage,
   history: HistoryPage,
   analytics: AnalyticsPage,
 }
