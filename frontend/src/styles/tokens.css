@@ -38,9 +38,18 @@
   --shadow-lg: 0 8px 24px rgba(20, 24, 36, 0.08);
 
   /* radii */
-  --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 14px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+
+  /* sidebar */
+  --sidebar-w: 76px;
+  --sidebar-radius: 24px;
+
+  /* layout */
+  --header-h: 60px;
+  --rail-w: 300px;
 
   /* type */
   --font-ui: 'Inter', system-ui, -apple-system, sans-serif;

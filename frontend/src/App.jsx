@@ -24,13 +24,20 @@ export default function App() {
   const showRightRail = activePage === 'live'
 
   return (
-    <div className={`shell ${showRightRail ? '' : 'no-rail'}`}>
-      <Topbar />
-      <NavRail activePage={activePage} onNavigate={setActivePage} />
-      <main className="main">
-        <ActivePageComponent />
-      </main>
-      {showRightRail && <RightRail />}
+    <div className="shell">
+      <aside className="sidebar-slot">
+        <NavRail activePage={activePage} onNavigate={setActivePage} />
+      </aside>
+
+      <div className="workspace">
+        <Topbar />
+        <div className={`workspace-body ${showRightRail ? '' : 'no-rail'}`}>
+          <main className="main">
+            <ActivePageComponent />
+          </main>
+          {showRightRail && <RightRail />}
+        </div>
+      </div>
     </div>
   )
 }
