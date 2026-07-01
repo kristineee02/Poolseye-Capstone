@@ -10,6 +10,7 @@ import {
 import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
 import { events } from '../data';
 import { Tag, SectionLabel, Panel, PanelHead, ConfidenceBar, Mono } from '../components/Primitives';
+import { useLayoutInsets } from '../hooks/useLayoutInsets';
 
 // ── Event type config ─────────────────────────────────────────────────────────
 const TYPE_CONFIG = {
@@ -147,6 +148,7 @@ function StatsStrip({ events }) {
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function LogScreen() {
+  const { tabBarClearance } = useLayoutInsets();
   const [filter, setFilter] = useState('all');
 
   const filtered = useMemo(() =>
@@ -191,9 +193,8 @@ export default function LogScreen() {
         renderSectionHeader={({ section }) => (
           <DateHeader date={section.title} />
         )}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: tabBarClearance }]}
         showsVerticalScrollIndicator={false}
-        ListFooterComponent={<View style={{ height: spacing.xl }} />}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>No events match this filter</Text>
