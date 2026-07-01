@@ -12,6 +12,7 @@ import {
   Tag, SectionLabel, Panel, PanelHead,
   Avatar, Divider, Toggle, Mono, Button,
 } from '../components/Primitives';
+import { useLayoutInsets } from '../hooks/useLayoutInsets';
 
 // ── Guard header card ─────────────────────────────────────────────────────────
 function GuardCard() {
@@ -171,6 +172,7 @@ function Footer() {
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
+  const { tabBarClearance } = useLayoutInsets();
   const [settings, setSettings] = useState(
     notificationSettings.reduce((acc, s) => ({ ...acc, [s.id]: s.enabled }), {})
   );
@@ -182,7 +184,7 @@ export default function ProfileScreen() {
   return (
     <ScrollView
       style={styles.scroll}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance }]}
       showsVerticalScrollIndicator={false}
     >
       {/* Guard info */}

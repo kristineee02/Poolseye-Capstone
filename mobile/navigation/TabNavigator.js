@@ -1,12 +1,12 @@
 // PoolsEye — Tab Navigator
-// Bottom tab bar matching the web NavRail's style:
-// teal accent for active, muted for inactive, alarm badge on Alerts tab.
+// Floating pill tab bar — icon circles, teal active state, safe-area aware
 
 import React, { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet,
+  View, Text, Pressable, StyleSheet,
 } from 'react-native';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, radius } from '../theme/tokens';
+import { useLayoutInsets } from '../hooks/useLayoutInsets';
 
 import AlertsScreen  from '../screen/AlertsScreen';
 import ZonesScreen   from '../screen/ZonesScreen';
@@ -14,22 +14,19 @@ import LogScreen     from '../screen/LogScreen';
 import ProfileScreen from '../screen/ProfileScreen';
 import AppShell      from '../components/AppShell';
 
-// ── Tab icon SVGs (inline paths via View shapes) ──────────────────────────────
-// React Native doesn't ship SVG; these are tiny symbolic representations
-// using View + border tricks. In production, use react-native-svg or
-// @expo/vector-icons (MaterialCommunityIcons / Ionicons).
-
-function BellIcon({ active, hasBadge, badgeCount }) {
-  const c = active ? colors.accentStrong : colors.textTertiary;
+function BellIcon({ color, filled, hasBadge, badgeCount }) {
   return (
-    <View style={{ alignItems: 'center', justifyContent: 'center', width: 24, height: 24 }}>
-      {/* Bell body */}
-      <View style={[iconStyles.bellBody, { borderColor: c }]} />
-      {/* Bell top */}
-      <View style={[iconStyles.bellTop,  { backgroundColor: c }]} />
-      {/* Bell clapper */}
-      <View style={[iconStyles.bellClapper, { backgroundColor: c }]} />
-      {/* Badge */}
+    <View style={iconStyles.iconWrap}>
+      <View
+        style={[
+          iconStyles.bellBody,
+          filled
+            ? { backgroundColor: color, borderColor: color }
+            : { backgroundColor: 'transparent', borderColor: color },
+        ]}
+      />
+      <View style={[iconStyles.bellTop, { backgroundColor: color }]} />
+      <View style={[iconStyles.bellClapper, { backgroundColor: color }]} />
       {hasBadge && (
         <View style={iconStyles.badge}>
           <Text style={iconStyles.badgeText}>{badgeCount}</Text>
@@ -39,37 +36,67 @@ function BellIcon({ active, hasBadge, badgeCount }) {
   );
 }
 
-function ShieldIcon({ active }) {
-  const c = active ? colors.accentStrong : colors.textTertiary;
+function ShieldIcon({ color, filled }) {
   return (
-    <View style={{ alignItems: 'center', justifyContent: 'center', width: 24, height: 24 }}>
-      <View style={[iconStyles.shield, { borderColor: c }]}>
-        <View style={[iconStyles.shieldInner, { backgroundColor: c }]} />
+    <View style={iconStyles.iconWrap}>
+      <View
+        style={[
+          iconStyles.shield,
+          filled
+            ? { backgroundColor: color, borderColor: color }
+            : { backgroundColor: 'transparent', borderColor: color },
+        ]}
+      >
+        {filled ? (
+          <View style={[iconStyles.shieldInner, { backgroundColor: '#FFFFFF' }]} />
+        ) : (
+          <View style={[iconStyles.shieldInner, { backgroundColor: color }]} />
+        )}
       </View>
     </View>
   );
 }
 
-function ClipboardIcon({ active }) {
-  const c = active ? colors.accentStrong : colors.textTertiary;
+function ClipboardIcon({ color, filled }) {
+  const lineColor = filled ? '#FFFFFF' : color;
   return (
-    <View style={{ alignItems: 'center', justifyContent: 'center', width: 24, height: 24 }}>
-      <View style={[iconStyles.clipboard, { borderColor: c }]}>
-        {[0, 1, 2].map(i => (
-          <View key={i} style={[iconStyles.clipLine, { backgroundColor: c, width: i === 2 ? 8 : 12 }]} />
+    <View style={iconStyles.iconWrap}>
+      <View
+        style={[
+          iconStyles.clipboard,
+          filled
+            ? { backgroundColor: color, borderColor: color }
+            : { backgroundColor: 'transparent', borderColor: color },
+        ]}
+      >
+        {[0, 1, 2].map((i) => (
+          <View key={i} style={[iconStyles.clipLine, { backgroundColor: lineColor, width: i === 2 ? 8 : 12 }]} />
         ))}
       </View>
-      <View style={[iconStyles.clipTop, { backgroundColor: c }]} />
+      <View style={[iconStyles.clipTop, { backgroundColor: color }]} />
     </View>
   );
 }
 
-function PersonIcon({ active }) {
-  const c = active ? colors.accentStrong : colors.textTertiary;
+function PersonIcon({ color, filled }) {
   return (
-    <View style={{ alignItems: 'center', justifyContent: 'center', width: 24, height: 24 }}>
-      <View style={[iconStyles.personHead, { borderColor: c }]} />
-      <View style={[iconStyles.personBody, { borderColor: c }]} />
+    <View style={iconStyles.iconWrap}>
+      <View
+        style={[
+          iconStyles.personHead,
+          filled
+            ? { backgroundColor: color, borderColor: color }
+            : { backgroundColor: 'transparent', borderColor: color },
+        ]}
+      />
+      <View
+        style={[
+          iconStyles.personBody,
+          filled
+            ? { backgroundColor: color, borderColor: color }
+            : { backgroundColor: 'transparent', borderColor: color },
+        ]}
+      />
     </View>
   );
 }
@@ -81,9 +108,9 @@ const TABS = [
   { key: 'profile', label: 'Profile' },
 ];
 
-// ── Main navigator ────────────────────────────────────────────────────────────
 export default function TabNavigator({ alertBadgeCount = 2 }) {
   const [active, setActive] = useState('alerts');
+  const { tabBarPaddingBottom, tabBarPaddingHorizontal, horizontalInset } = useLayoutInsets();
 
   const screens = {
     alerts:  <AlertsScreen />,
@@ -92,59 +119,73 @@ export default function TabNavigator({ alertBadgeCount = 2 }) {
     profile: <ProfileScreen />,
   };
 
-  const renderIcon = (key, isActive) => {
+  const renderIcon = (key, isActive, pressed) => {
+    const filled = isActive || pressed;
+    const iconColor = filled ? colors.accent : colors.textTertiary;
     switch (key) {
       case 'alerts':
         return (
           <BellIcon
-            active={isActive}
-            hasBadge={alertBadgeCount > 0}
+            color={iconColor}
+            filled={filled}
+            hasBadge={!isActive && alertBadgeCount > 0}
             badgeCount={alertBadgeCount}
           />
         );
-      case 'zones':   return <ShieldIcon active={isActive} />;
-      case 'log':     return <ClipboardIcon active={isActive} />;
-      case 'profile': return <PersonIcon active={isActive} />;
+      case 'zones':   return <ShieldIcon color={iconColor} filled={filled} />;
+      case 'log':     return <ClipboardIcon color={iconColor} filled={filled} />;
+      case 'profile': return <PersonIcon color={iconColor} filled={filled} />;
       default:        return null;
     }
   };
 
   return (
     <View style={styles.root}>
-      {/* Shared app header */}
       <AppShell />
 
-      {/* Screen content */}
-      <View style={styles.screenArea}>
+      <View style={[styles.screenArea, { paddingHorizontal: horizontalInset }]}>
         {screens[active]}
       </View>
 
-      {/* Bottom tab bar */}
-      <View style={styles.tabBar}>
-        {TABS.map(tab => {
-          const isActive = tab.key === active;
-          return (
-            <TouchableOpacity
-              key={tab.key}
-              style={[styles.tabItem, isActive && styles.tabItemActive]}
-              onPress={() => setActive(tab.key)}
-              activeOpacity={0.8}
-            >
-              {renderIcon(tab.key, isActive)}
-              <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+      <View
+        style={[
+          styles.tabBarAnchor,
+          {
+            marginBottom: tabBarPaddingBottom,
+            marginHorizontal: tabBarPaddingHorizontal,
+          },
+        ]}
+        pointerEvents="box-none"
+      >
+        <View style={styles.tabBarPill}>
+          {TABS.map((tab) => {
+            const isActive = tab.key === active;
+            return (
+              <Pressable
+                key={tab.key}
+                style={styles.tabButton}
+                onPress={() => setActive(tab.key)}
+                accessibilityRole="button"
+                accessibilityLabel={tab.label}
+                accessibilityState={{ selected: isActive }}
+              >
+                {({ pressed }) => renderIcon(tab.key, isActive, pressed)}
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
     </View>
   );
 }
 
-// ── Icon micro-styles ─────────────────────────────────────────────────────────
 const iconStyles = StyleSheet.create({
-  // Bell
+  iconWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 24,
+    height: 24,
+  },
   bellBody: {
     width: 14,
     height: 11,
@@ -168,8 +209,8 @@ const iconStyles = StyleSheet.create({
   },
   badge: {
     position: 'absolute',
-    top: 0,
-    right: -2,
+    top: -2,
+    right: -4,
     width: 14,
     height: 14,
     borderRadius: 7,
@@ -184,8 +225,6 @@ const iconStyles = StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
   },
-
-  // Shield
   shield: {
     width: 14,
     height: 16,
@@ -203,8 +242,6 @@ const iconStyles = StyleSheet.create({
     height: 5,
     borderRadius: 2.5,
   },
-
-  // Clipboard
   clipboard: {
     width: 14,
     height: 16,
@@ -229,8 +266,6 @@ const iconStyles = StyleSheet.create({
     height: 3,
     borderRadius: 1.5,
   },
-
-  // Person
   personHead: {
     width: 9,
     height: 9,
@@ -248,7 +283,6 @@ const iconStyles = StyleSheet.create({
   },
 });
 
-// ── Tab bar styles ────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -257,33 +291,38 @@ const styles = StyleSheet.create({
   screenArea: {
     flex: 1,
   },
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: colors.bgPanel,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderSubtle,
-    paddingTop: 8,
-    paddingBottom: 20,   // extra for home indicator on iPhone
-    paddingHorizontal: 4,
+  tabBarAnchor: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    elevation: 0,
+    shadowOpacity: 0,
   },
-  tabItem: {
+  tabBarPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    alignSelf: 'stretch',
+    width: '100%',
+    backgroundColor: colors.bgPanel,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    shadowColor: '#141824',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  tabButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
-    borderRadius: radius.md,
-    gap: 3,
-  },
-  tabItemActive: {
-    // background tint handled per-icon
-  },
-  tabLabel: {
-    fontSize: typography.xs,
-    fontWeight: '500',
-    color: colors.textTertiary,
-  },
-  tabLabelActive: {
-    color: colors.accentStrong,
-    fontWeight: '700',
+    height: 48,
   },
 });

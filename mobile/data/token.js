@@ -39,9 +39,10 @@ export const colors = {
 };
 
 export const radius = {
-  sm: 6,
-  md: 10,
-  lg: 14,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 22,
   full: 999,
 };
 

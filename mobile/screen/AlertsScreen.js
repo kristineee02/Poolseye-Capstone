@@ -10,6 +10,7 @@ import {
 import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
 import { alerts as initialAlerts } from '../data';
 import { Tag, SectionLabel, Panel, PanelHead, ConfidenceBar, Button, Mono } from '../components/Primitives';
+import { useLayoutInsets } from '../hooks/useLayoutInsets';
 
 // ── Pulse animation ───────────────────────────────────────────────────────────
 function PulseDot({ color = colors.alarm }) {
@@ -147,6 +148,7 @@ function StatCard({ label, value, sub, barFill, barColor }) {
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function AlertsScreen() {
+  const { tabBarClearance } = useLayoutInsets();
   const [activeAlerts, setActiveAlerts] = useState(initialAlerts);
   const [acknowledged, setAcknowledged] = useState({}); // id → time string
 
@@ -177,7 +179,7 @@ export default function AlertsScreen() {
   return (
     <ScrollView
       style={styles.scroll}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance }]}
       showsVerticalScrollIndicator={false}
     >
       {/* Active alarms */}

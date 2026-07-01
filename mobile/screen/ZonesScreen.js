@@ -9,6 +9,7 @@ import {
 import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
 import { zones, cameras } from '../data';
 import { Tag, SectionLabel, Panel, PanelHead, StatusDot, Mono } from '../components/Primitives';
+import { useLayoutInsets } from '../hooks/useLayoutInsets';
 
 // ── Zone status config ────────────────────────────────────────────────────────
 const ZONE_CONFIG = {
@@ -139,6 +140,7 @@ function SummaryBar({ zones }) {
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function ZonesScreen() {
+  const { tabBarClearance } = useLayoutInsets();
   const [localZones] = useState(zones);
   const [filter, setFilter] = useState('all');
 
@@ -147,7 +149,7 @@ export default function ZonesScreen() {
   return (
     <ScrollView
       style={styles.scroll}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance }]}
       showsVerticalScrollIndicator={false}
     >
       {/* Summary counts */}
