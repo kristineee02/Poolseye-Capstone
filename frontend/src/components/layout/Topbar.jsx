@@ -17,29 +17,30 @@ export default function Topbar() {
 
   return (
     <header className="topbar">
-      <div className="brand">
-        <span className="mark">
-          <Icon.Logo />
+      <div className="topbar-left">
+        <span className="topbar-item topbar-item--site">
+          <span className="status-dot safe" aria-hidden="true" />
+          <span className="topbar-item-text">{site.name}</span>
         </span>
-        PoolsEye
-      </div>
-
-      <div className="sitepicker">
-        <span className="dot" />
-        {site.name}
       </div>
 
       <div className="topbar-right">
-        <div className="sys-pill">
-          <span className="dot" style={{ background: 'var(--safe)' }} />
-          Edge node online
+        <div className="topbar-meta">
+          <span className="topbar-item">
+            <span className="status-dot safe" aria-hidden="true" />
+            <span className="topbar-item-text">Edge node online</span>
+          </span>
+          <span className="topbar-item">
+            <span className="status-dot accent" aria-hidden="true" />
+            <span className="topbar-item-text">{site.mode}</span>
+          </span>
+          <time className="topbar-item topbar-item--clock" dateTime={time.toISOString()}>
+            <Icon.Clock aria-hidden="true" />
+            <span className="topbar-item-text mono">{time.toLocaleTimeString('en-US')}</span>
+          </time>
         </div>
-        <div className="sys-pill">
-          <span className="dot" style={{ background: 'var(--accent)' }} />
-          {site.mode} mode
-        </div>
-        <div className="clock mono">{time.toLocaleTimeString('en-US')}</div>
-        <div className="avatar">PB</div>
+
+        <div className="topbar-avatar" title="Admin profile">PB</div>
       </div>
     </header>
   )

@@ -1,6 +1,6 @@
 .rightrail {
-  grid-row: 2;
-  grid-column: 3;
+  width: var(--rail-w);
+  flex-shrink: 0;
   background: var(--bg-panel);
   border-left: 1px solid var(--border-subtle);
   padding: 18px;
