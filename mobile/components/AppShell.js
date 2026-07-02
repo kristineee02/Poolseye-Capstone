@@ -4,10 +4,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Image } from 'react-native';
 import { colors, spacing, typography, radius, shadow } from '../theme/tokens';
-import { site, guard } from '../data';
+import { site } from '../data';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 
-const logo = require('../assets/logo.png');
+const logo = require('../assets/logo-header.png');
 
 function BrandMark() {
   return (
@@ -58,13 +58,12 @@ export default function AppShell() {
         </View>
 
         <View style={styles.topRight}>
-          <Chip dotColor={colors.safe}>Edge online</Chip>
           <Chip mono>{timeStr}</Chip>
         </View>
       </View>
 
       <View style={[styles.metaRow, { paddingHorizontal: Math.max(horizontalInset, spacing.lg) }]}>
-        <Chip dotColor={colors.accent}>On duty · {guard.initials}</Chip>
+        <Chip dotColor={colors.safe}>Edge online</Chip>
         <Chip dotColor={colors.safe}>{site.shortName}</Chip>
       </View>
     </View>
