@@ -11,10 +11,11 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: background 0.12s;
+  transition: background var(--dur-fast) var(--ease-ui), box-shadow var(--dur-fast) var(--ease-ui), transform var(--dur-fast) var(--ease-ui);
 }
 .btn-primary:hover {
   background: var(--accent-strong);
+  box-shadow: var(--shadow-sm);
 }
 .btn-primary svg {
   width: 14px;
@@ -32,7 +33,7 @@
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  transition: border-color 0.12s, color 0.12s;
+  transition: border-color var(--dur-fast) var(--ease-ui), color var(--dur-fast) var(--ease-ui), box-shadow var(--dur-fast) var(--ease-ui);
 }
 .chip-btn:hover {
   border-color: var(--border-strong);

@@ -1,4 +1,5 @@
 import { Icon } from '../ui/Icon'
+import Logo from '../ui/Logo'
 import './NavRail.css'
 
 const NAV_ITEMS = [
@@ -16,7 +17,7 @@ export default function NavRail({ activePage, onNavigate }) {
       <div className="navrail-top">
         <div className="navrail-brand">
           <span className="navrail-mark" aria-hidden="true">
-            <Icon.Logo />
+            <Logo size={46} />
           </span>
           <span className="navrail-name">PoolsEye</span>
         </div>

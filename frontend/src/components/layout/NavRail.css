@@ -3,7 +3,7 @@
   height: 100%;
   background: var(--bg-panel);
   border-radius: 0 var(--sidebar-radius) var(--sidebar-radius) 0;
-  box-shadow: 4px 0 20px rgba(20, 24, 36, 0.07);
+  box-shadow: var(--shadow-md);
   position: relative;
   z-index: 2;
   display: flex;
@@ -30,19 +30,18 @@
 }
 
 .navrail-mark {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--r-md);
-  background: var(--accent-tint);
-  color: var(--accent-strong);
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 2px;
 }
 
-.navrail-mark svg {
-  width: 22px;
-  height: 22px;
+.navrail-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .navrail-name {
@@ -74,7 +73,7 @@
   border: none;
   background: transparent;
   flex-shrink: 0;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--dur-fast) var(--ease-ui), color var(--dur-fast) var(--ease-ui), transform var(--dur-fast) var(--ease-ui);
 }
 
 .navitem svg {
@@ -84,11 +83,12 @@
 
 .navitem.active {
   background: var(--accent-tint);
-  color: var(--accent-strong);
+  color: var(--accent);
 }
 
 .navitem:not(.active):not(.navitem-logout):hover {
   background: var(--bg-inset);
+  color: var(--accent-strong);
 }
 
 .navrail-footer {

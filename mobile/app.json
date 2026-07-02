@@ -4,14 +4,24 @@
     "slug": "poolseye-lifeguard",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/logo.png",
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F5F9FC"
+    },
     "platforms": ["ios", "android"],
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "softwareKeyboardLayoutMode": "pan",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logo.png",
+        "backgroundColor": "#F5F9FC"
+      },
       "navigationBar": {
-        "backgroundColor": "#F6F7F9"
+        "backgroundColor": "#F5F9FC"
       }
     }
   }

@@ -6,7 +6,7 @@ export const initialZones = [
   {
     id: 'zone-1',
     name: 'Main approach',
-    color: '#0E94A6',
+    color: '#007BFF',
     direction: 'toward', // 'toward' | 'both' | 'away'
     threshold: 1.5, // meters
     activeDuringStandby: true,

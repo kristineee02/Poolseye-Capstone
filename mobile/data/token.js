@@ -1,26 +1,28 @@
 // PoolsEye React Native — Design Tokens
-// Mirrors the web dashboard's tokens.css exactly
+// Mirrors the web dashboard blue brand palette
 
 export const colors = {
   // Surfaces
-  bgApp:    '#F6F7F9',
+  bgApp:    '#F5F9FC',
   bgPanel:  '#FFFFFF',
-  bgRaised: '#FAFBFC',
-  bgInset:  '#F0F2F5',
+  bgRaised: '#FAFCFE',
+  bgInset:  '#EEF4F9',
 
   // Borders
-  borderSubtle: '#E7E9EE',
-  borderStrong: '#D7DAE2',
+  borderSubtle: '#DCE8F2',
+  borderStrong: '#C5D9E8',
 
   // Text
-  textPrimary:   '#1A2233',
-  textSecondary: '#6B7385',
-  textTertiary:  '#9AA1B0',
+  textPrimary:   '#0D1B2A',
+  textSecondary: '#5A6B7D',
+  textTertiary:  '#8FA3B8',
 
-  // Accent — calm teal
-  accent:      '#0E94A6',
-  accentStrong:'#0B7686',
-  accentTint:  '#E3F4F6',
+  // Brand blues
+  accent:       '#007BFF',
+  accentStrong: '#1565C0',
+  accentDeep:   '#0D47A1',
+  accentLight:  '#4FC3F7',
+  accentTint:   '#E8F4FF',
 
   // Status trio
   safe:       '#1B9C6E',
@@ -39,10 +41,10 @@ export const colors = {
 };
 
 export const radius = {
-  sm: 8,
+  sm: 10,
   md: 12,
-  lg: 16,
-  xl: 22,
+  lg: 14,
+  xl: 16,
   full: 999,
 };
 
@@ -55,11 +57,8 @@ export const spacing = {
 };
 
 export const typography = {
-  // Font families
-  ui:   'System',   // Inter equivalent — use expo-google-fonts/inter in production
-  mono: 'Courier',  // Roboto Mono equivalent
-
-  // Scale
+  ui:   'System',
+  mono: 'Courier',
   xs:   10,
   sm:   11.5,
   base: 13,
@@ -71,17 +70,17 @@ export const typography = {
 
 export const shadow = {
   sm: {
-    shadowColor: '#141824',
+    shadowColor: '#0D47A1',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 2,
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
     elevation: 1,
   },
   md: {
-    shadowColor: '#141824',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
+    shadowColor: '#0D47A1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
     elevation: 3,
   },
 };

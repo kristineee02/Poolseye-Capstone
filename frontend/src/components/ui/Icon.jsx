@@ -10,10 +10,14 @@ const base = {
 
 export const Icon = {
   Logo: (p) => (
-    <svg {...base} {...p}>
-      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
+    <img
+      src="/logo.png"
+      alt=""
+      width={p.width || 22}
+      height={p.height || 22}
+      style={{ objectFit: 'contain', display: 'block' }}
+      {...p}
+    />
   ),
   Grid: (p) => (
     <svg {...base} {...p}>
