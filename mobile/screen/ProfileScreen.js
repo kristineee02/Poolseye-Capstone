@@ -6,35 +6,13 @@ import React, { useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert,
 } from 'react-native';
-import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
-import { guard, contacts, notificationSettings, site } from '../data';
+import { colors, radius, spacing, typography } from '../theme/tokens';
+import { contacts, notificationSettings, site } from '../data';
 import {
   Tag, SectionLabel, Panel, PanelHead,
   Avatar, Divider, Toggle, Mono, Button,
 } from '../components/Primitives';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
-
-// ── Guard header card ─────────────────────────────────────────────────────────
-function GuardCard() {
-  return (
-    <View style={styles.guardCard}>
-      <Avatar initials={guard.initials} size={52} />
-      <View style={{ flex: 1, marginLeft: 12 }}>
-        <Text style={styles.guardName}>{guard.name}</Text>
-        <Text style={styles.guardRole}>{guard.role}</Text>
-        <View style={styles.guardShift}>
-          <View style={[styles.shiftDot, { backgroundColor: colors.safe }]} />
-          <Mono style={{ color: colors.textSecondary }}>
-            Shift: {guard.shiftStart} – {guard.shiftEnd}
-          </Mono>
-        </View>
-      </View>
-      <View style={styles.onDutyBadge}>
-        <Text style={styles.onDutyText}>ON DUTY</Text>
-      </View>
-    </View>
-  );
-}
 
 // ── Notification toggle row ───────────────────────────────────────────────────
 function NotifRow({ setting, value, onChange, isLast }) {
@@ -187,9 +165,6 @@ export default function ProfileScreen() {
       contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance }]}
       showsVerticalScrollIndicator={false}
     >
-      {/* Guard info */}
-      <GuardCard />
-
       {/* Notification settings */}
       <SectionLabel>Notification preferences</SectionLabel>
       <Panel>
@@ -248,54 +223,6 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.md,
     gap: 10,
-  },
-
-  // Guard card
-  guardCard: {
-    backgroundColor: colors.bgPanel,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    padding: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    ...shadow.sm,
-  },
-  guardName: {
-    fontSize: typography.lg,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  guardRole: {
-    fontSize: typography.sm,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  guardShift: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginTop: 5,
-  },
-  shiftDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  onDutyBadge: {
-    backgroundColor: colors.safeTint,
-    borderWidth: 1,
-    borderColor: colors.safeBorder,
-    borderRadius: radius.sm,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    alignSelf: 'flex-start',
-  },
-  onDutyText: {
-    fontSize: typography.xs,
-    fontWeight: '700',
-    color: colors.safe,
-    letterSpacing: 0.5,
   },
 
   // Notif rows

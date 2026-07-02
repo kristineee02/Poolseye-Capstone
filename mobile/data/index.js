@@ -7,7 +7,7 @@ export const site = {
   mode: 'Offline / local-only',
 };
 
-export const guard = {
+export const lifeguard = {
   name: 'Jonas Ramos',
   initials: 'JR',
   role: 'On-duty lifeguard · primary',

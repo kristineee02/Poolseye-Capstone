@@ -5,17 +5,22 @@
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
-    "ios": "expo start --ios"
+    "ios": "expo start --ios",
+    "assets:splash": "node scripts/create-splash-assets.js"
   },
   "dependencies": {
     "expo": "~54.0.0",
+    "expo-linear-gradient": "~15.0.8",
+    "expo-splash-screen": "^57.0.1",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
     "react-native": "0.81.5",
-    "react-native-safe-area-context": "~5.6.0"
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-svg": "15.12.1"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
-    "babel-preset-expo": "~54.0.0"
+    "babel-preset-expo": "~54.0.0",
+    "sharp": "^0.35.3"
   }
 }

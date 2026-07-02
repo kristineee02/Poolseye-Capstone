@@ -10,6 +10,7 @@ import {
 import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
 import { alerts as initialAlerts } from '../data';
 import { Tag, SectionLabel, Panel, PanelHead, ConfidenceBar, Button, Mono } from '../components/Primitives';
+import DutyProfileCard from '../components/DutyProfileCard';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 
 // ── Pulse animation ───────────────────────────────────────────────────────────
@@ -182,6 +183,8 @@ export default function AlertsScreen() {
       contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance }]}
       showsVerticalScrollIndicator={false}
     >
+      <DutyProfileCard />
+
       {/* Active alarms */}
       {hasActive && <SectionLabel>Active alerts — {activeAlerts.length}</SectionLabel>}
       {activeAlerts.map(alert => (
