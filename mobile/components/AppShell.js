@@ -2,17 +2,17 @@
 // Shared header — matches web topbar pill style + safe area top inset
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Image } from 'react-native';
 import { colors, spacing, typography, radius, shadow } from '../theme/tokens';
 import { site, guard } from '../data';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 
+const logo = require('../assets/logo.png');
+
 function BrandMark() {
   return (
     <View style={styles.brandMark}>
-      <View style={styles.eyeOuter}>
-        <View style={styles.eyeInner} />
-      </View>
+      <Image source={logo} style={styles.brandLogo} resizeMode="contain" accessibilityLabel="PoolsEye logo" />
     </View>
   );
 }
@@ -90,27 +90,14 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   brandMark: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.md,
-    backgroundColor: colors.accentTint,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  eyeOuter: {
-    width: 16,
-    height: 10,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: colors.accentStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  eyeInner: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.accentStrong,
+  brandLogo: {
+    width: 40,
+    height: 40,
   },
   brandName: {
     fontSize: typography.lg,

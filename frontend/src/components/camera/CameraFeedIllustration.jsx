@@ -7,8 +7,8 @@ export default function CameraFeedIllustration() {
     <svg viewBox="0 0 1000 512" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#2DA9B8" />
-          <stop offset="100%" stopColor="#15707C" />
+          <stop offset="0%" stopColor="#4FC3F7" />
+          <stop offset="100%" stopColor="#1565C0" />
         </linearGradient>
         <linearGradient id="deck" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#E7E2D6" />
@@ -33,12 +33,12 @@ export default function CameraFeedIllustration() {
         <line x1="800" y1="0" x2="920" y2="230" />
       </g>
 
-      <line x1="60" y1="148" x2="940" y2="148" stroke="#0E94A6" strokeWidth="2.5" strokeDasharray="10 7" />
-      <text x="68" y="138" fill="#0B7686" fontFamily="Roboto Mono, monospace" fontSize="13" fontWeight="600">
+      <line x1="60" y1="148" x2="940" y2="148" stroke="#007BFF" strokeWidth="2.5" strokeDasharray="10 7" />
+      <text x="68" y="138" fill="#1565C0" fontFamily="Roboto Mono, monospace" fontSize="13" fontWeight="600">
         VIRTUAL GEOFENCE — POOL APPROACH
       </text>
-      <path d="M500 148 L490 138 M500 148 L510 138" stroke="#0B7686" strokeWidth="2" fill="none" />
-      <text x="514" y="143" fill="#0B7686" fontFamily="Roboto Mono, monospace" fontSize="10.5">
+      <path d="M500 148 L490 138 M500 148 L510 138" stroke="#1565C0" strokeWidth="2" fill="none" />
+      <text x="514" y="143" fill="#1565C0" fontFamily="Roboto Mono, monospace" fontSize="10.5">
         TRIGGER DIRECTION
       </text>
 

@@ -1,28 +1,29 @@
 /* ===========================================================
-   PoolsEye design tokens — light theme
-   Background: white / near-white surfaces, ink text, one calm
-   teal accent, and a muted status trio for alerts.
+   PoolsEye design tokens — blue brand theme
+   Inspired by official logo palette
    =========================================================== */
 :root {
   /* surfaces */
-  --bg-app: #F6F7F9;
+  --bg-app: #F5F9FC;
   --bg-panel: #FFFFFF;
-  --bg-raised: #FAFBFC;
-  --bg-inset: #F0F2F5;
+  --bg-raised: #FAFCFE;
+  --bg-inset: #EEF4F9;
 
   /* borders */
-  --border-subtle: #E7E9EE;
-  --border-strong: #D7DAE2;
+  --border-subtle: #DCE8F2;
+  --border-strong: #C5D9E8;
 
   /* text */
-  --text-primary: #1A2233;
-  --text-secondary: #6B7385;
-  --text-tertiary: #9AA1B0;
+  --text-primary: #0D1B2A;
+  --text-secondary: #5A6B7D;
+  --text-tertiary: #8FA3B8;
 
-  /* accent (single calm teal, used for active states + links) */
-  --accent: #0E94A6;
-  --accent-strong: #0B7686;
-  --accent-tint: #E3F4F6;
+  /* brand blues */
+  --accent: #007BFF;
+  --accent-strong: #1565C0;
+  --accent-deep: #0D47A1;
+  --accent-light: #4FC3F7;
+  --accent-tint: #E8F4FF;
 
   /* status trio */
   --safe: #1B9C6E;
@@ -32,16 +33,16 @@
   --alarm: #D6364A;
   --alarm-tint: #FCEAEE;
 
-  /* shadows — kept very soft since the surface is already light */
-  --shadow-sm: 0 1px 2px rgba(20, 24, 36, 0.04);
-  --shadow-md: 0 2px 8px rgba(20, 24, 36, 0.06);
-  --shadow-lg: 0 8px 24px rgba(20, 24, 36, 0.08);
+  /* shadows */
+  --shadow-sm: 0 1px 3px rgba(13, 71, 161, 0.06);
+  --shadow-md: 0 4px 14px rgba(13, 71, 161, 0.08);
+  --shadow-lg: 0 10px 28px rgba(13, 71, 161, 0.1);
 
   /* radii */
-  --r-sm: 8px;
+  --r-sm: 10px;
   --r-md: 12px;
-  --r-lg: 16px;
-  --r-xl: 22px;
+  --r-lg: 14px;
+  --r-xl: 16px;
 
   /* sidebar */
   --sidebar-w: 76px;
@@ -54,4 +55,9 @@
   /* type */
   --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'Roboto Mono', 'SF Mono', monospace;
+
+  /* motion */
+  --ease-ui: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 0.15s;
+  --dur-med: 0.22s;
 }

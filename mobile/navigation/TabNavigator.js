@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSubtle,
     paddingVertical: 10,
     paddingHorizontal: 14,
-    shadowColor: '#141824',
+    shadowColor: colors.accentDeep,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 10,

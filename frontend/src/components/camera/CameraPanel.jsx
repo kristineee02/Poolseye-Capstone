@@ -40,7 +40,7 @@ export default function CameraPanel({ compact = false }) {
         <div className="legend">
           <span className="legend-item"><span className="legend-swatch" style={{ background: '#1B9C6E' }} />Adult — supervised</span>
           <span className="legend-item"><span className="legend-swatch" style={{ background: '#B6790A' }} />Child — tracked</span>
-          <span className="legend-item"><span className="legend-swatch" style={{ background: '#0E94A6' }} />Geofence boundary</span>
+          <span className="legend-item"><span className="legend-swatch" style={{ background: '#007BFF' }} />Geofence boundary</span>
           <span className="legend-item"><span className="legend-swatch" style={{ background: '#D6364A' }} />Proximity exceeded</span>
         </div>
         <div className="camera-controls">

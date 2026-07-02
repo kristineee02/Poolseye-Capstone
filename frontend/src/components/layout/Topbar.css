@@ -29,6 +29,7 @@
   color: var(--text-secondary);
   white-space: nowrap;
   flex-shrink: 0;
+  transition: border-color var(--dur-fast) var(--ease-ui), box-shadow var(--dur-fast) var(--ease-ui);
 }
 
 .topbar-item svg {

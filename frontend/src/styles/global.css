@@ -12,6 +12,9 @@ html, body, #root {
 
 body {
   background: var(--bg-app);
+  background-image:
+    radial-gradient(ellipse 90% 60% at 50% -10%, rgba(79, 195, 247, 0.12), transparent 55%),
+    linear-gradient(180deg, var(--bg-app) 0%, #EEF6FC 100%);
   color: var(--text-primary);
   font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;

@@ -5,7 +5,7 @@ import GeofenceStage from '../components/geofence/GeofenceStage'
 import { initialZones } from '../data/geofence'
 import '../components/geofence/GeofenceEditor.css'
 
-const ZONE_COLORS = ['#0E94A6', '#B6790A', '#1B9C6E', '#7A5CC9', '#D6364A']
+const ZONE_COLORS = ['#007BFF', '#B6790A', '#1B9C6E', '#7A5CC9', '#D6364A']
 
 function makeZoneId() {
   return `zone-${Date.now()}`
