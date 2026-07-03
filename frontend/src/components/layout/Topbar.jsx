@@ -1,21 +1,9 @@
-import { useEffect, useState } from 'react'
-import { Icon } from '../ui/Icon'
-import { site } from '../../data/site'
 import { useAuth } from '../../auth/AuthContext'
+import { site } from '../../data/site'
 import './Topbar.css'
-
-function useClock() {
-  const [time, setTime] = useState(() => new Date())
-  useEffect(() => {
-    const id = setInterval(() => setTime(new Date()), 1000)
-    return () => clearInterval(id)
-  }, [])
-  return time
-}
 
 export default function Topbar() {
   const { user, signOut } = useAuth()
-  const time = useClock()
 
   return (
     <header className="topbar">
@@ -27,21 +15,6 @@ export default function Topbar() {
       </div>
 
       <div className="topbar-right">
-        <div className="topbar-meta">
-          <span className="topbar-item">
-            <span className="status-dot safe" aria-hidden="true" />
-            <span className="topbar-item-text">Edge node online</span>
-          </span>
-          <span className="topbar-item">
-            <span className="status-dot accent" aria-hidden="true" />
-            <span className="topbar-item-text">{site.mode}</span>
-          </span>
-          <time className="topbar-item topbar-item--clock" dateTime={time.toISOString()}>
-            <Icon.Clock aria-hidden="true" />
-            <span className="topbar-item-text mono">{time.toLocaleTimeString('en-US')}</span>
-          </time>
-        </div>
-
         <button
           type="button"
           className="topbar-avatar"
