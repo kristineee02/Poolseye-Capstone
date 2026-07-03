@@ -13,6 +13,7 @@ import {
   Avatar, Divider, Toggle, Mono, Button,
 } from '../components/Primitives';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
+import { useAuth } from '../context/AuthContext';
 
 // ── Notification toggle row ───────────────────────────────────────────────────
 function NotifRow({ setting, value, onChange, isLast }) {
@@ -80,16 +81,23 @@ function SiteInfo() {
 }
 
 // ── Session actions ───────────────────────────────────────────────────────────
-function SessionActions() {
+function SessionActions({ onSignOut }) {
   const handleEndShift = () => {
     Alert.alert(
       'End shift',
       'Are you sure you want to end your shift? The backup lifeguard will be notified.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'End shift', style: 'destructive', onPress: () => {} },
+        { text: 'End shift', style: 'destructive', onPress: onSignOut },
       ]
     );
+  };
+
+  const handleSignOut = () => {
+    Alert.alert('Sign out', 'Leave the lifeguard app?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: onSignOut },
+    ]);
   };
 
   const handleTestNotif = () => {
@@ -124,6 +132,19 @@ function SessionActions() {
 
       <View style={styles.actionRowBorder} />
 
+      <TouchableOpacity style={styles.actionBtn} onPress={handleSignOut} activeOpacity={0.8}>
+        <View style={[styles.actionIcon, { backgroundColor: colors.bgInset }]}>
+          <Text style={{ color: colors.textSecondary, fontSize: 14 }}>↩</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.actionLabel}>Sign out</Text>
+          <Text style={styles.actionDesc}>Return to login screen</Text>
+        </View>
+        <Text style={styles.actionChevron}>›</Text>
+      </TouchableOpacity>
+
+      <View style={styles.actionRowBorder} />
+
       <TouchableOpacity style={styles.actionBtn} onPress={handleEndShift} activeOpacity={0.8}>
         <View style={[styles.actionIcon, { backgroundColor: colors.alarmTint }]}>
           <Text style={{ color: colors.alarm, fontSize: 14 }}>🚪</Text>
@@ -151,6 +172,7 @@ function Footer() {
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
   const { tabBarClearance } = useLayoutInsets();
+  const { signOut } = useAuth();
   const [settings, setSettings] = useState(
     notificationSettings.reduce((acc, s) => ({ ...acc, [s.id]: s.enabled }), {})
   );
@@ -206,7 +228,7 @@ export default function ProfileScreen() {
       {/* Session actions */}
       <SectionLabel>Session</SectionLabel>
       <Panel>
-        <SessionActions />
+        <SessionActions onSignOut={signOut} />
       </Panel>
 
       <Footer />

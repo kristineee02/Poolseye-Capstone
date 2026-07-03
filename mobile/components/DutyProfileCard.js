@@ -4,9 +4,10 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle } from 'react-native-svg';
-import { lifeguard } from '../data';
+import { lifeguard as defaultLifeguard } from '../data';
 import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
 import { Avatar } from './Primitives';
+import { useAuth } from '../context/AuthContext';
 
 const RING_SIZE = 76;
 const STROKE = 5;
@@ -81,6 +82,8 @@ function ShiftRing({ percent, initials }) {
 }
 
 export default function DutyProfileCard() {
+  const { user } = useAuth();
+  const lifeguard = user || defaultLifeguard;
   const { percent } = useShiftProgress(lifeguard.shiftStart, lifeguard.shiftEnd);
 
   return (
