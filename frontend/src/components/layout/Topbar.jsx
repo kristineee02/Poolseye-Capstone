@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Icon } from '../ui/Icon'
 import { site } from '../../data/site'
+import { useAuth } from '../../auth/AuthContext'
 import './Topbar.css'
 
 function useClock() {
@@ -13,6 +14,7 @@ function useClock() {
 }
 
 export default function Topbar() {
+  const { user, signOut } = useAuth()
   const time = useClock()
 
   return (
@@ -40,7 +42,14 @@ export default function Topbar() {
           </time>
         </div>
 
-        <div className="topbar-avatar" title="Admin profile">PB</div>
+        <button
+          type="button"
+          className="topbar-avatar"
+          title={`${user.name} — sign out`}
+          onClick={signOut}
+        >
+          {user.initials}
+        </button>
       </div>
     </header>
   )

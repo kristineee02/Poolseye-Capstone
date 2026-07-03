@@ -2,12 +2,14 @@ import { useState } from 'react'
 import Topbar from './components/layout/Topbar'
 import NavRail from './components/layout/NavRail'
 import RightRail from './components/layout/RightRail'
+import LoginPage from './pages/LoginPage'
 import LiveMonitoringPage from './pages/LiveMonitoringPage'
 import GeofenceEditorPage from './pages/GeofenceEditorPage'
 import CamerasPage from './pages/CamerasPage'
 import LifeguardsPage from './pages/LifeguardsPage'
 import HistoryPage from './pages/HistoryPage'
 import AnalyticsPage from './pages/AnalyticsPage'
+import { useAuth } from './auth/AuthContext'
 
 const PAGES = {
   live: LiveMonitoringPage,
@@ -19,7 +21,12 @@ const PAGES = {
 }
 
 export default function App() {
+  const { user, ready } = useAuth()
   const [activePage, setActivePage] = useState('live')
+
+  if (!ready) return null
+  if (!user) return <LoginPage />
+
   const ActivePageComponent = PAGES[activePage]
   const showRightRail = activePage === 'live'
 
