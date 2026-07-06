@@ -6,7 +6,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle } from 'react-native-svg';
 import { lifeguard as defaultLifeguard } from '../data';
 import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
-import { Avatar } from './Primitives';
 import { useAuth } from '../context/AuthContext';
 
 const RING_SIZE = 76;
@@ -70,12 +69,7 @@ function ShiftRing({ percent, initials }) {
         />
       </Svg>
       <View style={styles.ringCenter}>
-        <Avatar
-          initials={initials}
-          size={54}
-          color={colors.accentStrong}
-          bg={colors.accentTint}
-        />
+        <Text style={styles.initials}>{initials}</Text>
       </View>
     </View>
   );
@@ -133,6 +127,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  initials: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
   },
   info: {
     flex: 1,

@@ -64,6 +64,43 @@
   font-size: 0.95rem;
   color: var(--text-primary);
   background: var(--bg-app);
+  width: 100%;
+}
+
+.login-password-wrap {
+  position: relative;
+}
+
+.login-password-wrap input {
+  padding-right: 44px;
+}
+
+.login-password-toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.login-password-toggle:hover {
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.login-password-toggle svg {
+  width: 18px;
+  height: 18px;
 }
 
 .login-field input:focus {
