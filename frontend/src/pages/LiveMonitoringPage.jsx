@@ -80,15 +80,15 @@ export default function LiveMonitoringPage() {
           <div className="live-camera-header">
             <div>
               <span className="live-cam-name">{activeCamera.name}</span>
-              <span className="live-cam-meta">
+              {/* <span className="live-cam-meta">
                 {activeCamera.ipAddress} · {activeCamera.resolution} · {activeCamera.inferenceFrameRate} FPS inference
-              </span>
+              </span> */}
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               {activeCamera.status === 'online' && <span className="live-pill">● LIVE</span>}
-              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+              {/* <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                 Uptime: {activeCamera.uptime}
-              </span>
+              </span> */}
             </div>
           </div>
           <CameraPanel />
