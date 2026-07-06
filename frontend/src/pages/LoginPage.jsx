@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Logo from '../components/ui/Logo'
+import { Icon } from '../components/ui/Icon'
 import { DEMO_ADMIN } from '../auth/demoAuth'
 import { useAuth } from '../auth/AuthContext'
 import './LoginPage.css'
@@ -8,6 +9,7 @@ export default function LoginPage() {
   const { signIn } = useAuth()
   const [email, setEmail] = useState(DEMO_ADMIN.email)
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -43,14 +45,24 @@ export default function LoginPage() {
 
           <label className="login-field">
             <span>Password</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              placeholder="admin123"
-              required
-            />
+            <div className="login-password-wrap">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                placeholder="admin123"
+                required
+              />
+              <button
+                type="button"
+                className="login-password-toggle"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <Icon.EyeOff /> : <Icon.Eye />}
+              </button>
+            </div>
           </label>
 
           {error && <p className="login-error">{error}</p>}
