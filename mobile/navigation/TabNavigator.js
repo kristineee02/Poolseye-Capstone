@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 import {
   View, Text, Pressable, StyleSheet,
 } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { colors, radius } from '../theme/tokens';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 
@@ -14,19 +15,30 @@ import LogScreen     from '../screen/LogScreen';
 import ProfileScreen from '../screen/ProfileScreen';
 import AppShell      from '../components/AppShell';
 
-function BellIcon({ color, filled, hasBadge, badgeCount }) {
+function HomeIcon({ color, filled, hasBadge, badgeCount }) {
+  const stroke = filled ? '#FFFFFF' : color;
+  const fill = filled ? color : 'none';
+
   return (
     <View style={iconStyles.iconWrap}>
-      <View
-        style={[
-          iconStyles.bellBody,
-          filled
-            ? { backgroundColor: color, borderColor: color }
-            : { backgroundColor: 'transparent', borderColor: color },
-        ]}
-      />
-      <View style={[iconStyles.bellTop, { backgroundColor: color }]} />
-      <View style={[iconStyles.bellClapper, { backgroundColor: color }]} />
+      <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+        <Path
+          d="M12 3.2 4.2 9.8V20c0 .66.54 1.2 1.2 1.2h13.2c.66 0 1.2-.54 1.2-1.2V9.8L12 3.2z"
+          stroke={stroke}
+          strokeWidth={1.75}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill={fill}
+        />
+        <Path
+          d="M10.2 21.2V16.2c0-1 .82-1.8 1.8-1.8s1.8.8 1.8 1.8v5"
+          stroke={stroke}
+          strokeWidth={1.75}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      </Svg>
       {hasBadge && (
         <View style={iconStyles.badge}>
           <Text style={iconStyles.badgeText}>{badgeCount}</Text>
@@ -102,7 +114,7 @@ function PersonIcon({ color, filled }) {
 }
 
 const TABS = [
-  { key: 'alerts',  label: 'Alerts'  },
+  { key: 'alerts',  label: 'Home'    },
   { key: 'zones',   label: 'Zones'   },
   { key: 'log',     label: 'Log'     },
   { key: 'profile', label: 'Profile' },
@@ -125,7 +137,7 @@ export default function TabNavigator({ alertBadgeCount = 2 }) {
     switch (key) {
       case 'alerts':
         return (
-          <BellIcon
+          <HomeIcon
             color={iconColor}
             filled={filled}
             hasBadge={!isActive && alertBadgeCount > 0}
@@ -185,27 +197,6 @@ const iconStyles = StyleSheet.create({
     justifyContent: 'center',
     width: 24,
     height: 24,
-  },
-  bellBody: {
-    width: 14,
-    height: 11,
-    borderRadius: 7,
-    borderWidth: 1.8,
-    marginTop: 3,
-  },
-  bellTop: {
-    position: 'absolute',
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    top: 2,
-  },
-  bellClapper: {
-    position: 'absolute',
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    bottom: 1,
   },
   badge: {
     position: 'absolute',
