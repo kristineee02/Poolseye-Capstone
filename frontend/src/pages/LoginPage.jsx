@@ -26,44 +26,48 @@ export default function LoginPage() {
     <div className="login-page">
       <div className="login-card">
         <div className="login-brand">
-          <Logo size={56} />
+          <div className="login-logo-wrap">
+            <Logo size={52} />
+          </div>
           <h1>PoolsEye</h1>
           <p>Admin sign in</p>
         </div>
 
         <form className="login-form" onSubmit={handleSubmit}>
-          <label className="login-field">
-            <span>Email</span>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="username"
-              required
-            />
-          </label>
-
-          <label className="login-field">
-            <span>Password</span>
-            <div className="login-password-wrap">
+          <div className="login-fields">
+            <label className="login-field">
+              <span>Email</span>
               <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                placeholder="admin123"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="username"
                 required
               />
-              <button
-                type="button"
-                className="login-password-toggle"
-                onClick={() => setShowPassword((v) => !v)}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? <Icon.EyeOff /> : <Icon.Eye />}
-              </button>
-            </div>
-          </label>
+            </label>
+
+            <label className="login-field">
+              <span>Password</span>
+              <div className="login-password-wrap">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  placeholder="admin123"
+                  required
+                />
+                <button
+                  type="button"
+                  className="login-password-toggle"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <Icon.EyeOff /> : <Icon.Eye />}
+                </button>
+              </div>
+            </label>
+          </div>
 
           {error && <p className="login-error">{error}</p>}
 

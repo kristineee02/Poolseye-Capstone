@@ -2,8 +2,8 @@ import { useAuth } from '../../auth/AuthContext'
 import { site } from '../../data/site'
 import './Topbar.css'
 
-export default function Topbar() {
-  const { user, signOut } = useAuth()
+export default function Topbar({ onRequestSignOut }) {
+  const { user } = useAuth()
 
   return (
     <header className="topbar">
@@ -19,7 +19,7 @@ export default function Topbar() {
           type="button"
           className="topbar-avatar"
           title={`${user.name} — sign out`}
-          onClick={signOut}
+          onClick={onRequestSignOut}
         >
           {user.initials}
         </button>
