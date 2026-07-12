@@ -1,6 +1,5 @@
 import { Icon } from '../ui/Icon'
 import Logo from '../ui/Logo'
-import { useAuth } from '../../auth/AuthContext'
 import './NavRail.css'
 
 const NAV_ITEMS = [
@@ -12,9 +11,7 @@ const NAV_ITEMS = [
   { id: 'analytics',  label: 'Analytics & reports', icon: Icon.Chart  },
 ]
 
-export default function NavRail({ activePage, onNavigate }) {
-  const { signOut } = useAuth()
-
+export default function NavRail({ activePage, onNavigate, onRequestSignOut }) {
   return (
     <nav className="navrail" aria-label="Main navigation">
       <div className="navrail-top">
@@ -51,7 +48,7 @@ export default function NavRail({ activePage, onNavigate }) {
           className="navitem navitem-logout"
           title="Sign out"
           aria-label="Sign out"
-          onClick={signOut}
+          onClick={onRequestSignOut}
         >
           <Icon.LogOut />
         </button>
