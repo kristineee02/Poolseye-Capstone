@@ -1,18 +1,22 @@
-// PoolsEye — Login screen (demo)
+// PoolsEye — Login screen (gradient header + layered wave into white, glass form)
 
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   Image, KeyboardAvoidingView, Platform, ActivityIndicator,
+  ScrollView, useWindowDimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Path, Circle, Line } from 'react-native-svg';
+import Svg, {
+  Path, Circle, Line, Defs, Stop, RadialGradient,
+  LinearGradient as SvgLinearGradient, Text as SvgText,
+} from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
+import { colors, radius, spacing, typography } from '../theme/tokens';
 import { DEMO_LIFEGUARD } from '../auth/demoAuth';
 import { useAuth } from '../context/AuthContext';
 
-const logo = require('../assets/logo-header.png');
+const logo = require('../assets/logo.png');
 
 function PasswordToggleIcon({ visible, color }) {
   if (visible) {
@@ -50,12 +54,67 @@ function PasswordToggleIcon({ visible, color }) {
   );
 }
 
+// Same gradient wordmark as the web title (#FFF → #B3E5FC)
+function BrandTitle() {
+  return (
+    <Svg width={200} height={36}>
+      <Defs>
+        <SvgLinearGradient id="brandGrad" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor="#FFFFFF" />
+          <Stop offset="0.55" stopColor="#FFFFFF" />
+          <Stop offset="1" stopColor="#B3E5FC" />
+        </SvgLinearGradient>
+      </Defs>
+      <SvgText
+        x="100"
+        y="26"
+        textAnchor="middle"
+        fontSize="25"
+        fontWeight="800"
+        letterSpacing="-0.5"
+        fill="url(#brandGrad)"
+      >
+        PoolsEye
+      </SvgText>
+    </Svg>
+  );
+}
+
+// Wave transition copied from the reference mockup:
+// a deep-blue back wave crests on the right, one smooth white sweep in front —
+// high on the left, dipping toward the bottom right.
+function WaveTransition({ width }) {
+  const height = 140;
+  return (
+    <Svg
+      width={width}
+      height={height}
+      viewBox="0 0 375 140"
+      preserveAspectRatio="none"
+      style={styles.wave}
+    >
+      {/* Back wave — deep navy, rising on the right (purple layer in the mockup) */}
+      <Path
+        d="M0 112 C 80 118, 150 58, 232 50 C 297 44, 346 74, 375 60 L 375 140 L 0 140 Z"
+        fill="#0A2F6B"
+      />
+      {/* Front wave — solid white, high on the left, dipping right */}
+      <Path
+        d="M0 56 C 55 22, 120 24, 185 56 C 252 90, 322 116, 375 100 L 375 140 L 0 140 Z"
+        fill="#FFFFFF"
+      />
+    </Svg>
+  );
+}
+
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const { signIn } = useAuth();
   const [email, setEmail] = useState(DEMO_LIFEGUARD.email);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -68,171 +127,294 @@ export default function LoginScreen() {
   };
 
   return (
-    <LinearGradient
-      colors={[colors.accentDeep, colors.accentStrong, colors.accent]}
-      style={styles.gradient}
-    >
+    <View style={styles.screen}>
       <KeyboardAvoidingView
-        style={[styles.container, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}
+        style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.card}>
-          <Image source={logo} style={styles.logo} resizeMode="contain" />
-          <Text style={styles.title}>PoolsEye</Text>
-          <Text style={styles.subtitle}>Lifeguard sign in</Text>
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + 24 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          {/* ── Gradient header (same palette as web login) ─────── */}
+          <LinearGradient
+            colors={['#4FC3F7', '#007BFF', '#1565C0', '#0D47A1']}
+            locations={[0, 0.34, 0.7, 1]}
+            start={{ x: 0.1, y: 0 }}
+            end={{ x: 0.95, y: 1 }}
+            style={[styles.header, { paddingTop: insets.top + 34 }]}
+          >
+            <View style={styles.logoGlowWrap}>
+              <Svg width={150} height={150} style={styles.logoGlow}>
+                <Defs>
+                  <RadialGradient id="logoGlow" cx="50%" cy="50%" r="50%">
+                    <Stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.95" />
+                    <Stop offset="55%" stopColor="#FFFFFF" stopOpacity="0.5" />
+                    <Stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+                  </RadialGradient>
+                </Defs>
+                <Circle cx="75" cy="75" r="75" fill="url(#logoGlow)" />
+              </Svg>
+              <Image source={logo} style={styles.logo} resizeMode="contain" />
+            </View>
+            <BrandTitle />
+            <WaveTransition width={width} />
+          </LinearGradient>
 
-          <View style={styles.field}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              autoComplete="email"
-            />
-          </View>
+          {/* ── White body ──────────────────────────────────────── */}
+          <View style={styles.body}>
+            <Text style={styles.welcome}>Welcome back !</Text>
 
-          <View style={styles.field}>
-            <Text style={styles.label}>Password</Text>
-            <View style={styles.passwordWrap}>
+            <View>
               <TextInput
-                style={[styles.input, styles.passwordInput]}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                placeholder="lifeguard123"
+                style={styles.input}
+                value={email}
+                onChangeText={setEmail}
+                placeholder="Email"
                 placeholderTextColor={colors.textTertiary}
-                autoComplete="password"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
               />
+
+              <View style={styles.passwordWrap}>
+                <TextInput
+                  style={[styles.input, styles.passwordInput]}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  placeholder="Password"
+                  placeholderTextColor={colors.textTertiary}
+                  autoComplete="password"
+                />
+                <TouchableOpacity
+                  style={styles.eyeButton}
+                  onPress={() => setShowPassword((v) => !v)}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                  activeOpacity={0.7}
+                >
+                  <PasswordToggleIcon visible={showPassword} color={colors.textTertiary} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.optionsRow}>
+                <TouchableOpacity
+                  style={styles.rememberWrap}
+                  onPress={() => setRememberMe((v) => !v)}
+                  activeOpacity={0.7}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: rememberMe }}
+                >
+                  <View style={[styles.radioOuter, rememberMe && styles.radioOuterActive]}>
+                    {rememberMe ? <View style={styles.radioInner} /> : null}
+                  </View>
+                  <Text style={styles.rememberText}>Remember me</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity activeOpacity={0.7}>
+                  <Text style={styles.forgotText}>Forgot password?</Text>
+                </TouchableOpacity>
+              </View>
+
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+
               <TouchableOpacity
-                style={styles.eyeButton}
-                onPress={() => setShowPassword((v) => !v)}
-                accessibilityRole="button"
-                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
-                activeOpacity={0.7}
+                onPress={handleSignIn}
+                disabled={loading}
+                activeOpacity={0.85}
+                style={loading ? styles.buttonDisabled : null}
               >
-                <PasswordToggleIcon visible={showPassword} color={colors.textTertiary} />
+                <LinearGradient
+                  colors={['#4FC3F7', '#007BFF', '#1565C0', '#0D47A1']}
+                  locations={[0, 0.4, 0.78, 1]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.button}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.buttonText}>Login</Text>
+                  )}
+                </LinearGradient>
               </TouchableOpacity>
             </View>
+
+            <Text style={styles.hint}>
+              Demo: {DEMO_LIFEGUARD.email} / {DEMO_LIFEGUARD.password}
+            </Text>
           </View>
-
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleSignIn}
-            disabled={loading}
-            activeOpacity={0.85}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Sign in</Text>
-            )}
-          </TouchableOpacity>
-
-          <Text style={styles.hint}>
-            Demo: {DEMO_LIFEGUARD.email} / {DEMO_LIFEGUARD.password}
-          </Text>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  gradient: {
+  screen: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  flex: {
     flex: 1,
   },
-  container: {
-    flex: 1,
+
+  // Header
+  header: {
+    alignItems: 'center',
+    paddingBottom: 150,
+    position: 'relative',
+  },
+  wave: {
+    position: 'absolute',
+    bottom: -1,
+    left: 0,
+  },
+  logoGlowWrap: {
+    width: 150,
+    height: 150,
+    alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
+    marginBottom: -12,
+    marginTop: -14,
   },
-  card: {
-    backgroundColor: colors.bgPanel,
-    borderRadius: radius.xl,
-    padding: 24,
-    ...shadow.md,
+  logoGlow: {
+    position: 'absolute',
   },
   logo: {
-    width: 56,
-    height: 56,
-    alignSelf: 'center',
-    marginBottom: 12,
+    width: 100,
+    height: 100,
   },
-  title: {
-    fontSize: typography.xl,
-    fontWeight: '700',
-    color: colors.accentStrong,
-    textAlign: 'center',
+
+  // Body
+  body: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 4,
   },
-  subtitle: {
-    fontSize: typography.sm,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 24,
-    marginTop: 4,
-  },
-  field: {
-    marginBottom: 14,
-  },
-  label: {
-    fontSize: typography.xs,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginBottom: 6,
-  },
-  input: {
-    height: 44,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    borderRadius: radius.md,
-    paddingHorizontal: 14,
-    fontSize: typography.base,
+  welcome: {
+    fontSize: 24,
+    fontWeight: '800',
     color: colors.textPrimary,
-    backgroundColor: colors.bgApp,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+
+  // Pill glass inputs — frosted light-blue tint with bright edge
+  input: {
+    height: 52,
+    borderRadius: radius.full,
+    paddingHorizontal: 22,
+    fontSize: typography.md,
+    color: colors.textPrimary,
+    backgroundColor: 'rgba(232, 244, 255, 0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.95)',
+    marginBottom: 14,
+    shadowColor: '#0D47A1',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 14,
+    elevation: 2,
   },
   passwordWrap: {
     position: 'relative',
     justifyContent: 'center',
   },
   passwordInput: {
-    paddingRight: 48,
+    paddingRight: 52,
   },
   eyeButton: {
     position: 'absolute',
-    right: 4,
+    right: 10,
+    top: 8,
     width: 36,
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.sm,
+    borderRadius: radius.full,
   },
-  error: {
-    fontSize: typography.sm,
-    color: colors.alarm,
-    marginBottom: 10,
+
+  // Options row
+  optionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    paddingHorizontal: 4,
   },
-  button: {
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.accent,
+  rememberWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  radioOuter: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: colors.borderStrong,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 6,
+  },
+  radioOuterActive: {
+    borderColor: colors.accent,
+  },
+  radioInner: {
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: colors.accent,
+  },
+  rememberText: {
+    fontSize: typography.sm,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  forgotText: {
+    fontSize: typography.sm,
+    color: colors.textTertiary,
+    fontWeight: '500',
+  },
+
+  error: {
+    fontSize: typography.sm,
+    color: colors.alarmDark,
+    backgroundColor: colors.alarmTint,
+    borderWidth: 1,
+    borderColor: colors.alarmBorder,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: radius.md,
+    marginBottom: 14,
+    overflow: 'hidden',
+  },
+
+  // Pill login button — same gradient as the web Sign in button
+  button: {
+    height: 52,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0D47A1',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 22,
+    elevation: 6,
   },
   buttonDisabled: {
     opacity: 0.7,
   },
   buttonText: {
     color: '#fff',
-    fontSize: typography.base,
-    fontWeight: '600',
+    fontSize: typography.lg,
+    fontWeight: '700',
   },
   hint: {
-    marginTop: 18,
+    marginTop: 16,
     fontSize: typography.xs,
     color: colors.textTertiary,
     textAlign: 'center',
