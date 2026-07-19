@@ -1,3 +1,75 @@
+/* ── Large canvas (sticky) + right panel scrolls; cards never clip ── */
+.geofence-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.geofence-pagehead {
+  flex-shrink: 0;
+}
+
+.geofence-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 18px;
+  align-items: start;
+}
+
+.geofence-canvas-col {
+  position: sticky;
+  top: 12px;
+  align-self: start;
+  z-index: 1;
+  min-width: 0;
+}
+
+/* Sidebar = fixed viewport height; THIS element scrolls */
+.geofence-sidebar {
+  align-self: start;
+  width: 100%;
+  height: calc(100vh - var(--header-h) - 100px);
+  max-height: calc(100vh - var(--header-h) - 100px);
+  min-height: 240px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 6px;
+  box-sizing: border-box;
+}
+
+.geofence-sidebar::-webkit-scrollbar {
+  width: 8px;
+}
+.geofence-sidebar::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+.geofence-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Inner stack: cards grow with content and must NOT flex-shrink (that was clipping them) */
+.geofence-sidebar-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  height: auto;
+  min-height: min-content;
+  overflow: visible;
+}
+
+.geofence-sidebar-scroll > .panel {
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  height: auto;
+  min-height: auto;
+  max-height: none;
+  overflow: visible;
+}
+
 .editor-stage-wrap {
   position: relative;
   width: 100%;
@@ -10,6 +82,28 @@
   width: 100%;
   height: 100%;
   touch-action: none;
+}
+
+.editor-stage-wrap > .zone-list-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 1100px) {
+  .geofence-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .geofence-canvas-col {
+    position: static;
+  }
+
+  .geofence-sidebar {
+    height: min(70vh, 640px);
+    max-height: min(70vh, 640px);
+  }
 }
 
 .mode-btn-row {
@@ -39,10 +133,84 @@
   color: #fff;
 }
 
+/* ── Add component buttons ── */
+.zone-type-add-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+}
+
+.zone-type-add-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-raised);
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: border-color 0.12s, background 0.12s;
+}
+.zone-type-add-btn svg {
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.zone-type-add-btn:hover {
+  background: var(--bg-panel);
+}
+.zone-type-add-btn--warning:hover {
+  border-color: #E6B800;
+  background: rgba(230, 184, 0, 0.08);
+}
+.zone-type-add-btn--transition:hover {
+  border-color: #E67E22;
+  background: rgba(230, 126, 34, 0.08);
+}
+.zone-type-add-btn--danger:hover {
+  border-color: #D6364A;
+  background: rgba(214, 54, 74, 0.08);
+}
+
+.zone-type-add-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+.zone-type-add-btn--transition .zone-type-add-swatch {
+  height: 4px;
+  border-radius: 2px;
+  width: 18px;
+}
+
+.zone-type-add-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.zone-type-add-copy strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+.zone-type-add-copy span {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* ── Zone tabs ── */
 .zone-tab {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 10px 13px;
   border-radius: var(--r-sm);
   background: var(--bg-raised);
@@ -56,52 +224,128 @@
 .zone-tab.active {
   border-color: var(--accent);
   background: var(--accent-tint);
-  color: var(--accent-strong);
 }
+.zone-tab--warning.active {
+  border-color: #E6B800;
+  background: rgba(230, 184, 0, 0.12);
+}
+.zone-tab--transition.active {
+  border-color: #E67E22;
+  background: rgba(230, 126, 34, 0.1);
+}
+.zone-tab--danger.active {
+  border-color: #D6364A;
+  background: rgba(214, 54, 74, 0.1);
+}
+
 .zone-tab .zdot {
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
   border-radius: 3px;
   flex-shrink: 0;
+}
+.zone-tab--transition .zdot {
+  height: 3px;
+  width: 14px;
+  border-radius: 2px;
+}
+
+.zone-tab-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.zone-tab-name {
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--text-primary);
+}
+.zone-tab-type {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
 }
 .zone-tab .zcount {
   margin-left: auto;
   color: var(--text-tertiary);
   font-size: 11px;
 }
-.zone-tab.active .zcount {
-  color: var(--accent-strong);
+
+/* ── Alert banner in settings ── */
+.zone-alert-banner {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 13px;
+  border-radius: var(--r-sm);
+  margin-bottom: 16px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-inset);
+}
+.zone-alert-banner--warning {
+  background: rgba(230, 184, 0, 0.1);
+  border-color: rgba(230, 184, 0, 0.35);
+}
+.zone-alert-banner--transition {
+  background: rgba(230, 126, 34, 0.1);
+  border-color: rgba(230, 126, 34, 0.35);
+}
+.zone-alert-banner--danger {
+  background: rgba(214, 54, 74, 0.1);
+  border-color: rgba(214, 54, 74, 0.35);
+}
+.zone-alert-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+.zone-alert-banner strong {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.zone-alert-banner p {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.45;
 }
 
-.threshold-slider-row {
+.zone-type-readonly {
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-input[type='range'] {
-  flex: 1;
-  height: 4px;
-  border-radius: 2px;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-subtle);
   background: var(--bg-inset);
-  -webkit-appearance: none;
-  accent-color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
-input[type='range']::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 17px;
-  height: 17px;
-  border-radius: 50%;
-  background: var(--accent);
-  cursor: pointer;
-  box-shadow: var(--shadow-sm);
+.zone-type-readonly .zdot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
 }
-.threshold-readout {
-  font-family: var(--font-mono);
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--accent-strong);
-  min-width: 52px;
-  text-align: right;
+.zone-type-geo {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.legend-swatch-line {
+  height: 3px !important;
+  border-radius: 2px !important;
+  width: 14px !important;
 }
 
 .editor-helptext {
@@ -111,9 +355,50 @@ input[type='range']::-webkit-slider-thumb {
   padding: 14px 16px;
 }
 
+.editor-help-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.editor-help-list li {
+  padding-left: 2px;
+}
+.editor-help-list b {
+  color: var(--text-primary);
+}
+
 .zone-list-empty {
   padding: 24px 16px;
   text-align: center;
   color: var(--text-tertiary);
   font-size: 12px;
+}
+
+.field-row {
+  margin-bottom: 14px;
+}
+.field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.field-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  background: var(--bg-panel);
+}
+.field-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
 }

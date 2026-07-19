@@ -6,7 +6,6 @@ import { ConfirmModal } from './components/ui/Modal'
 import LoginPage from './pages/LoginPage'
 import LiveMonitoringPage from './pages/LiveMonitoringPage'
 import GeofenceEditorPage from './pages/GeofenceEditorPage'
-import CamerasPage from './pages/CamerasPage'
 import LifeguardsPage from './pages/LifeguardsPage'
 import HistoryPage from './pages/HistoryPage'
 import AnalyticsPage from './pages/AnalyticsPage'
@@ -15,7 +14,6 @@ import { useAuth } from './auth/AuthContext'
 const PAGES = {
   live: LiveMonitoringPage,
   geofence: GeofenceEditorPage,
-  cameras: CamerasPage,
   lifeguards: LifeguardsPage,
   history: HistoryPage,
   analytics: AnalyticsPage,

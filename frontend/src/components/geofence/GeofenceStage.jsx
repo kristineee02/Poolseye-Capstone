@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { getZoneTypeMeta } from '../../data/geofence'
 
 const STAGE_W = 1000
 const STAGE_H = 512
@@ -16,11 +17,48 @@ function getStagePoint(svgEl, clientX, clientY) {
   }
 }
 
+function ZoneShape({ zone, active }) {
+  const meta = getZoneTypeMeta(zone.type)
+  const pts = zone.points.map((p) => `${p.x},${p.y}`).join(' ')
+  if (!pts) return null
+
+  const isPolygon = meta.geometry === 'polygon'
+  const closedEnough = zone.points.length >= 3
+  const strokeW = active ? (meta.geometry === 'polyline' ? 4 : 3) : 2.5
+  const dash = meta.geometry === 'polyline' ? '10 6' : undefined
+
+  if (isPolygon && closedEnough) {
+    return (
+      <polygon
+        points={pts}
+        fill={meta.fill}
+        stroke={meta.color}
+        strokeWidth={strokeW}
+        strokeLinejoin="round"
+      />
+    )
+  }
+
+  // Polyline boundary, or polygon still being drawn (< 3 points)
+  return (
+    <polyline
+      points={pts}
+      fill="none"
+      stroke={meta.color}
+      strokeWidth={strokeW}
+      strokeDasharray={dash}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  )
+}
+
 export default function GeofenceStage({ zones, activeZoneId, mode, onUpdateZonePoints }) {
   const svgRef = useRef(null)
   const [draggingIndex, setDraggingIndex] = useState(null)
 
   const activeZone = zones.find((z) => z.id === activeZoneId)
+  const activeMeta = activeZone ? getZoneTypeMeta(activeZone.type) : null
 
   function handleStageClick(e) {
     if (mode !== 'add' || !activeZone) return
@@ -94,6 +132,17 @@ export default function GeofenceStage({ zones, activeZoneId, mode, onUpdateZoneP
       <rect x={PX} y={PY} width={PW} height={PH} rx="36" ry="36"
         fill="url(#ge-ripple)" opacity="0.5" />
 
+      {/* Shallow / deep visual split hint */}
+      <line
+        x1={PX + PW * 0.52} y1={PY + 8}
+        x2={PX + PW * 0.52} y2={PY + PH - 8}
+        stroke="#FFFFFF" strokeWidth="1.5" strokeDasharray="6 8" opacity="0.28"
+      />
+      <text x={PX + 28} y={PY + PH - 18} fill="#fff" fontFamily="Roboto Mono, monospace"
+        fontSize="11" opacity="0.55">SHALLOW</text>
+      <text x={PX + PW - 28} y={PY + PH - 18} fill="#fff" fontFamily="Roboto Mono, monospace"
+        fontSize="11" opacity="0.55" textAnchor="end">DEEP</text>
+
       {/* Lane lines */}
       <g clipPath="url(#ge-pool-clip)">
         <line x1={PX} y1={PY + PH * 0.33} x2={PX + PW} y2={PY + PH * 0.33}
@@ -123,64 +172,67 @@ export default function GeofenceStage({ zones, activeZoneId, mode, onUpdateZoneP
       {/* Pool label */}
       <text x={PX + PW / 2} y={PY + 28} fill="#fff" fontFamily="Roboto Mono, monospace"
         fontSize="12" fontWeight="700" textAnchor="middle" opacity="0.5" letterSpacing="2">
-        MAIN POOL — GEOFENCE EDITOR
+        MAIN POOL — SAFETY GEOFENCE
       </text>
 
-      {/* ── Inactive zones ── */}
+      {/* ── Inactive zones (draw first) ── */}
       {zones
         .filter((z) => z.id !== activeZoneId)
-        .map((zone) => (
-          <g key={zone.id} opacity={0.45}>
-            <polyline
-              points={zone.points.map((p) => `${p.x},${p.y}`).join(' ')}
-              fill="none" stroke={zone.color} strokeWidth="2.5" strokeDasharray="9 6"
-            />
-            {zone.points.map((p, i) => (
-              <circle key={i} cx={p.x} cy={p.y} r="5" fill="#fff" stroke={zone.color} strokeWidth="2" />
-            ))}
-          </g>
-        ))}
+        .map((zone) => {
+          const meta = getZoneTypeMeta(zone.type)
+          return (
+            <g key={zone.id} opacity={0.4}>
+              <ZoneShape zone={zone} active={false} />
+              {zone.points.map((p, i) => (
+                <circle key={i} cx={p.x} cy={p.y} r="4.5" fill="#fff" stroke={meta.color} strokeWidth="2" />
+              ))}
+            </g>
+          )
+        })}
 
       {/* ── Active zone ── */}
-      {activeZone && (
+      {activeZone && activeMeta && (
         <g>
-          <polyline
-            points={activeZone.points.map((p) => `${p.x},${p.y}`).join(' ')}
-            fill="none" stroke={activeZone.color} strokeWidth="3" strokeDasharray="9 6"
-          />
-          {activeZone.threshold && activeZone.points[0] && (
-            <circle
-              cx={activeZone.points[0].x} cy={activeZone.points[0].y}
-              r={activeZone.threshold * 60}
-              fill="none" stroke="#D6364A" strokeWidth="1.5" strokeDasharray="4 4" opacity="0.45"
-            />
-          )}
+          <ZoneShape zone={activeZone} active />
           {activeZone.points.map((p, i) => (
             <g key={i}>
-              <circle cx={p.x} cy={p.y} r="9" fill={activeZone.color} opacity="0.18" />
+              <circle cx={p.x} cy={p.y} r="10" fill={activeMeta.color} opacity="0.2" />
               <circle
                 cx={p.x} cy={p.y} r="6.5"
-                fill="#fff" stroke={activeZone.color} strokeWidth="2.5"
+                fill="#fff" stroke={activeMeta.color} strokeWidth="2.5"
                 onPointerDown={(e) => handlePointPointerDown(i, e)}
                 style={{ cursor: mode === 'delete' ? 'pointer' : 'grab' }}
               />
+              <text
+                x={p.x} y={p.y - 12}
+                fill={activeMeta.color}
+                fontFamily="Roboto Mono, monospace"
+                fontSize="10"
+                fontWeight="700"
+                textAnchor="middle"
+              >
+                {i + 1}
+              </text>
             </g>
           ))}
-          <text x={16} y={STAGE_H - 16} fill={activeZone.color}
+          <text x={16} y={STAGE_H - 16} fill={activeMeta.color}
             fontFamily="Roboto Mono, monospace" fontSize="12" fontWeight="700">
-            {activeZone.name.toUpperCase()} — {activeZone.points.length} POINTS
+            {activeMeta.label.toUpperCase()} · {activeZone.name.toUpperCase()} — {activeZone.points.length} POINTS
+            {activeMeta.geometry === 'polygon' && activeZone.points.length < 3 ? ' (need 3+ to close)' : ''}
           </text>
         </g>
       )}
 
       {/* Mode hint */}
-      <rect x={STAGE_W - 240} y="16" width="224" height="40" rx="8"
+      <rect x={STAGE_W - 250} y="16" width="234" height="40" rx="8"
         fill="#FFFFFF" opacity="0.92" stroke="#E7E9EE" />
-      <text x={STAGE_W - 228} y="32" fill="#6B7385" fontFamily="Roboto Mono, monospace" fontSize="10">
-        {mode === 'add' ? 'CLICK POOL TO ADD POINT' : mode === 'delete' ? 'CLICK POINT TO REMOVE' : 'DRAG POINTS TO ADJUST'}
+      <text x={STAGE_W - 238} y="32" fill="#6B7385" fontFamily="Roboto Mono, monospace" fontSize="10">
+        {mode === 'add' ? 'CLICK STAGE TO ADD POINT' : mode === 'delete' ? 'CLICK POINT TO REMOVE' : 'DRAG POINTS TO ADJUST'}
       </text>
-      <text x={STAGE_W - 228} y="46" fill="#1A2233" fontFamily="Roboto Mono, monospace" fontSize="11" fontWeight="600">
-        Edit mode: {mode}
+      <text x={STAGE_W - 238} y="46" fill="#1A2233" fontFamily="Roboto Mono, monospace" fontSize="11" fontWeight="600">
+        {activeMeta
+          ? `${activeMeta.shortLabel} · ${activeMeta.geometry}`
+          : `Edit mode: ${mode}`}
       </text>
     </svg>
   )
