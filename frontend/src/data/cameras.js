@@ -2,9 +2,9 @@
 export const cameras = [
   {
     id: 'cam-01',
-    name: 'South Patio Pool',
+    name: 'Main Pool',
     ipAddress: '192.168.1.101',
-    location: 'South Pool Area',
+    location: 'Main Pool Area',
     zone: 'Main Pool',
     status: 'online',
     statusLabel: 'Online',
