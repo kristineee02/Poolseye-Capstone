@@ -1,8 +1,8 @@
 // PoolsEye — shared data (mirrors web dashboard data files)
 
 export const site = {
-  name: 'Sablan Residence — South Patio Pool',
-  shortName: 'South Patio Pool',
+  name: 'Main Pool',
+  shortName: 'Main Pool',
   edgeNodeOnline: true,
   mode: 'Offline / local-only',
 };
@@ -23,26 +23,26 @@ export const alerts = [
     type: 'alarm',
     title: 'Unsupervised intrusion detected',
     detail: 'Child class object inside restricted zone. No adult within 2.4 m proximity threshold.',
-    meta: 'CAM-01 · South Patio · Zone A',
+    meta: 'CAM-01 · Main Pool · Red Zone',
     time: '10:42:11 AM',
     date: 'Jun 22',
     status: 'pending',
     confidence: 0.93,
     camera: 'CAM-01',
-    zone: 'Zone A',
+    zone: 'Red Zone',
   },
   {
     id: 'evt-3',
     type: 'warn',
-    title: 'PIR motion trigger — camera inference activated',
-    detail: 'Motion sensor woke the camera. No human confirmed after 3s of inference.',
-    meta: 'CAM-01 · South Patio · standby exit',
+    title: 'Transition boundary crossed',
+    detail: 'Person crossed the shallow–deep Orange Boundary. Admin notification sent.',
+    meta: 'CAM-01 · Main Pool · Orange Boundary',
     time: '10:31:02 AM',
     date: 'Jun 22',
     status: 'pending',
-    confidence: null,
+    confidence: 0.88,
     camera: 'CAM-01',
-    zone: 'Zone A',
+    zone: 'Orange Boundary',
   },
 ];
 
@@ -53,7 +53,7 @@ export const events = [
     id: 'evt-1',
     type: 'alarm',
     title: 'Unsupervised intrusion — child detected in restricted zone',
-    meta: 'CAM-01 · South Patio · confidence 0.93',
+    meta: 'CAM-01 · Main Pool · confidence 0.93',
     time: '10:42 AM',
     date: 'Jun 22',
     status: 'pending',
@@ -63,7 +63,7 @@ export const events = [
     id: 'evt-2',
     type: 'safe',
     title: 'Supervised access confirmed — adult within proximity',
-    meta: 'CAM-01 · South Patio · adult + child both tracked',
+    meta: 'CAM-01 · Main Pool · adult + child both tracked',
     time: '10:31 AM',
     date: 'Jun 22',
     status: 'resolved',
@@ -72,18 +72,18 @@ export const events = [
   {
     id: 'evt-3',
     type: 'warn',
-    title: 'PIR motion trigger — camera inference activated',
-    meta: 'CAM-01 · South Patio · standby exit',
+    title: 'Transition boundary crossed — shallow to deep',
+    meta: 'CAM-01 · Main Pool · Orange Boundary',
     time: '10:31 AM',
     date: 'Jun 22',
     status: 'resolved',
-    confidence: null,
+    confidence: 0.88,
   },
   {
     id: 'evt-4',
     type: 'info',
     title: 'System self-check completed',
-    meta: 'All sensors nominal · ESP32 alarm node responsive',
+    meta: 'CAM-01 online · CCTV stream healthy',
     time: '09:00 AM',
     date: 'Jun 22',
     status: 'resolved',
@@ -93,7 +93,7 @@ export const events = [
     id: 'evt-5',
     type: 'safe',
     title: 'No intrusion overnight — geofence clear',
-    meta: 'CAM-01 · South Patio · 11:00 PM – 6:00 AM',
+    meta: 'CAM-01 · Main Pool · 11:00 PM – 6:00 AM',
     time: '06:00 AM',
     date: 'Jun 22',
     status: 'resolved',
@@ -103,7 +103,7 @@ export const events = [
     id: 'evt-6',
     type: 'alarm',
     title: 'Child near boundary, adult arrived in 4s',
-    meta: 'CAM-01 · South Patio',
+    meta: 'CAM-01 · Main Pool',
     time: '4:18 PM',
     date: 'Jun 21',
     status: 'dismissed',
@@ -112,18 +112,18 @@ export const events = [
   {
     id: 'evt-7',
     type: 'warn',
-    title: 'Motion trigger — debris on water, no human confirmed',
-    meta: 'CAM-01 · South Patio',
+    title: 'Yellow Zone entry — warning alert issued',
+    meta: 'CAM-01 · Main Pool · Yellow Zone',
     time: '2:05 PM',
     date: 'Jun 21',
     status: 'dismissed',
-    confidence: 0.21,
+    confidence: 0.84,
   },
   {
     id: 'evt-8',
     type: 'safe',
     title: 'Two adults, no children — logged, no alert',
-    meta: 'CAM-01 · South Patio',
+    meta: 'CAM-01 · Main Pool',
     time: '11:52 AM',
     date: 'Jun 21',
     status: 'resolved',
@@ -131,92 +131,55 @@ export const events = [
   },
 ];
 
-// ── Zones ─────────────────────────────────────────────────────────────────────
+// ── Zones (matches web geofence: Yellow / Orange / Red) ───────────────────────
 
 export const zones = [
   {
-    id: 'zone-1',
-    name: 'Zone A · South Patio',
+    id: 'zone-warning',
+    name: 'Yellow Zone',
+    typeLabel: 'Warning',
     camera: 'CAM-01',
     threshold: 1.5,
-    status: 'alarm',
-    statusLabel: 'ALARM',
-    detail: 'Child detected · no supervising adult',
-    activeDuringStandby: true,
-  },
-  {
-    id: 'zone-2',
-    name: 'Zone B · Pool Edge',
-    camera: 'CAM-02',
-    threshold: 1.5,
-    status: 'safe',
-    statusLabel: 'CLEAR',
-    detail: 'Geofence clear · no objects detected',
-    activeDuringStandby: true,
-  },
-  {
-    id: 'zone-3',
-    name: 'Zone C · Deep End',
-    camera: 'CAM-03',
-    threshold: 1.5,
-    status: 'safe',
-    statusLabel: 'CLEAR',
-    detail: 'Geofence clear · no objects detected',
-    activeDuringStandby: false,
-  },
-  {
-    id: 'zone-4',
-    name: 'Zone D · Side Gate',
-    camera: 'CAM-01',
-    threshold: 1.2,
     status: 'warn',
-    statusLabel: 'MOTION',
-    detail: 'PIR triggered · camera inference pending',
+    statusLabel: 'WARNING',
+    detail: 'General warning zone · shallow approach area',
+    activeDuringStandby: true,
+  },
+  {
+    id: 'zone-transition',
+    name: 'Orange Boundary',
+    typeLabel: 'Transition',
+    camera: 'CAM-01',
+    threshold: null,
+    status: 'alarm',
+    statusLabel: 'CROSSED',
+    detail: 'Shallow–deep line crossed · admin notification sent',
+    activeDuringStandby: true,
+  },
+  {
+    id: 'zone-danger',
+    name: 'Red Zone',
+    typeLabel: 'Danger',
+    camera: 'CAM-01',
+    threshold: 1.5,
+    status: 'safe',
+    statusLabel: 'CLEAR',
+    detail: 'Deep-end danger zone · no intrusion detected',
     activeDuringStandby: true,
   },
 ];
 
-// ── Cameras ───────────────────────────────────────────────────────────────────
+// ── Cameras (single CCTV for Main Pool) ───────────────────────────────────────
 
 export const cameras = [
-  { id: 'CAM-01', name: 'South Patio',    status: 'online',  fps: 13 },
-  { id: 'CAM-02', name: 'Pool Edge',      status: 'online',  fps: 13 },
-  { id: 'CAM-03', name: 'Deep End',       status: 'standby', fps: 0  },
+  { id: 'CAM-01', name: 'Main Pool', status: 'online', fps: 13 },
 ];
 
-// ── Profile / contacts ────────────────────────────────────────────────────────
-
-export const contacts = [
-  {
-    id: 'c-1',
-    initials: 'JR',
-    name: 'Jonas Ramos',
-    role: 'On-duty lifeguard · primary',
-    channels: ['App push', 'SMS'],
-    isPrimary: true,
-  },
-  {
-    id: 'c-2',
-    initials: 'MD',
-    name: 'Mara De Leon',
-    role: 'Backup lifeguard',
-    channels: ['App push'],
-    isPrimary: false,
-  },
-  {
-    id: 'c-3',
-    initials: 'PB',
-    name: 'Pia B.',
-    role: 'Site owner',
-    channels: ['SMS', 'Email'],
-    isPrimary: false,
-  },
-];
+// ── Notification preferences ──────────────────────────────────────────────────
 
 export const notificationSettings = [
-  { id: 'ns-1', label: 'Unsupervised intrusion alerts',    description: 'Immediate push + buzzer', enabled: true  },
-  { id: 'ns-2', label: 'PIR motion triggers',             description: 'Warn-level push only',     enabled: true  },
-  { id: 'ns-3', label: 'System health updates',           description: 'Camera and sensor status', enabled: false },
-  { id: 'ns-4', label: 'Escalation alerts',               description: 'If unacknowledged 60s',    enabled: true  },
-  { id: 'ns-5', label: 'Overnight monitoring summary',    description: 'Daily digest at 6:00 AM',  enabled: false },
+  { id: 'ns-1', label: 'Unsupervised intrusion alerts', description: 'Immediate push for danger/warning zones', enabled: true  },
+  { id: 'ns-2', label: 'Transition boundary alerts',    description: 'Notify when shallow–deep line is crossed', enabled: true  },
+  { id: 'ns-3', label: 'Escalation alerts',             description: 'If unacknowledged after 60 seconds',      enabled: true  },
+  { id: 'ns-4', label: 'System health updates',         description: 'CCTV camera status',                     enabled: false },
 ];

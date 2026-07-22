@@ -1,286 +1,286 @@
-// PoolsEye — AlertsScreen
-// The primary lifeguard screen: shows active alarms with pulsing indicator,
-// KPI summary, and quick-action acknowledge/dismiss flow.
+// PoolsEye — Dashboard (AlertsScreen)
+// Layout: Latest Alert → 2×2 stats → Recent Alerts (PoolsEye light theme)
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  Animated, Easing, Alert,
 } from 'react-native';
 import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
 import { alerts as initialAlerts } from '../data';
-import { Tag, SectionLabel, Panel, PanelHead, ConfidenceBar, Button, Mono } from '../components/Primitives';
-import DutyProfileCard from '../components/DutyProfileCard';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
+import ConfirmModal from '../components/ConfirmModal';
 
-// ── Pulse animation ───────────────────────────────────────────────────────────
-function PulseDot({ color = colors.alarm }) {
-  const scale = useRef(new Animated.Value(1)).current;
-  const opacity = useRef(new Animated.Value(0.5)).current;
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.parallel([
-          Animated.timing(scale,   { toValue: 2.2, duration: 700, useNativeDriver: true, easing: Easing.out(Easing.ease) }),
-          Animated.timing(opacity, { toValue: 0,   duration: 700, useNativeDriver: true }),
-        ]),
-        Animated.parallel([
-          Animated.timing(scale,   { toValue: 1, duration: 0, useNativeDriver: true }),
-          Animated.timing(opacity, { toValue: 0.5, duration: 0, useNativeDriver: true }),
-        ]),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, []);
-
-  return (
-    <View style={styles.pulseWrap}>
-      <Animated.View style={[styles.pulseRing, { backgroundColor: color, transform: [{ scale }], opacity }]} />
-      <View style={[styles.pulseDot, { backgroundColor: color }]} />
-    </View>
-  );
-}
-
-// ── Active alarm card ─────────────────────────────────────────────────────────
-function AlarmCard({ alert, onAcknowledge, onDismiss }) {
+function getAlertMeta(alert) {
   const isAlarm = alert.type === 'alarm';
-  const bg     = isAlarm ? colors.alarmTint : colors.warnTint;
-  const border = isAlarm ? colors.alarmBorder : colors.warnBorder;
-  const accent = isAlarm ? colors.alarm : colors.warn;
-  const dark   = isAlarm ? colors.alarmDark : '#5C3A00';
-  const mid    = isAlarm ? colors.alarmMid  : '#8A5A08';
+  return {
+    isAlarm,
+    code: isAlarm ? 'ALM' : 'WRN',
+    priority: isAlarm ? 'HIGH' : 'MED',
+    accent: isAlarm ? colors.alarm : colors.warn,
+    accentTint: isAlarm ? colors.alarmTint : colors.warnTint,
+    accentBorder: isAlarm ? colors.alarmBorder : colors.warnBorder,
+    accentDark: isAlarm ? colors.alarmDark : '#5C3A00',
+    accentMid: isAlarm ? colors.alarmMid : '#8A5A08',
+    line: `${alert.zone} · ${alert.time} · ${isAlarm ? 'Needs response' : 'Check feed'}`,
+    recentLine: `${alert.zone} · ${alert.time} · ${isAlarm ? 'HIGH' : 'MED'}`,
+  };
+}
+
+function PriorityBadge({ label, accent, accentTint }) {
+  return (
+    <View style={[styles.badge, { backgroundColor: accentTint, borderColor: accent + '44' }]}>
+      <Text style={[styles.badgeText, { color: accent }]}>{label}</Text>
+    </View>
+  );
+}
+
+function CodeIcon({ code, accent }) {
+  return (
+    <View style={[styles.codeIcon, { backgroundColor: accent }]}>
+      <Text style={styles.codeIconText}>{code}</Text>
+    </View>
+  );
+}
+
+function LatestAlertCard({ alert, onAcknowledge, onDismiss }) {
+  if (!alert) {
+    return (
+      <View style={styles.sectionCard}>
+        <Text style={styles.sectionTitle}>Latest Alert</Text>
+        <View style={styles.allClearBox}>
+          <View style={styles.allClearDot} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.allClearTitle}>All clear</Text>
+            <Text style={styles.allClearSub}>No active alerts right now</Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  const m = getAlertMeta(alert);
 
   return (
-    <View style={[styles.alarmCard, { backgroundColor: bg, borderColor: border }]}>
-      {/* Left accent stripe */}
-      <View style={[styles.alarmStripe, { backgroundColor: accent }]} />
-
-      <View style={styles.alarmInner}>
-        {/* Header row */}
-        <View style={styles.alarmHeader}>
-          <PulseDot color={accent} />
-          <View style={{ flex: 1, marginLeft: 10 }}>
-            <Text style={[styles.alarmTitle, { color: dark }]}>{alert.title}</Text>
-            <Mono style={{ color: mid, marginTop: 2 }}>{alert.meta}</Mono>
-          </View>
-          <Mono style={[styles.alarmTime, { color: mid }]}>{alert.time}</Mono>
+    <View style={styles.sectionCard}>
+      <View style={styles.sectionHead}>
+        <Text style={styles.sectionTitle}>Latest Alert</Text>
+        <View style={styles.badgeRow}>
+          <PriorityBadge label={m.priority} accent={m.accent} accentTint={m.accentTint} />
+          <PriorityBadge label="NEW" accent={m.accent} accentTint={m.accentTint} />
         </View>
+      </View>
 
-        {/* Detail box */}
-        <View style={[styles.alarmDetail, { backgroundColor: isAlarm ? 'rgba(214,54,74,0.08)' : 'rgba(182,121,10,0.08)' }]}>
-          <Text style={[styles.alarmDetailText, { color: dark }]}>{alert.detail}</Text>
-          {alert.confidence !== null && (
-            <View style={{ marginTop: 8 }}>
-              <Text style={[styles.alarmDetailLabel, { color: mid }]}>
-                ML confidence: {Math.round(alert.confidence * 100)}%
-              </Text>
-              <ConfidenceBar value={alert.confidence} color={accent} />
-            </View>
-          )}
+      <View style={styles.latestBody}>
+        <CodeIcon code={m.code} accent={m.accent} />
+        <View style={styles.latestCopy}>
+          <Text style={styles.latestTitle} numberOfLines={2}>{alert.title}</Text>
+          <Text style={styles.latestMeta}>{m.line}</Text>
         </View>
+      </View>
 
-        {/* Camera + zone chips */}
-        <View style={styles.alarmChips}>
-          <View style={[styles.chip, { backgroundColor: isAlarm ? 'rgba(214,54,74,0.1)' : 'rgba(182,121,10,0.1)' }]}>
-            <Text style={[styles.chipText, { color: dark }]}>{alert.camera}</Text>
-          </View>
-          <View style={[styles.chip, { backgroundColor: isAlarm ? 'rgba(214,54,74,0.1)' : 'rgba(182,121,10,0.1)' }]}>
-            <Text style={[styles.chipText, { color: dark }]}>{alert.zone}</Text>
-          </View>
-          <View style={[styles.chip, { backgroundColor: isAlarm ? 'rgba(214,54,74,0.1)' : 'rgba(182,121,10,0.1)' }]}>
-            <Text style={[styles.chipText, { color: dark }]}>{alert.date}</Text>
-          </View>
-        </View>
-
-        {/* Actions */}
-        <View style={styles.alarmActions}>
-          <TouchableOpacity
-            style={[styles.ackBtn, { backgroundColor: accent }]}
-            onPress={() => onAcknowledge(alert.id)}
-            activeOpacity={0.82}
-          >
-            <Text style={styles.ackBtnText}>
-              {isAlarm ? 'Acknowledge & respond' : 'Acknowledge'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.dismissBtn, { borderColor: border }]}
-            onPress={() => onDismiss(alert.id)}
-            activeOpacity={0.82}
-          >
-            <Text style={[styles.dismissBtnText, { color: mid }]}>Dismiss</Text>
-          </TouchableOpacity>
-        </View>
+      <View style={styles.actionRow}>
+        <TouchableOpacity
+          style={[styles.primaryBtn, { backgroundColor: m.accent }]}
+          onPress={() => onAcknowledge(alert.id)}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.primaryBtnText}>
+            {m.isAlarm ? 'Acknowledge & respond' : 'Acknowledge'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.secondaryBtn, { borderColor: m.accentBorder }]}
+          onPress={() => onDismiss(alert.id)}
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.secondaryBtnText, { color: m.accentMid }]}>Dismiss</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-// ── Acknowledged banner ───────────────────────────────────────────────────────
-function AckBanner({ time }) {
+function StatsGrid({ stats }) {
   return (
-    <View style={styles.ackBanner}>
-      <View style={styles.ackCheck}>
-        <Text style={styles.ackCheckMark}>✓</Text>
-      </View>
-      <View>
-        <Text style={styles.ackBannerTitle}>Alarm acknowledged</Text>
-        <Mono style={{ color: colors.safe, marginTop: 2 }}>Response logged · {time}</Mono>
-      </View>
+    <View style={styles.statsGrid}>
+      {stats.map((s) => (
+        <View key={s.label} style={styles.statCard}>
+          <Text style={styles.statLabel}>{s.label}</Text>
+          <Text style={[styles.statValue, s.emphasize && { color: colors.alarm }]}>
+            {s.value}
+          </Text>
+        </View>
+      ))}
     </View>
   );
 }
 
-// ── KPI stat card ─────────────────────────────────────────────────────────────
-function StatCard({ label, value, sub, barFill, barColor }) {
+function RecentAlertRow({ alert, isLast, onPress }) {
+  const m = getAlertMeta(alert);
   return (
-    <View style={styles.statCard}>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={[styles.statValue, { color: barColor }]}>{value}</Text>
-      <Text style={styles.statSub}>{sub}</Text>
-      <View style={styles.statBarTrack}>
-        <View style={[styles.statBarFill, { width: `${barFill}%`, backgroundColor: barColor }]} />
+    <TouchableOpacity
+      style={[styles.recentRow, !isLast && styles.recentRowBorder]}
+      onPress={onPress}
+      activeOpacity={0.8}
+    >
+      <CodeIcon code={m.code} accent={m.accent} />
+      <View style={styles.recentCopy}>
+        <Text style={styles.recentTitle} numberOfLines={1}>{alert.title}</Text>
+        <Text style={styles.recentMeta} numberOfLines={1}>{m.recentLine}</Text>
       </View>
+      <View style={styles.recentBadges}>
+        <PriorityBadge label={m.priority} accent={m.accent} accentTint={m.accentTint} />
+        <PriorityBadge label="NEW" accent={m.accent} accentTint={m.accentTint} />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function RecentAlertsCard({ alerts, onOpen, onViewAll }) {
+  return (
+    <View style={styles.sectionCard}>
+      <View style={styles.sectionHead}>
+        <Text style={styles.sectionTitle}>Recent Alerts</Text>
+        <TouchableOpacity
+          style={styles.viewAllBtn}
+          onPress={onViewAll}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.viewAllText}>View All</Text>
+        </TouchableOpacity>
+      </View>
+
+      {alerts.length === 0 ? (
+        <Text style={styles.emptyRecent}>No recent alerts in this session.</Text>
+      ) : (
+        alerts.map((alert, i) => (
+          <RecentAlertRow
+            key={alert.id}
+            alert={alert}
+            isLast={i === alerts.length - 1}
+            onPress={() => onOpen(alert)}
+          />
+        ))
+      )}
     </View>
   );
 }
 
-// ── Main screen ───────────────────────────────────────────────────────────────
 export default function AlertsScreen() {
   const { tabBarClearance } = useLayoutInsets();
   const [activeAlerts, setActiveAlerts] = useState(initialAlerts);
-  const [acknowledged, setAcknowledged] = useState({}); // id → time string
+  const [acknowledged, setAcknowledged] = useState({});
+  const [dismissId, setDismissId] = useState(null);
+  const [detailAlert, setDetailAlert] = useState(null);
+  const [showViewAll, setShowViewAll] = useState(false);
 
   const handleAcknowledge = (id) => {
     const time = new Date().toLocaleTimeString('en-US');
-    setAcknowledged(prev => ({ ...prev, [id]: time }));
-    setActiveAlerts(prev => prev.filter(a => a.id !== id));
+    setAcknowledged((prev) => ({ ...prev, [id]: time }));
+    setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
+    setDetailAlert(null);
   };
 
-  const handleDismiss = (id) => {
-    Alert.alert(
-      'Dismiss alert',
-      'Mark this alert as dismissed without responding?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Dismiss',
-          style: 'destructive',
-          onPress: () => setActiveAlerts(prev => prev.filter(a => a.id !== id)),
-        },
-      ]
-    );
+  const confirmDismiss = () => {
+    if (!dismissId) return;
+    setActiveAlerts((prev) => prev.filter((a) => a.id !== dismissId));
+    setDismissId(null);
+    setDetailAlert(null);
   };
 
-  const hasActive = activeAlerts.length > 0;
-  const ackKeys   = Object.keys(acknowledged);
+  const latest = activeAlerts[0] || null;
+  const recent = activeAlerts.slice(0, 4);
+
+  const stats = useMemo(() => {
+    const intrusion = activeAlerts.filter((a) => a.type === 'alarm').length;
+    const warning = activeAlerts.filter((a) => a.type === 'warn').length;
+    const redZone = activeAlerts.filter((a) => (a.zone || '').toLowerCase().includes('red')).length;
+    const ackCount = Object.keys(acknowledged).length;
+    return [
+      { label: 'Intrusion', value: String(intrusion), emphasize: intrusion > 0 },
+      { label: 'Warning', value: String(warning), emphasize: false },
+      { label: 'Red Zone', value: String(redZone), emphasize: redZone > 0 },
+      { label: 'Acknowledged', value: String(ackCount), emphasize: false },
+    ];
+  }, [activeAlerts, acknowledged]);
 
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance }]}
-      showsVerticalScrollIndicator={false}
-    >
-      <DutyProfileCard />
-
-      {/* Active alarms */}
-      {hasActive && <SectionLabel>Active alerts — {activeAlerts.length}</SectionLabel>}
-      {activeAlerts.map(alert => (
-        <AlarmCard
-          key={alert.id}
-          alert={alert}
+    <>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <LatestAlertCard
+          alert={latest}
           onAcknowledge={handleAcknowledge}
-          onDismiss={handleDismiss}
+          onDismiss={setDismissId}
         />
-      ))}
 
-      {/* Acknowledged banners */}
-      {ackKeys.length > 0 && (
-        <>
-          <SectionLabel>Acknowledged this session</SectionLabel>
-          {ackKeys.map(id => (
-            <AckBanner key={id} time={acknowledged[id]} />
-          ))}
-        </>
-      )}
+        <StatsGrid stats={stats} />
 
-      {/* All clear state */}
-      {!hasActive && ackKeys.length === 0 && (
-        <View style={styles.allClear}>
-          <View style={styles.allClearDot} />
-          <Text style={styles.allClearTitle}>All clear</Text>
-          <Text style={styles.allClearSub}>No active alerts. All zones are being monitored.</Text>
-        </View>
-      )}
+        <RecentAlertsCard
+          alerts={recent}
+          onOpen={setDetailAlert}
+          onViewAll={() => setShowViewAll(true)}
+        />
 
-      {/* KPI summary */}
-      <SectionLabel>Today's summary</SectionLabel>
-      <View style={styles.statGrid}>
-        <StatCard
-          label="Active alerts"
-          value={String(activeAlerts.length)}
-          sub="Requires response"
-          barFill={activeAlerts.length > 0 ? 20 : 0}
-          barColor={activeAlerts.length > 0 ? colors.alarm : colors.textTertiary}
-        />
-        <StatCard
-          label="Resolved today"
-          value="7"
-          sub="Since 06:00 AM"
-          barFill={70}
-          barColor={colors.safe}
-        />
-        <StatCard
-          label="Cameras online"
-          value="3/3"
-          sub="All feeds active"
-          barFill={100}
-          barColor={colors.accent}
-        />
-        <StatCard
-          label="Avg confidence"
-          value="91%"
-          sub="ML detection"
-          barFill={91}
-          barColor={colors.accent}
-        />
-      </View>
+        <View style={{ height: spacing.sm }} />
+      </ScrollView>
 
-      {/* Notification rules panel */}
-      <SectionLabel>Active notification rules</SectionLabel>
-      <Panel>
-        <PanelHead title="Escalation rules" />
-        {[
+      <ConfirmModal
+        visible={!!dismissId}
+        onClose={() => setDismissId(null)}
+        title="Dismiss alert"
+        message="Mark this alert as dismissed without responding?"
+        confirmText="Dismiss"
+        cancelText="Cancel"
+        isDangerous
+        onConfirm={confirmDismiss}
+      />
+
+      <ConfirmModal
+        visible={!!detailAlert}
+        onClose={() => setDetailAlert(null)}
+        title={detailAlert?.title || 'Alert'}
+        message={
+          detailAlert
+            ? `${detailAlert.detail}\n\n${detailAlert.meta}`
+            : ''
+        }
+        actions={[
           {
-            label: 'Unsupervised intrusion',
-            desc:  'Push alert + ESP32 buzzer · immediate',
-            type:  'alarm',
+            label: 'Dismiss',
+            tone: 'danger',
+            onPress: () => {
+              if (!detailAlert) return;
+              const id = detailAlert.id;
+              setDetailAlert(null);
+              setDismissId(id);
+            },
           },
           {
-            label: 'Unacknowledged 60s',
-            desc:  'Escalate to backup lifeguard',
-            type:  'warn',
+            label: 'Acknowledge',
+            tone: 'primary',
+            onPress: () => {
+              if (detailAlert) handleAcknowledge(detailAlert.id);
+            },
           },
           {
-            label: 'PIR only (no human)',
-            desc:  'Log only, no notification',
-            type:  'safe',
+            label: 'Close',
+            tone: 'secondary',
+            onPress: () => setDetailAlert(null),
           },
-        ].map((rule, i) => (
-          <View key={i} style={[styles.ruleRow, i > 0 && styles.ruleRowBorder]}>
-            <Tag type={rule.type}>{rule.type === 'alarm' ? 'ALARM' : rule.type === 'warn' ? 'WARN' : 'SAFE'}</Tag>
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={styles.ruleLabel}>{rule.label}</Text>
-              <Text style={styles.ruleDesc}>{rule.desc}</Text>
-            </View>
-          </View>
-        ))}
-      </Panel>
+        ]}
+      />
 
-      <View style={{ height: spacing.xl }} />
-    </ScrollView>
+      <ConfirmModal
+        visible={showViewAll}
+        onClose={() => setShowViewAll(false)}
+        title="Recent alerts"
+        message="Open Event Log from the bottom tab for full history."
+      />
+    </>
   );
 }
 
@@ -291,236 +291,212 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.md,
-    gap: 10,
+    gap: 14,
   },
 
-  // Alarm card
-  alarmCard: {
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    overflow: 'hidden',
-    flexDirection: 'row',
-    ...shadow.sm,
-  },
-  alarmStripe: {
-    width: 3,
-  },
-  alarmInner: {
-    flex: 1,
-    padding: 13,
-    gap: 10,
-  },
-  alarmHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  alarmTitle: {
-    fontSize: typography.base,
-    fontWeight: '700',
-    lineHeight: 19,
-  },
-  alarmTime: {
-    fontSize: typography.xs,
-    marginLeft: 8,
-    flexShrink: 0,
-  },
-  alarmDetail: {
-    borderRadius: radius.sm,
-    padding: 10,
-  },
-  alarmDetailText: {
-    fontSize: typography.sm,
-    lineHeight: 18,
-    fontWeight: '500',
-  },
-  alarmDetailLabel: {
-    fontSize: typography.xs,
-    marginBottom: 4,
-    fontWeight: '500',
-  },
-  alarmChips: {
-    flexDirection: 'row',
-    gap: 6,
-    flexWrap: 'wrap',
-  },
-  chip: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radius.sm,
-  },
-  chipText: {
-    fontSize: typography.xs,
-    fontWeight: '600',
-    fontFamily: 'Courier',
-  },
-  alarmActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  ackBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: radius.sm,
-    alignItems: 'center',
-  },
-  ackBtnText: {
-    color: '#fff',
-    fontSize: 12.5,
-    fontWeight: '700',
-  },
-  dismissBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  dismissBtnText: {
-    fontSize: 12.5,
-    fontWeight: '500',
-  },
-
-  // Pulse
-  pulseWrap: {
-    width: 18,
-    height: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    marginTop: 1,
-  },
-  pulseRing: {
-    position: 'absolute',
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  pulseDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-
-  // Ack banner
-  ackBanner: {
-    backgroundColor: colors.safeTint,
-    borderWidth: 1,
-    borderColor: colors.safeBorder,
-    borderRadius: radius.lg,
-    padding: 13,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  ackCheck: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.safe,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  ackCheckMark: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  ackBannerTitle: {
-    fontSize: typography.base,
-    fontWeight: '700',
-    color: '#135C41',
-  },
-
-  // All clear
-  allClear: {
-    alignItems: 'center',
-    paddingVertical: 32,
-    gap: 10,
-  },
-  allClearDot: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.safeTint,
-    borderWidth: 2,
-    borderColor: colors.safe,
-  },
-  allClearTitle: {
-    fontSize: typography.xl,
-    fontWeight: '700',
-    color: colors.safe,
-  },
-  allClearSub: {
-    fontSize: typography.base,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    maxWidth: 240,
-  },
-
-  // Stat grid
-  statGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  statCard: {
+  sectionCard: {
     backgroundColor: colors.bgPanel,
+    borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
+    padding: 16,
+    ...shadow.sm,
+  },
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    gap: 10,
+  },
+  sectionTitle: {
+    fontSize: typography.lg,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+
+  badgeRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  badge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    borderWidth: 1,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+
+  codeIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  codeIconText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+
+  latestBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
+  latestCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  latestTitle: {
+    fontSize: typography.md,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    lineHeight: 20,
+  },
+  latestMeta: {
+    marginTop: 4,
+    fontSize: typography.sm,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  primaryBtn: {
+    flex: 1,
+    height: 44,
     borderRadius: radius.md,
-    padding: 12,
-    width: '48%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  secondaryBtn: {
+    height: 44,
+    paddingHorizontal: 14,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bgPanel,
+  },
+  secondaryBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  allClearBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 6,
+  },
+  allClearDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.safe,
+  },
+  allClearTitle: {
+    fontSize: typography.md,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  allClearSub: {
+    marginTop: 2,
+    fontSize: typography.sm,
+    color: colors.textSecondary,
+  },
+
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 10,
+  },
+  statCard: {
+    width: '48.5%',
+    backgroundColor: colors.bgPanel,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    paddingVertical: 16,
+    paddingHorizontal: 14,
     ...shadow.sm,
   },
   statLabel: {
+    fontSize: typography.sm,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  statValue: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    letterSpacing: -0.5,
+  },
+
+  viewAllBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.bgRaised,
+  },
+  viewAllText: {
+    fontSize: typography.xs,
+    fontWeight: '700',
+    color: colors.accentStrong,
+  },
+
+  recentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+  },
+  recentRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+  },
+  recentCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  recentTitle: {
+    fontSize: typography.base,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  recentMeta: {
+    marginTop: 3,
     fontSize: typography.xs,
     color: colors.textSecondary,
     fontWeight: '500',
-    marginBottom: 4,
   },
-  statValue: {
-    fontSize: 22,
-    fontWeight: '700',
-    fontFamily: 'Courier',
-    color: colors.textPrimary,
+  recentBadges: {
+    gap: 4,
+    alignItems: 'flex-end',
   },
-  statSub: {
-    fontSize: typography.xs,
-    color: colors.textTertiary,
-    marginTop: 2,
-  },
-  statBarTrack: {
-    height: 3,
-    backgroundColor: colors.bgInset,
-    borderRadius: 2,
-    marginTop: 8,
-    overflow: 'hidden',
-  },
-  statBarFill: {
-    height: '100%',
-    borderRadius: 2,
-  },
-
-  // Rules
-  ruleRow: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 11,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  ruleRowBorder: {
-    borderTopWidth: 1,
-    borderTopColor: colors.borderSubtle,
-  },
-  ruleLabel: {
+  emptyRecent: {
     fontSize: typography.sm,
-    fontWeight: '600',
-    color: colors.textPrimary,
-  },
-  ruleDesc: {
-    fontSize: typography.xs,
-    color: colors.textSecondary,
-    marginTop: 2,
+    color: colors.textTertiary,
+    paddingVertical: 8,
   },
 });

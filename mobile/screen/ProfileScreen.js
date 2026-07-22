@@ -1,21 +1,19 @@
 // PoolsEye — ProfileScreen
-// Lifeguard profile: duty info, notification preferences (toggles),
-// escalation contact roster, and session actions.
+// Core only: notification preferences + session (sign out / end shift)
 
 import React, { useState } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity,
 } from 'react-native';
 import { colors, radius, spacing, typography } from '../theme/tokens';
-import { contacts, notificationSettings, site } from '../data';
+import { notificationSettings } from '../data';
 import {
-  Tag, SectionLabel, Panel, PanelHead,
-  Avatar, Divider, Toggle, Mono, Button,
+  SectionLabel, Panel, PanelHead, Toggle,
 } from '../components/Primitives';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 import { useAuth } from '../context/AuthContext';
+import ConfirmModal from '../components/ConfirmModal';
 
-// ── Notification toggle row ───────────────────────────────────────────────────
 function NotifRow({ setting, value, onChange, isLast }) {
   return (
     <View style={[styles.notifRow, !isLast && styles.notifRowBorder]}>
@@ -28,111 +26,10 @@ function NotifRow({ setting, value, onChange, isLast }) {
   );
 }
 
-// ── Contact roster card ───────────────────────────────────────────────────────
-function ContactRow({ contact, isLast }) {
-  const avatarColors = [
-    { bg: colors.accentTint, text: colors.accentStrong },
-    { bg: colors.safeTint,   text: colors.safe          },
-    { bg: colors.warnTint,   text: colors.warn           },
-  ];
-  const c = avatarColors[contact.id.split('-')[1] - 1] || avatarColors[0];
-
-  return (
-    <View style={[styles.contactRow, !isLast && styles.contactRowBorder]}>
-      <Avatar initials={contact.initials} size={36} color={c.text} bg={c.bg} />
-      <View style={{ flex: 1, marginLeft: 10 }}>
-        <View style={styles.contactNameRow}>
-          <Text style={styles.contactName}>{contact.name}</Text>
-          {contact.isPrimary && <Tag type="accent">Primary</Tag>}
-        </View>
-        <Text style={styles.contactRole}>{contact.role}</Text>
-        <View style={styles.channelRow}>
-          {contact.channels.map(ch => (
-            <View key={ch} style={styles.channelChip}>
-              <Text style={styles.channelText}>{ch}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-    </View>
-  );
-}
-
-// ── Site info panel ───────────────────────────────────────────────────────────
-function SiteInfo() {
-  return (
-    <Panel>
-      <PanelHead title="Site information" />
-      {[
-        { k: 'Site name',   v: site.name          },
-        { k: 'Mode',        v: site.mode          },
-        { k: 'Edge node',   v: 'Orange Pi Zero 3' },
-        { k: 'MQTT broker', v: 'Local · 12ms'     },
-        { k: 'Cameras',     v: '3 connected'       },
-        { k: 'Sensors',     v: '1 PIR · 1 IR'     },
-      ].map((row, i, arr) => (
-        <View key={row.k} style={[styles.infoRow, i < arr.length - 1 && styles.infoRowBorder]}>
-          <Text style={styles.infoKey}>{row.k}</Text>
-          <Mono style={styles.infoValue}>{row.v}</Mono>
-        </View>
-      ))}
-    </Panel>
-  );
-}
-
-// ── Session actions ───────────────────────────────────────────────────────────
-function SessionActions({ onSignOut }) {
-  const handleEndShift = () => {
-    Alert.alert(
-      'End shift',
-      'Are you sure you want to end your shift? The backup lifeguard will be notified.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'End shift', style: 'destructive', onPress: onSignOut },
-      ]
-    );
-  };
-
-  const handleSignOut = () => {
-    Alert.alert('Sign out', 'Leave the lifeguard app?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: onSignOut },
-    ]);
-  };
-
-  const handleTestNotif = () => {
-    Alert.alert('Test sent', 'A test push notification was sent to this device.');
-  };
-
+function SessionActions({ onSignOutPress, onEndShiftPress }) {
   return (
     <View style={styles.actionsBlock}>
-      <TouchableOpacity style={styles.actionBtn} onPress={handleTestNotif} activeOpacity={0.8}>
-        <View style={[styles.actionIcon, { backgroundColor: colors.accentTint }]}>
-          <Text style={{ color: colors.accentStrong, fontSize: 14 }}>🔔</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.actionLabel}>Send test notification</Text>
-          <Text style={styles.actionDesc}>Verify push delivery to this device</Text>
-        </View>
-        <Text style={styles.actionChevron}>›</Text>
-      </TouchableOpacity>
-
-      <View style={styles.actionRowBorder} />
-
-      <TouchableOpacity style={styles.actionBtn} onPress={() => {}} activeOpacity={0.8}>
-        <View style={[styles.actionIcon, { backgroundColor: colors.bgInset }]}>
-          <Text style={{ color: colors.textSecondary, fontSize: 14 }}>📋</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.actionLabel}>Export shift log</Text>
-          <Text style={styles.actionDesc}>PDF summary of today's events</Text>
-        </View>
-        <Text style={styles.actionChevron}>›</Text>
-      </TouchableOpacity>
-
-      <View style={styles.actionRowBorder} />
-
-      <TouchableOpacity style={styles.actionBtn} onPress={handleSignOut} activeOpacity={0.8}>
+      <TouchableOpacity style={styles.actionBtn} onPress={onSignOutPress} activeOpacity={0.8}>
         <View style={[styles.actionIcon, { backgroundColor: colors.bgInset }]}>
           <Text style={{ color: colors.textSecondary, fontSize: 14 }}>↩</Text>
         </View>
@@ -145,7 +42,7 @@ function SessionActions({ onSignOut }) {
 
       <View style={styles.actionRowBorder} />
 
-      <TouchableOpacity style={styles.actionBtn} onPress={handleEndShift} activeOpacity={0.8}>
+      <TouchableOpacity style={styles.actionBtn} onPress={onEndShiftPress} activeOpacity={0.8}>
         <View style={[styles.actionIcon, { backgroundColor: colors.alarmTint }]}>
           <Text style={{ color: colors.alarm, fontSize: 14 }}>🚪</Text>
         </View>
@@ -159,81 +56,83 @@ function SessionActions({ onSignOut }) {
   );
 }
 
-// ── App version footer ────────────────────────────────────────────────────────
-function Footer() {
-  return (
-    <View style={styles.footer}>
-      <Text style={styles.footerText}>PoolsEye Lifeguard · v1.0.0</Text>
-      <Text style={styles.footerText}>Offline / local-only mode · edge node active</Text>
-    </View>
-  );
-}
-
-// ── Main screen ───────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
   const { tabBarClearance } = useLayoutInsets();
   const { signOut } = useAuth();
   const [settings, setSettings] = useState(
     notificationSettings.reduce((acc, s) => ({ ...acc, [s.id]: s.enabled }), {})
   );
+  const [confirmKind, setConfirmKind] = useState(null);
 
   const handleToggle = (id, value) => {
-    setSettings(prev => ({ ...prev, [id]: value }));
+    setSettings((prev) => ({ ...prev, [id]: value }));
   };
 
+  const isSignOut = confirmKind === 'signOut';
+  const isEndShift = confirmKind === 'endShift';
+
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance }]}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Notification settings */}
-      <SectionLabel>Notification preferences</SectionLabel>
-      <Panel>
-        <PanelHead
-          title="Alert channels"
-          right={
-            <Text style={styles.enabledCount}>
-              {Object.values(settings).filter(Boolean).length} of {notificationSettings.length} on
-            </Text>
-          }
-        />
-        {notificationSettings.map((s, i) => (
-          <NotifRow
-            key={s.id}
-            setting={s}
-            value={settings[s.id]}
-            onChange={handleToggle}
-            isLast={i === notificationSettings.length - 1}
+    <>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <SectionLabel>Notification preferences</SectionLabel>
+        <Panel>
+          <PanelHead
+            title="Alert channels"
+            right={
+              <Text style={styles.enabledCount}>
+                {Object.values(settings).filter(Boolean).length} of {notificationSettings.length} on
+              </Text>
+            }
           />
-        ))}
-      </Panel>
+          {notificationSettings.map((s, i) => (
+            <NotifRow
+              key={s.id}
+              setting={s}
+              value={settings[s.id]}
+              onChange={handleToggle}
+              isLast={i === notificationSettings.length - 1}
+            />
+          ))}
+        </Panel>
 
-      {/* Escalation contacts */}
-      <SectionLabel>Notification roster</SectionLabel>
-      <Panel>
-        <PanelHead
-          title="Escalation contacts"
-          right={<Text style={styles.viewAll}>Edit roster</Text>}
-        />
-        {contacts.map((c, i) => (
-          <ContactRow key={c.id} contact={c} isLast={i === contacts.length - 1} />
-        ))}
-      </Panel>
+        <SectionLabel>Session</SectionLabel>
+        <Panel>
+          <SessionActions
+            onSignOutPress={() => setConfirmKind('signOut')}
+            onEndShiftPress={() => setConfirmKind('endShift')}
+          />
+        </Panel>
 
-      {/* Site info */}
-      <SectionLabel>System</SectionLabel>
-      <SiteInfo />
+        <Text style={styles.footerText}>PoolsEye Lifeguard · v1.0.0</Text>
+        <View style={{ height: spacing.xl }} />
+      </ScrollView>
 
-      {/* Session actions */}
-      <SectionLabel>Session</SectionLabel>
-      <Panel>
-        <SessionActions onSignOut={signOut} />
-      </Panel>
+      <ConfirmModal
+        visible={isSignOut}
+        onClose={() => setConfirmKind(null)}
+        title="Sign out"
+        message="Leave the lifeguard app? You’ll need to sign in again to continue."
+        confirmText="Sign out"
+        cancelText="Cancel"
+        isDangerous
+        onConfirm={signOut}
+      />
 
-      <Footer />
-      <View style={{ height: spacing.xl }} />
-    </ScrollView>
+      <ConfirmModal
+        visible={isEndShift}
+        onClose={() => setConfirmKind(null)}
+        title="End shift"
+        message="Are you sure you want to end your shift? The backup lifeguard will be notified."
+        confirmText="End shift"
+        cancelText="Cancel"
+        isDangerous
+        onConfirm={signOut}
+      />
+    </>
   );
 }
 
@@ -246,8 +145,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: 10,
   },
-
-  // Notif rows
   notifRow: {
     paddingHorizontal: spacing.md,
     paddingVertical: 12,
@@ -260,115 +157,39 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.borderSubtle,
   },
   notifLabel: {
-    fontSize: typography.sm,
+    fontSize: typography.base,
     fontWeight: '600',
     color: colors.textPrimary,
-    marginBottom: 2,
   },
   notifDesc: {
     fontSize: typography.xs,
     color: colors.textSecondary,
+    marginTop: 2,
   },
   enabledCount: {
     fontSize: typography.xs,
     color: colors.textTertiary,
-    fontFamily: 'Courier',
-  },
-
-  // Contacts
-  contactRow: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  contactRowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
-  },
-  contactNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 2,
-  },
-  contactName: {
-    fontSize: typography.sm,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  contactRole: {
-    fontSize: typography.xs,
-    color: colors.textSecondary,
-    marginBottom: 5,
-  },
-  channelRow: {
-    flexDirection: 'row',
-    gap: 5,
-  },
-  channelChip: {
-    backgroundColor: colors.bgInset,
-    borderRadius: radius.sm,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-  },
-  channelText: {
-    fontSize: typography.xs,
-    color: colors.textSecondary,
     fontWeight: '500',
   },
-
-  // Site info rows
-  infoRow: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  infoRowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
-  },
-  infoKey: {
-    fontSize: typography.sm,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  infoValue: {
-    fontSize: typography.sm,
-    color: colors.textPrimary,
-    textAlign: 'right',
-  },
-
-  // Session actions
   actionsBlock: {
-    overflow: 'hidden',
+    paddingVertical: 4,
   },
   actionBtn: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 13,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-  },
-  actionRowBorder: {
-    height: 1,
-    backgroundColor: colors.borderSubtle,
-    marginLeft: spacing.md + 36 + 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
   },
   actionIcon: {
     width: 36,
     height: 36,
-    borderRadius: radius.sm,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    flexShrink: 0,
   },
   actionLabel: {
-    fontSize: typography.sm,
+    fontSize: typography.base,
     fontWeight: '600',
     color: colors.textPrimary,
   },
@@ -378,27 +199,18 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   actionChevron: {
-    fontSize: 22,
+    fontSize: 20,
     color: colors.textTertiary,
-    fontWeight: '300',
   },
-
-  // Footer
-  footer: {
-    alignItems: 'center',
-    gap: 3,
-    marginTop: 8,
+  actionRowBorder: {
+    height: 1,
+    backgroundColor: colors.borderSubtle,
+    marginLeft: spacing.md + 36 + 12,
   },
   footerText: {
+    textAlign: 'center',
     fontSize: typography.xs,
     color: colors.textTertiary,
-    fontFamily: 'Courier',
-  },
-
-  // Misc
-  viewAll: {
-    fontSize: typography.sm,
-    color: colors.accent,
-    fontWeight: '500',
+    marginTop: 8,
   },
 });

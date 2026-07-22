@@ -1,11 +1,12 @@
 // PoolsEye — AppShell
-// Shared header — matches web topbar pill style + safe area top inset
+// Shared header — brand + screen title with duty profile line (replaces duty card)
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, Image } from 'react-native';
 import { colors, spacing, typography, radius, shadow } from '../theme/tokens';
-import { site } from '../data';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
+import { useAuth } from '../context/AuthContext';
+import { lifeguard as defaultLifeguard } from '../data';
 
 const logo = require('../assets/logo-header.png');
 
@@ -17,38 +18,29 @@ function BrandMark() {
   );
 }
 
-function Chip({ children, dotColor, mono = false }) {
+function OnlineBadge() {
   return (
-    <View style={styles.chip}>
-      {dotColor ? <View style={[styles.chipDot, { backgroundColor: dotColor }]} /> : null}
-      <Text style={[styles.chipText, mono && styles.chipTextMono]} numberOfLines={1}>
-        {children}
-      </Text>
+    <View style={styles.onlineBadge}>
+      <View style={styles.onlineDot} />
+      <Text style={styles.onlineText}>Online</Text>
     </View>
   );
 }
 
-function useClock() {
-  const [time, setTime] = useState(new Date());
-  useEffect(() => {
-    const id = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  return time;
-}
-
-export default function AppShell() {
+export default function AppShell({
+  title = 'Dashboard',
+  subtitle,
+  showDutyProfile = false,
+}) {
   const { headerPaddingTop, horizontalInset } = useLayoutInsets();
-  const time = useClock();
-  const timeStr = time.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  const { user } = useAuth();
+  const padX = Math.max(horizontalInset, spacing.lg);
+  const lifeguard = user || defaultLifeguard;
+  const personLine = `${lifeguard.name} · Lifeguard`;
 
   return (
     <View style={[styles.header, { paddingTop: headerPaddingTop }]}>
-      <View style={[styles.topRow, { paddingHorizontal: Math.max(horizontalInset, spacing.lg) }]}>
+      <View style={[styles.topRow, { paddingHorizontal: padX }]}>
         <View style={styles.brand}>
           <BrandMark />
           <View>
@@ -56,15 +48,20 @@ export default function AppShell() {
             <Text style={styles.brandSub}>Lifeguard</Text>
           </View>
         </View>
-
-        <View style={styles.topRight}>
-          <Chip mono>{timeStr}</Chip>
-        </View>
       </View>
 
-      <View style={[styles.metaRow, { paddingHorizontal: Math.max(horizontalInset, spacing.lg) }]}>
-        <Chip dotColor={colors.safe}>Edge online</Chip>
-        <Chip dotColor={colors.safe}>{site.shortName}</Chip>
+      <View style={[styles.titleBlock, { paddingHorizontal: padX }]}>
+        <View style={styles.titleRow}>
+          <View style={styles.titleCopy}>
+            <Text style={styles.screenTitle}>{title}</Text>
+            {showDutyProfile ? (
+              <Text style={styles.personLine}>{personLine}</Text>
+            ) : subtitle ? (
+              <Text style={styles.screenSubtitle}>{subtitle}</Text>
+            ) : null}
+          </View>
+          {showDutyProfile ? <OnlineBadge /> : null}
+        </View>
       </View>
     </View>
   );
@@ -108,45 +105,59 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 1,
   },
-  topRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flexShrink: 0,
+  titleBlock: {
+    paddingTop: 2,
+    paddingBottom: 4,
   },
-  metaRow: {
+  titleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 12,
   },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    height: 34,
-    paddingHorizontal: 12,
-    backgroundColor: colors.bgPanel,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    borderRadius: radius.full,
-    maxWidth: '100%',
-    ...shadow.sm,
+  titleCopy: {
+    flex: 1,
+    minWidth: 0,
   },
-  chipDot: {
-    width: 7,
-    height: 7,
-    borderRadius: radius.full,
-    flexShrink: 0,
+  screenTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    letterSpacing: -0.3,
   },
-  chipText: {
+  personLine: {
+    marginTop: 4,
     fontSize: typography.sm,
     color: colors.textSecondary,
     fontWeight: '500',
-    flexShrink: 1,
   },
-  chipTextMono: {
-    fontFamily: 'Courier',
-    letterSpacing: 0.2,
+  screenSubtitle: {
+    marginTop: 3,
+    fontSize: typography.sm,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  onlineBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 32,
+    paddingHorizontal: 12,
+    borderRadius: radius.full,
+    backgroundColor: colors.bgPanel,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    ...shadow.sm,
+  },
+  onlineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.safe,
+  },
+  onlineText: {
+    fontSize: typography.sm,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
 });
