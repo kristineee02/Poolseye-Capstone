@@ -114,10 +114,10 @@ function PersonIcon({ color, filled }) {
 }
 
 const TABS = [
-  { key: 'alerts',  label: 'Home'    },
-  { key: 'zones',   label: 'Zones'   },
-  { key: 'log',     label: 'Log'     },
-  { key: 'profile', label: 'Profile' },
+  { key: 'alerts',  label: 'Home',    title: 'Dashboard',  subtitle: null, showDutyProfile: true  },
+  { key: 'zones',   label: 'Zones',   title: 'Zones',      subtitle: 'Live geofence status by area', showDutyProfile: false },
+  { key: 'log',     label: 'Log',     title: 'Event Log',  subtitle: 'Chronological detection history', showDutyProfile: false },
+  { key: 'profile', label: 'Profile', title: 'Profile',    subtitle: null, showDutyProfile: true  },
 ];
 
 export default function TabNavigator({ alertBadgeCount = 2 }) {
@@ -130,6 +130,8 @@ export default function TabNavigator({ alertBadgeCount = 2 }) {
     log:     <LogScreen />,
     profile: <ProfileScreen />,
   };
+
+  const activeTab = TABS.find((t) => t.key === active) || TABS[0];
 
   const renderIcon = (key, isActive, pressed) => {
     const filled = isActive || pressed;
@@ -153,7 +155,11 @@ export default function TabNavigator({ alertBadgeCount = 2 }) {
 
   return (
     <View style={styles.root}>
-      <AppShell />
+      <AppShell
+        title={activeTab.title}
+        subtitle={activeTab.subtitle}
+        showDutyProfile={activeTab.showDutyProfile}
+      />
 
       <View style={[styles.screenArea, { paddingHorizontal: horizontalInset }]}>
         {screens[active]}

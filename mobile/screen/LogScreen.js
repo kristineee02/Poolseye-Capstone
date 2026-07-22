@@ -9,15 +9,43 @@ import {
 } from 'react-native';
 import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
 import { events } from '../data';
-import { Tag, SectionLabel, Panel, PanelHead, ConfidenceBar, Mono } from '../components/Primitives';
+import { Tag, ConfidenceBar, Mono } from '../components/Primitives';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 
 // ── Event type config ─────────────────────────────────────────────────────────
 const TYPE_CONFIG = {
-  alarm: { dot: colors.alarm, tagType: 'alarm', symbol: '⚠' },
-  warn:  { dot: colors.warn,  tagType: 'warn',  symbol: '◉' },
-  safe:  { dot: colors.safe,  tagType: 'safe',  symbol: '✓' },
-  info:  { dot: colors.textTertiary, tagType: 'info', symbol: 'ℹ' },
+  alarm: {
+    dot: colors.alarm,
+    tagType: 'alarm',
+    bg: colors.alarmTint,
+    border: colors.alarmBorder,
+    textDark: colors.alarmDark,
+    textMid: colors.alarmMid,
+  },
+  warn: {
+    dot: colors.warn,
+    tagType: 'warn',
+    bg: colors.warnTint,
+    border: colors.warnBorder,
+    textDark: '#5C3A00',
+    textMid: '#8A5A08',
+  },
+  safe: {
+    dot: colors.safe,
+    tagType: 'safe',
+    bg: colors.safeTint,
+    border: colors.safeBorder,
+    textDark: colors.textPrimary,
+    textMid: colors.textSecondary,
+  },
+  info: {
+    dot: colors.textTertiary,
+    tagType: 'info',
+    bg: colors.bgPanel,
+    border: colors.borderSubtle,
+    textDark: colors.textPrimary,
+    textMid: colors.textSecondary,
+  },
 };
 
 const STATUS_TAG = {
@@ -26,57 +54,53 @@ const STATUS_TAG = {
   dismissed: { type: 'info',  label: 'Dismissed' },
 };
 
-// ── Single event row ──────────────────────────────────────────────────────────
-function EventRow({ event, isLast }) {
+// ── Single event card (matches Dashboard alert card shape) ────────────────────
+function EventRow({ event }) {
   const [expanded, setExpanded] = useState(false);
-  const cfg    = TYPE_CONFIG[event.type] || TYPE_CONFIG.info;
-  const stag   = STATUS_TAG[event.status] || STATUS_TAG.dismissed;
+  const cfg  = TYPE_CONFIG[event.type] || TYPE_CONFIG.info;
+  const stag = STATUS_TAG[event.status] || STATUS_TAG.dismissed;
 
   return (
     <TouchableOpacity
-      style={[styles.eventRow, !isLast && styles.eventRowBorder]}
-      onPress={() => setExpanded(e => !e)}
-      activeOpacity={0.8}
+      style={[styles.eventCard, { backgroundColor: cfg.bg, borderColor: cfg.border }]}
+      onPress={() => setExpanded((e) => !e)}
+      activeOpacity={0.85}
     >
-      {/* Type dot */}
-      <View style={[styles.eventDot, { backgroundColor: cfg.dot }]} />
+      <View style={[styles.eventStripe, { backgroundColor: cfg.dot }]} />
 
-      <View style={{ flex: 1 }}>
-        {/* Main row */}
-        <View style={styles.eventMain}>
-          <Text style={styles.eventTitle} numberOfLines={expanded ? undefined : 2}>
-            {event.title}
-          </Text>
-          <Mono style={styles.eventTime}>{event.time}</Mono>
+      <View style={styles.eventInner}>
+        <View style={styles.eventHeader}>
+          <View style={[styles.eventDot, { backgroundColor: cfg.dot }]} />
+          <View style={{ flex: 1, marginLeft: 10 }}>
+            <Text style={[styles.eventTitle, { color: cfg.textDark }]} numberOfLines={expanded ? undefined : 2}>
+              {event.title}
+            </Text>
+            <Mono style={{ color: cfg.textMid, marginTop: 2 }}>{event.meta}</Mono>
+          </View>
+          <Mono style={[styles.eventTime, { color: cfg.textMid }]}>{event.time}</Mono>
         </View>
 
-        {/* Meta */}
-        <Mono style={[styles.eventMeta, { marginTop: 3 }]}>{event.meta}</Mono>
+        <View style={styles.eventTags}>
+          <Tag type={cfg.tagType}>{event.type.toUpperCase()}</Tag>
+          <Tag type={stag.type}>{stag.label}</Tag>
+        </View>
 
-        {/* Expanded detail */}
         {expanded && (
-          <View style={styles.eventExpanded}>
-            {event.confidence !== null && (
+          <View style={[styles.eventExpanded, { backgroundColor: 'rgba(13, 27, 42, 0.04)' }]}>
+            {event.confidence !== null && event.confidence !== undefined && (
               <View style={{ marginBottom: 8 }}>
-                <Text style={styles.expandedLabel}>
+                <Text style={[styles.expandedLabel, { color: cfg.textMid }]}>
                   ML confidence: {Math.round(event.confidence * 100)}%
                 </Text>
-                <ConfidenceBar
-                  value={event.confidence}
-                  color={event.type === 'alarm' ? colors.alarm : event.type === 'warn' ? colors.warn : colors.safe}
-                />
+                <ConfidenceBar value={event.confidence} color={cfg.dot} />
               </View>
             )}
-            <View style={styles.expandedTags}>
-              <Tag type={cfg.tagType}>{event.type.toUpperCase()}</Tag>
-              <Tag type={stag.type}>{stag.label}</Tag>
-            </View>
+            <Text style={[styles.expandedHint, { color: cfg.textMid }]}>
+              Tap again to collapse
+            </Text>
           </View>
         )}
       </View>
-
-      {/* Status tag (right side) */}
-      <Tag type={stag.type}>{stag.label}</Tag>
     </TouchableOpacity>
   );
 }
@@ -95,7 +119,7 @@ function DateHeader({ date }) {
 const FILTERS = [
   { key: 'all',   label: 'All'    },
   { key: 'alarm', label: 'Alarm'  },
-  { key: 'warn',  label: 'Motion' },
+  { key: 'warn',  label: 'Warning' },
   { key: 'safe',  label: 'Safe'   },
   { key: 'info',  label: 'System' },
 ];
@@ -184,11 +208,8 @@ export default function LogScreen() {
       <SectionList
         sections={sections}
         keyExtractor={item => item.id}
-        renderItem={({ item, index, section }) => (
-          <EventRow
-            event={item}
-            isLast={index === section.data.length - 1}
-          />
+        renderItem={({ item }) => (
+          <EventRow event={item} />
         )}
         renderSectionHeader={({ section }) => (
           <DateHeader date={section.title} />
@@ -292,8 +313,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 8,
-    marginTop: 10,
+    marginBottom: 10,
+    marginTop: 12,
   },
   dateHeaderText: {
     fontSize: typography.xs,
@@ -309,19 +330,26 @@ const styles = StyleSheet.create({
     backgroundColor: colors.borderSubtle,
   },
 
-  // Event row
-  eventRow: {
-    backgroundColor: colors.bgPanel,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
+  // Event card — same rounded card language as Dashboard alerts
+  eventCard: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    marginBottom: 10,
+    ...shadow.sm,
+  },
+  eventStripe: {
+    width: 3,
+  },
+  eventInner: {
+    flex: 1,
+    padding: 13,
+    gap: 10,
+  },
+  eventHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 10,
-    borderRadius: 0,
-  },
-  eventRowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
   },
   eventDot: {
     width: 8,
@@ -330,45 +358,33 @@ const styles = StyleSheet.create({
     marginTop: 5,
     flexShrink: 0,
   },
-  eventMain: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
   eventTitle: {
-    fontSize: typography.sm,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    flex: 1,
-    lineHeight: 17,
+    fontSize: typography.base,
+    fontWeight: '700',
+    lineHeight: 19,
   },
   eventTime: {
+    fontSize: typography.xs,
+    marginLeft: 8,
     flexShrink: 0,
-    fontSize: typography.xs,
-    color: colors.textTertiary,
-    marginTop: 1,
   },
-  eventMeta: {
-    fontSize: typography.xs,
-    color: colors.textTertiary,
+  eventTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
   },
-
-  // Expanded
   eventExpanded: {
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderSubtle,
+    borderRadius: radius.sm,
+    padding: 10,
   },
   expandedLabel: {
     fontSize: typography.xs,
-    color: colors.textSecondary,
-    fontWeight: '500',
     marginBottom: 4,
+    fontWeight: '500',
   },
-  expandedTags: {
-    flexDirection: 'row',
-    gap: 6,
+  expandedHint: {
+    fontSize: typography.xs,
+    fontWeight: '500',
   },
 
   // Empty state
