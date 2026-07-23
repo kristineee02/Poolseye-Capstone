@@ -5,16 +5,17 @@ import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
 } from 'react-native';
+import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
 import { alerts as initialAlerts } from '../data';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 import ConfirmModal from '../components/ConfirmModal';
+import ProfileHero from '../components/ProfileHero';
 
 function getAlertMeta(alert) {
   const isAlarm = alert.type === 'alarm';
   return {
     isAlarm,
-    code: isAlarm ? 'ALM' : 'WRN',
     priority: isAlarm ? 'HIGH' : 'MED',
     accent: isAlarm ? colors.alarm : colors.warn,
     accentTint: isAlarm ? colors.alarmTint : colors.warnTint,
@@ -34,10 +35,38 @@ function PriorityBadge({ label, accent, accentTint }) {
   );
 }
 
-function CodeIcon({ code, accent }) {
+/** Intrusion = alert triangle · Warning = alert circle */
+function CodeIcon({ isAlarm, accent, code }) {
+  const alarm = typeof isAlarm === 'boolean' ? isAlarm : code === 'ALM';
   return (
-    <View style={[styles.codeIcon, { backgroundColor: accent }]}>
-      <Text style={styles.codeIconText}>{code}</Text>
+    <View style={[styles.codeIcon, { backgroundColor: accent }]} accessibilityLabel={alarm ? 'Alarm' : 'Warning'}>
+      <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+        {alarm ? (
+          <>
+            <Path
+              d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
+              stroke="#FFFFFF"
+              strokeWidth={1.85}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <Line x1={12} y1={9} x2={12} y2={13} stroke="#FFFFFF" strokeWidth={1.85} strokeLinecap="round" />
+            <Circle cx={12} cy={17} r={1.15} fill="#FFFFFF" />
+          </>
+        ) : (
+          <>
+            <Circle
+              cx={12}
+              cy={12}
+              r={9}
+              stroke="#FFFFFF"
+              strokeWidth={1.85}
+            />
+            <Line x1={12} y1={8} x2={12} y2={12} stroke="#FFFFFF" strokeWidth={1.85} strokeLinecap="round" />
+            <Circle cx={12} cy={16} r={1.15} fill="#FFFFFF" />
+          </>
+        )}
+      </Svg>
     </View>
   );
 }
@@ -71,7 +100,7 @@ function LatestAlertCard({ alert, onAcknowledge, onDismiss }) {
       </View>
 
       <View style={styles.latestBody}>
-        <CodeIcon code={m.code} accent={m.accent} />
+        <CodeIcon isAlarm={m.isAlarm} accent={m.accent} />
         <View style={styles.latestCopy}>
           <Text style={styles.latestTitle} numberOfLines={2}>{alert.title}</Text>
           <Text style={styles.latestMeta}>{m.line}</Text>
@@ -123,7 +152,7 @@ function RecentAlertRow({ alert, isLast, onPress }) {
       onPress={onPress}
       activeOpacity={0.8}
     >
-      <CodeIcon code={m.code} accent={m.accent} />
+      <CodeIcon isAlarm={m.isAlarm} accent={m.accent} />
       <View style={styles.recentCopy}>
         <Text style={styles.recentTitle} numberOfLines={1}>{alert.title}</Text>
         <Text style={styles.recentMeta} numberOfLines={1}>{m.recentLine}</Text>
@@ -211,6 +240,8 @@ export default function AlertsScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance }]}
         showsVerticalScrollIndicator={false}
       >
+        <ProfileHero online />
+
         <LatestAlertCard
           alert={latest}
           onAcknowledge={handleAcknowledge}
@@ -338,12 +369,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
-  },
-  codeIconText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 0.5,
   },
 
   latestBody: {
