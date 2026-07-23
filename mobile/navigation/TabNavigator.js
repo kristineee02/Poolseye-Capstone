@@ -114,10 +114,10 @@ function PersonIcon({ color, filled }) {
 }
 
 const TABS = [
-  { key: 'alerts',  label: 'Home',    title: 'Dashboard',  subtitle: null, showDutyProfile: true  },
+  { key: 'alerts',  label: 'Home',    title: 'Dashboard',  subtitle: null, showDutyProfile: false },
   { key: 'zones',   label: 'Zones',   title: 'Zones',      subtitle: 'Live geofence status by area', showDutyProfile: false },
   { key: 'log',     label: 'Log',     title: 'Event Log',  subtitle: 'Chronological detection history', showDutyProfile: false },
-  { key: 'profile', label: 'Profile', title: 'Profile',    subtitle: null, showDutyProfile: true  },
+  { key: 'profile', label: 'Profile', title: 'Profile',    subtitle: null, showDutyProfile: false },
 ];
 
 export default function TabNavigator({ alertBadgeCount = 2 }) {
