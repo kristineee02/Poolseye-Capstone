@@ -1,22 +1,12 @@
 // PoolsEye — AppShell
-// Shared header — brand + screen title with duty profile line (replaces duty card)
+// Shared header — screen title only (no brand strip)
 
 import React from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { colors, spacing, typography, radius, shadow } from '../theme/tokens';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 import { useAuth } from '../context/AuthContext';
 import { lifeguard as defaultLifeguard } from '../data';
-
-const logo = require('../assets/logo-header.png');
-
-function BrandMark() {
-  return (
-    <View style={styles.brandMark}>
-      <Image source={logo} style={styles.brandLogo} resizeMode="contain" accessibilityLabel="PoolsEye logo" />
-    </View>
-  );
-}
 
 function OnlineBadge() {
   return (
@@ -40,16 +30,6 @@ export default function AppShell({
 
   return (
     <View style={[styles.header, { paddingTop: headerPaddingTop }]}>
-      <View style={[styles.topRow, { paddingHorizontal: padX }]}>
-        <View style={styles.brand}>
-          <BrandMark />
-          <View>
-            <Text style={styles.brandName}>PoolsEye</Text>
-            <Text style={styles.brandSub}>Lifeguard</Text>
-          </View>
-        </View>
-      </View>
-
       <View style={[styles.titleBlock, { paddingHorizontal: padX }]}>
         <View style={styles.titleRow}>
           <View style={styles.titleCopy}>
@@ -72,41 +52,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgApp,
     paddingBottom: spacing.sm,
   },
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    paddingBottom: spacing.sm,
-  },
-  brand: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexShrink: 1,
-  },
-  brandMark: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  brandLogo: {
-    width: 40,
-    height: 40,
-  },
-  brandName: {
-    fontSize: typography.lg,
-    fontWeight: '700',
-    color: colors.accentStrong,
-  },
-  brandSub: {
-    fontSize: typography.xs,
-    color: colors.textSecondary,
-    marginTop: 1,
-  },
   titleBlock: {
-    paddingTop: 2,
+    paddingTop: 4,
     paddingBottom: 4,
   },
   titleRow: {
