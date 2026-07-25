@@ -1,5 +1,5 @@
 // PoolsEye — ProfileScreen
-// Centered profile card (avatar + role + shift stats) → notifs → session
+// Centered profile card → notification prefs → sign out
 
 import React, { useState } from 'react';
 import {
@@ -22,14 +22,7 @@ function getInitials(name, fallback = 'LG') {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-function roleShort(role) {
-  if (!role) return 'Lifeguard';
-  if (/primary/i.test(role)) return 'Primary';
-  if (/backup/i.test(role)) return 'Backup';
-  return 'Lifeguard';
-}
-
-function ProfileIdentity({ name, initials, roleLabel, online, stats }) {
+function ProfileIdentity({ name, initials, roleLabel, online }) {
   return (
     <View style={styles.identityCard}>
       <View style={styles.avatarWrap}>
@@ -40,27 +33,7 @@ function ProfileIdentity({ name, initials, roleLabel, online, stats }) {
       </View>
 
       <Text style={styles.identityName}>{name}</Text>
-
-      <View style={styles.locationRow}>
-        <Text style={styles.locationText}>{roleLabel}</Text>
-      </View>
-
-      <View style={styles.statsRow}>
-        {stats.map((stat, i) => (
-          <View
-            key={stat.label}
-            style={[styles.statCol, i < stats.length - 1 && styles.statColBorder]}
-          >
-            <Text style={styles.statLabel}>{stat.label}</Text>
-            <View style={styles.statValueRow}>
-              <View style={[styles.statIcon, { backgroundColor: stat.tint }]}>
-                <Text style={[styles.statIconText, { color: stat.color }]}>{stat.icon}</Text>
-              </View>
-              <Text style={styles.statValue} numberOfLines={1}>{stat.value}</Text>
-            </View>
-          </View>
-        ))}
-      </View>
+      <Text style={styles.roleText}>{roleLabel}</Text>
     </View>
   );
 }
@@ -77,33 +50,18 @@ function NotifRow({ setting, value, onChange, isLast }) {
   );
 }
 
-function SessionActions({ onSignOutPress, onEndShiftPress }) {
+function SignOutAction({ onPress }) {
   return (
-    <View style={styles.actionsBlock}>
-      <TouchableOpacity style={styles.actionBtn} onPress={onSignOutPress} activeOpacity={0.8}>
-        <View style={[styles.actionIcon, { backgroundColor: colors.bgInset }]}>
-          <Text style={{ color: colors.textSecondary, fontSize: 14 }}>↩</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.actionLabel}>Sign out</Text>
-          <Text style={styles.actionDesc}>Return to login screen</Text>
-        </View>
-        <Text style={styles.actionChevron}>›</Text>
-      </TouchableOpacity>
-
-      <View style={styles.actionRowBorder} />
-
-      <TouchableOpacity style={styles.actionBtn} onPress={onEndShiftPress} activeOpacity={0.8}>
-        <View style={[styles.actionIcon, { backgroundColor: colors.alarmTint }]}>
-          <Text style={{ color: colors.alarm, fontSize: 14 }}>🚪</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.actionLabel, { color: colors.alarm }]}>End shift</Text>
-          <Text style={styles.actionDesc}>Notify backup and go off duty</Text>
-        </View>
-        <Text style={[styles.actionChevron, { color: colors.alarm }]}>›</Text>
-      </TouchableOpacity>
-    </View>
+    <TouchableOpacity style={styles.actionBtn} onPress={onPress} activeOpacity={0.8}>
+      <View style={[styles.actionIcon, { backgroundColor: colors.alarmTint }]}>
+        <Text style={{ color: colors.alarm, fontSize: 14 }}>↩</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.actionLabel, { color: colors.alarm }]}>Sign out</Text>
+        <Text style={styles.actionDesc}>Return to login screen</Text>
+      </View>
+      <Text style={[styles.actionChevron, { color: colors.alarm }]}>›</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -113,45 +71,15 @@ export default function ProfileScreen() {
   const lifeguard = user || defaultLifeguard;
   const name = lifeguard.name || 'Lifeguard';
   const initials = lifeguard.initials || getInitials(name);
-  const shiftStart = lifeguard.shiftStart || '—';
-  const shiftEnd = lifeguard.shiftEnd || '—';
-  const roleLabel = 'Lifeguard';
 
   const [settings, setSettings] = useState(
     notificationSettings.reduce((acc, s) => ({ ...acc, [s.id]: s.enabled }), {})
   );
-  const [confirmKind, setConfirmKind] = useState(null);
+  const [showSignOut, setShowSignOut] = useState(false);
 
   const handleToggle = (id, value) => {
     setSettings((prev) => ({ ...prev, [id]: value }));
   };
-
-  const stats = [
-    {
-      label: 'Shift start',
-      value: shiftStart,
-      icon: '◷',
-      color: colors.accentStrong,
-      tint: colors.accentTint,
-    },
-    {
-      label: 'Shift end',
-      value: shiftEnd,
-      icon: '◑',
-      color: colors.warn,
-      tint: colors.warnTint,
-    },
-    {
-      label: 'Role',
-      value: roleShort(lifeguard.role),
-      icon: '✓',
-      color: colors.safe,
-      tint: colors.safeTint,
-    },
-  ];
-
-  const isSignOut = confirmKind === 'signOut';
-  const isEndShift = confirmKind === 'endShift';
 
   return (
     <>
@@ -163,9 +91,8 @@ export default function ProfileScreen() {
         <ProfileIdentity
           name={name}
           initials={initials}
-          roleLabel={roleLabel}
+          roleLabel="Lifeguard"
           online
-          stats={stats}
         />
 
         <SectionLabel>Notification preferences</SectionLabel>
@@ -191,33 +118,18 @@ export default function ProfileScreen() {
 
         <SectionLabel>Session</SectionLabel>
         <Panel>
-          <SessionActions
-            onSignOutPress={() => setConfirmKind('signOut')}
-            onEndShiftPress={() => setConfirmKind('endShift')}
-          />
+          <SignOutAction onPress={() => setShowSignOut(true)} />
         </Panel>
 
-        <Text style={styles.footerText}>PoolsEye Lifeguard · v1.0.0</Text>
         <View style={{ height: spacing.xl }} />
       </ScrollView>
 
       <ConfirmModal
-        visible={isSignOut}
-        onClose={() => setConfirmKind(null)}
+        visible={showSignOut}
+        onClose={() => setShowSignOut(false)}
         title="Sign out"
         message="Leave the lifeguard app? You’ll need to sign in again to continue."
         confirmText="Sign out"
-        cancelText="Cancel"
-        isDangerous
-        onConfirm={signOut}
-      />
-
-      <ConfirmModal
-        visible={isEndShift}
-        onClose={() => setConfirmKind(null)}
-        title="End shift"
-        message="Are you sure you want to end your shift? The backup lifeguard will be notified."
-        confirmText="End shift"
         cancelText="Cancel"
         isDangerous
         onConfirm={signOut}
@@ -241,9 +153,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
-    paddingTop: 22,
-    paddingBottom: 8,
-    paddingHorizontal: 12,
+    paddingTop: 28,
+    paddingBottom: 24,
+    paddingHorizontal: 16,
     alignItems: 'center',
     ...shadow.sm,
   },
@@ -285,64 +197,12 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
     textAlign: 'center',
   },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+  roleText: {
     marginTop: 6,
-    marginBottom: 18,
-  },
-  locationText: {
     fontSize: typography.sm,
     color: colors.textSecondary,
     fontWeight: '500',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    width: '100%',
-    borderTopWidth: 1,
-    borderTopColor: colors.borderSubtle,
-    paddingTop: 14,
-    paddingBottom: 10,
-  },
-  statCol: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 4,
-  },
-  statColBorder: {
-    borderRightWidth: 1,
-    borderRightColor: colors.borderSubtle,
-  },
-  statLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.textTertiary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  statValueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  statIcon: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statIconText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  statValue: {
-    fontSize: typography.sm,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    maxWidth: 72,
+    textAlign: 'center',
   },
 
   notifRow: {
@@ -371,9 +231,6 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontWeight: '500',
   },
-  actionsBlock: {
-    paddingVertical: 4,
-  },
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -401,16 +258,5 @@ const styles = StyleSheet.create({
   actionChevron: {
     fontSize: 20,
     color: colors.textTertiary,
-  },
-  actionRowBorder: {
-    height: 1,
-    backgroundColor: colors.borderSubtle,
-    marginLeft: spacing.md + 36 + 12,
-  },
-  footerText: {
-    textAlign: 'center',
-    fontSize: typography.xs,
-    color: colors.textTertiary,
-    marginTop: 8,
   },
 });

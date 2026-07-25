@@ -29,9 +29,11 @@ export const colors = {
   safeTint:   '#E6F6EF',
   safeBorder: '#B3E2D0',
 
-  warn:       '#B6790A',
-  warnTint:   '#FBF1DE',
-  warnBorder: '#EDD59A',
+  warn:       '#E6B800',
+  warnTint:   '#FFF9E0',
+  warnBorder: '#F0D86A',
+  warnDark:   '#8A7000',
+  warnMid:    '#C4A000',
 
   alarm:       '#D6364A',
   alarmTint:   '#FCEAEE',

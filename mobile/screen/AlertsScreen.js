@@ -20,8 +20,8 @@ function getAlertMeta(alert) {
     accent: isAlarm ? colors.alarm : colors.warn,
     accentTint: isAlarm ? colors.alarmTint : colors.warnTint,
     accentBorder: isAlarm ? colors.alarmBorder : colors.warnBorder,
-    accentDark: isAlarm ? colors.alarmDark : '#5C3A00',
-    accentMid: isAlarm ? colors.alarmMid : '#8A5A08',
+    accentDark: isAlarm ? colors.alarmDark : colors.warnDark,
+    accentMid: isAlarm ? colors.alarmMid : colors.warnMid,
     line: `${alert.zone} · ${alert.time} · ${isAlarm ? 'Needs response' : 'Check feed'}`,
     recentLine: `${alert.zone} · ${alert.time} · ${isAlarm ? 'HIGH' : 'MED'}`,
   };

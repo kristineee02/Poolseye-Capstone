@@ -1,31 +1,30 @@
 // PoolsEye — Tab Navigator
-// Floating pill tab bar — icon circles, teal active state, safe-area aware
+// Compact floating pill (centered) — blue active circle, like reference
 
 import React, { useState } from 'react';
 import {
   View, Text, Pressable, StyleSheet,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import { colors, radius } from '../theme/tokens';
+import { colors, radius, shadow } from '../theme/tokens';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 
 import AlertsScreen  from '../screen/AlertsScreen';
-import ZonesScreen   from '../screen/ZonesScreen';
 import LogScreen     from '../screen/LogScreen';
 import ProfileScreen from '../screen/ProfileScreen';
 import AppShell      from '../components/AppShell';
 
 function HomeIcon({ color, filled, hasBadge, badgeCount }) {
-  const stroke = filled ? '#FFFFFF' : color;
+  const stroke = filled ? color : color;
   const fill = filled ? color : 'none';
 
   return (
     <View style={iconStyles.iconWrap}>
-      <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
         <Path
           d="M12 3.2 4.2 9.8V20c0 .66.54 1.2 1.2 1.2h13.2c.66 0 1.2-.54 1.2-1.2V9.8L12 3.2z"
           stroke={stroke}
-          strokeWidth={1.75}
+          strokeWidth={1.8}
           strokeLinecap="round"
           strokeLinejoin="round"
           fill={fill}
@@ -33,7 +32,7 @@ function HomeIcon({ color, filled, hasBadge, badgeCount }) {
         <Path
           d="M10.2 21.2V16.2c0-1 .82-1.8 1.8-1.8s1.8.8 1.8 1.8v5"
           stroke={stroke}
-          strokeWidth={1.75}
+          strokeWidth={1.8}
           strokeLinecap="round"
           strokeLinejoin="round"
           fill="none"
@@ -48,41 +47,15 @@ function HomeIcon({ color, filled, hasBadge, badgeCount }) {
   );
 }
 
-function ShieldIcon({ color, filled }) {
+function ClipboardIcon({ color }) {
   return (
     <View style={iconStyles.iconWrap}>
-      <View
-        style={[
-          iconStyles.shield,
-          filled
-            ? { backgroundColor: color, borderColor: color }
-            : { backgroundColor: 'transparent', borderColor: color },
-        ]}
-      >
-        {filled ? (
-          <View style={[iconStyles.shieldInner, { backgroundColor: '#FFFFFF' }]} />
-        ) : (
-          <View style={[iconStyles.shieldInner, { backgroundColor: color }]} />
-        )}
-      </View>
-    </View>
-  );
-}
-
-function ClipboardIcon({ color, filled }) {
-  const lineColor = filled ? '#FFFFFF' : color;
-  return (
-    <View style={iconStyles.iconWrap}>
-      <View
-        style={[
-          iconStyles.clipboard,
-          filled
-            ? { backgroundColor: color, borderColor: color }
-            : { backgroundColor: 'transparent', borderColor: color },
-        ]}
-      >
+      <View style={[iconStyles.clipboard, { borderColor: color }]}>
         {[0, 1, 2].map((i) => (
-          <View key={i} style={[iconStyles.clipLine, { backgroundColor: lineColor, width: i === 2 ? 8 : 12 }]} />
+          <View
+            key={i}
+            style={[iconStyles.clipLine, { backgroundColor: color, width: i === 2 ? 5 : 8 }]}
+          />
         ))}
       </View>
       <View style={[iconStyles.clipTop, { backgroundColor: color }]} />
@@ -115,41 +88,40 @@ function PersonIcon({ color, filled }) {
 
 const TABS = [
   { key: 'alerts',  label: 'Home',    title: 'Dashboard',  subtitle: null, showDutyProfile: false },
-  { key: 'zones',   label: 'Zones',   title: 'Zones',      subtitle: 'Live geofence status by area', showDutyProfile: false },
   { key: 'log',     label: 'Log',     title: 'Event Log',  subtitle: 'Chronological detection history', showDutyProfile: false },
   { key: 'profile', label: 'Profile', title: 'Profile',    subtitle: null, showDutyProfile: false },
 ];
 
 export default function TabNavigator({ alertBadgeCount = 2 }) {
   const [active, setActive] = useState('alerts');
-  const { tabBarPaddingBottom, tabBarPaddingHorizontal, horizontalInset } = useLayoutInsets();
+  const { tabBarPaddingBottom, horizontalInset } = useLayoutInsets();
 
   const screens = {
     alerts:  <AlertsScreen />,
-    zones:   <ZonesScreen />,
     log:     <LogScreen />,
     profile: <ProfileScreen />,
   };
 
   const activeTab = TABS.find((t) => t.key === active) || TABS[0];
 
-  const renderIcon = (key, isActive, pressed) => {
-    const filled = isActive || pressed;
-    const iconColor = filled ? colors.accent : colors.textTertiary;
+  const renderIcon = (key, isActive) => {
+    const iconColor = isActive ? '#FFFFFF' : colors.textTertiary;
     switch (key) {
       case 'alerts':
         return (
           <HomeIcon
             color={iconColor}
-            filled={filled}
+            filled={isActive}
             hasBadge={!isActive && alertBadgeCount > 0}
             badgeCount={alertBadgeCount}
           />
         );
-      case 'zones':   return <ShieldIcon color={iconColor} filled={filled} />;
-      case 'log':     return <ClipboardIcon color={iconColor} filled={filled} />;
-      case 'profile': return <PersonIcon color={iconColor} filled={filled} />;
-      default:        return null;
+      case 'log':
+        return <ClipboardIcon color={iconColor} />;
+      case 'profile':
+        return <PersonIcon color={iconColor} filled={isActive} />;
+      default:
+        return null;
     }
   };
 
@@ -166,13 +138,7 @@ export default function TabNavigator({ alertBadgeCount = 2 }) {
       </View>
 
       <View
-        style={[
-          styles.tabBarAnchor,
-          {
-            marginBottom: tabBarPaddingBottom,
-            marginHorizontal: tabBarPaddingHorizontal,
-          },
-        ]}
+        style={[styles.tabBarAnchor, { marginBottom: tabBarPaddingBottom }]}
         pointerEvents="box-none"
       >
         <View style={styles.tabBarPill}>
@@ -181,13 +147,22 @@ export default function TabNavigator({ alertBadgeCount = 2 }) {
             return (
               <Pressable
                 key={tab.key}
-                style={styles.tabButton}
+                style={({ pressed }) => [
+                  styles.tabButton,
+                  isActive && styles.tabSlotActive,
+                  pressed && !isActive && styles.tabSlotPressed,
+                ]}
                 onPress={() => setActive(tab.key)}
+                android_ripple={{
+                  color: 'rgba(0, 123, 255, 0.18)',
+                  borderless: false,
+                  radius: 22,
+                }}
                 accessibilityRole="button"
                 accessibilityLabel={tab.label}
                 accessibilityState={{ selected: isActive }}
               >
-                {({ pressed }) => renderIcon(tab.key, isActive, pressed)}
+                {renderIcon(tab.key, isActive)}
               </Pressable>
             );
           })}
@@ -201,81 +176,65 @@ const iconStyles = StyleSheet.create({
   iconWrap: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 24,
-    height: 24,
+    width: 18,
+    height: 18,
   },
   badge: {
     position: 'absolute',
-    top: -2,
-    right: -4,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    top: -4,
+    right: -6,
+    minWidth: 12,
+    height: 12,
+    borderRadius: 6,
     backgroundColor: colors.alarm,
     borderWidth: 1.5,
     borderColor: colors.bgPanel,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 2,
   },
   badgeText: {
-    fontSize: 7.5,
+    fontSize: 7,
     fontWeight: '700',
     color: '#fff',
   },
-  shield: {
-    width: 14,
-    height: 16,
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-    borderBottomLeftRadius: 6,
-    borderBottomRightRadius: 6,
-    borderWidth: 1.8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  shieldInner: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-  },
   clipboard: {
-    width: 14,
-    height: 16,
+    width: 11,
+    height: 13,
     borderRadius: 2,
-    borderWidth: 1.5,
-    marginTop: 5,
-    paddingTop: 4,
-    paddingHorizontal: 2,
-    gap: 2.5,
+    borderWidth: 1.4,
+    marginTop: 3,
+    paddingTop: 2.5,
+    paddingHorizontal: 1.5,
     alignItems: 'flex-start',
     justifyContent: 'center',
+    backgroundColor: 'transparent',
   },
   clipLine: {
-    height: 1.5,
+    height: 1.2,
     borderRadius: 1,
-    marginBottom: 2,
+    marginBottom: 1.4,
   },
   clipTop: {
     position: 'absolute',
-    top: 2,
-    width: 7,
-    height: 3,
-    borderRadius: 1.5,
+    top: 0.5,
+    width: 5.5,
+    height: 2.5,
+    borderRadius: 1.25,
   },
   personHead: {
-    width: 9,
-    height: 9,
-    borderRadius: 4.5,
-    borderWidth: 1.6,
-    marginBottom: 2,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    borderWidth: 1.4,
+    marginBottom: 1.5,
   },
   personBody: {
-    width: 14,
-    height: 7,
-    borderTopLeftRadius: 7,
-    borderTopRightRadius: 7,
-    borderWidth: 1.6,
+    width: 11,
+    height: 5.5,
+    borderTopLeftRadius: 5.5,
+    borderTopRightRadius: 5.5,
+    borderWidth: 1.4,
     borderBottomWidth: 0,
   },
 });
@@ -295,31 +254,32 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     backgroundColor: 'transparent',
-    elevation: 0,
-    shadowOpacity: 0,
   },
   tabBarPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    alignSelf: 'stretch',
-    width: '100%',
-    backgroundColor: colors.bgPanel,
+    justifyContent: 'center',
+    gap: 6,
+    height: 52,
+    paddingHorizontal: 10,
     borderRadius: radius.full,
+    backgroundColor: colors.bgPanel,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    shadowColor: colors.accentDeep,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 3,
+    ...shadow.md,
   },
   tabButton: {
-    flex: 1,
+    width: 44,
+    height: 44,
+    borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 48,
+    overflow: 'hidden',
+  },
+  tabSlotActive: {
+    backgroundColor: colors.accent,
+  },
+  tabSlotPressed: {
+    backgroundColor: colors.accentTint,
   },
 });

@@ -27,8 +27,8 @@ const TYPE_CONFIG = {
     tagType: 'warn',
     bg: colors.warnTint,
     border: colors.warnBorder,
-    textDark: '#5C3A00',
-    textMid: '#8A5A08',
+    textDark: colors.warnDark,
+    textMid: colors.warnMid,
   },
   safe: {
     dot: colors.safe,
