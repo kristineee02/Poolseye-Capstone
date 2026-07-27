@@ -27,9 +27,8 @@ export default function LoginPage() {
       <div className="login-card">
         <div className="login-brand">
           <div className="login-logo-wrap">
-            <Logo size={52} />
+            <Logo size={120} />
           </div>
-          <h1>PoolsEye</h1>
           <p>Admin sign in</p>
         </div>
 
