@@ -5,45 +5,17 @@ import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator,
-  ScrollView,
+  ScrollView, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, {
-  Path, Circle, Line, Defs, Stop,
-  LinearGradient as SvgLinearGradient, Text as SvgText,
-} from 'react-native-svg';
+import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, typography } from '../theme/tokens';
 import { DEMO_LIFEGUARD } from '../auth/demoAuth';
 import { useAuth } from '../context/AuthContext';
 
 const WEB_GRADIENT = ['#4FC3F7', '#007BFF', '#1565C0', '#0D47A1'];
-
-// Same gradient wordmark as the web login title
-function BrandTitle() {
-  return (
-    <Svg width={240} height={48}>
-      <Defs>
-        <SvgLinearGradient id="brandGrad" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor="#FFFFFF" />
-          <Stop offset="0.55" stopColor="#FFFFFF" />
-          <Stop offset="1" stopColor="#B3E5FC" />
-        </SvgLinearGradient>
-      </Defs>
-      <SvgText
-        x="120"
-        y="34"
-        textAnchor="middle"
-        fontSize="34"
-        fontWeight="800"
-        letterSpacing="-0.5"
-        fill="url(#brandGrad)"
-      >
-        PoolsEye
-      </SvgText>
-    </Svg>
-  );
-}
+const logo = require('../assets/logo.png');
 
 function PasswordToggleIcon({ visible, color }) {
   if (visible) {
@@ -116,9 +88,11 @@ export default function LoginScreen() {
             locations={[0, 0.32, 0.68, 1]}
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
-            style={[styles.header, { paddingTop: insets.top + 48 }]}
+            style={[styles.header, { paddingTop: insets.top + 36 }]}
           >
-            <BrandTitle />
+            <View style={styles.logoWrap}>
+              <Image source={logo} style={styles.logo} resizeMode="contain" accessibilityLabel="PoolsEye logo" />
+            </View>
           </LinearGradient>
 
           {/* ── White form sheet with large top radius ── */}
@@ -206,6 +180,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingBottom: 56,
+  },
+  logoWrap: {
+    width: 180,
+    height: 180,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 6,
+    overflow: 'hidden',
+    shadowColor: '#0D47A1',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  logo: {
+    width: '100%',
+    height: '100%',
   },
 
   // White sheet overlapping the gradient

@@ -16,9 +16,8 @@ export default function NavRail({ activePage, onNavigate, onRequestSignOut }) {
       <div className="navrail-top">
         <div className="navrail-brand">
           <span className="navrail-mark" aria-hidden="true">
-            <Logo size={46} />
+            <Logo size={56} />
           </span>
-          <span className="navrail-name">PoolsEye</span>
         </div>
 
         <div className="navrail-items">
