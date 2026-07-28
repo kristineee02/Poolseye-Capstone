@@ -2,7 +2,7 @@
   "expo": {
     "name": "PoolsEye",
     "slug": "poolseye-capstone",
-    "version": "1.2.0",
+    "version": "1.2.4",
     "orientation": "portrait",
     "icon": "./assets/icon-v12.png",
     "userInterfaceStyle": "light",

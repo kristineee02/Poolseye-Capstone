@@ -2,27 +2,29 @@
 // Mirrors the web dashboard blue brand palette
 
 export const colors = {
-  // Surfaces
-  bgApp:    '#F5F9FC',
+  // Surfaces — Sky Harmony
+  bgApp:    '#F0F8FF',
   bgPanel:  '#FFFFFF',
   bgRaised: '#FAFCFE',
-  bgInset:  '#EEF4F9',
+  bgInset:  '#E8F3FC',
 
   // Borders
   borderSubtle: '#DCE8F2',
   borderStrong: '#C5D9E8',
 
   // Text
-  textPrimary:   '#0D1B2A',
+  textPrimary:   '#0F172A',
   textSecondary: '#5A6B7D',
   textTertiary:  '#8FA3B8',
 
-  // Brand blues
-  accent:       '#007BFF',
-  accentStrong: '#1565C0',
-  accentDeep:   '#0D47A1',
-  accentLight:  '#4FC3F7',
-  accentTint:   '#E8F4FF',
+  // Brand blues — Sky Harmony
+  accent:       '#1E6FFF',
+  accentStrong: '#1E6FFF',
+  accentDeep:   '#1557D6',
+  accentLight:  '#4DB8FF',
+  accentHighlight: '#A7ECFF',
+  accentTint:   '#F0F8FF',
+  brandGradient: ['#4DB8FF', '#1E6FFF'],
 
   // Status trio
   safe:       '#1B9C6E',
@@ -72,14 +74,14 @@ export const typography = {
 
 export const shadow = {
   sm: {
-    shadowColor: '#0D47A1',
+    shadowColor: '#1E6FFF',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 3,
     elevation: 1,
   },
   md: {
-    shadowColor: '#0D47A1',
+    shadowColor: '#1E6FFF',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 10,

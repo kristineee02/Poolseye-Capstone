@@ -128,7 +128,7 @@ export default function ConfirmModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(13, 71, 161, 0.28)',
+    backgroundColor: 'rgba(30, 111, 255, 0.28)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.lg,

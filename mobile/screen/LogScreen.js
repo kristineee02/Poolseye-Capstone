@@ -1,228 +1,182 @@
-// PoolsEye — LogScreen
-// Full chronological event log matching the web HistoryPage/EventLogPanel.
-// Supports filter by type, shows confidence bars, and groups by date.
+// PoolsEye — LogScreen (All Alerts)
+// Card design: tinted panels + left stripe + type/status tags (content unchanged).
 
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  SectionList,
+  View, Text, FlatList, StyleSheet, TouchableOpacity, Modal, Pressable,
 } from 'react-native';
 import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
 import { events } from '../data';
-import { Tag, ConfidenceBar, Mono } from '../components/Primitives';
+import { Tag } from '../components/Primitives';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 
-// ── Event type config ─────────────────────────────────────────────────────────
+const FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'new', label: 'New' },
+  { key: 'ack', label: 'Acknowledged' },
+  { key: 'drowning', label: 'Drowning' },
+  { key: 'intrusion', label: 'Intrusion' },
+  { key: 'deep-water', label: 'Deep-Water' },
+  { key: 'child', label: 'Child' },
+];
+
 const TYPE_CONFIG = {
   alarm: {
-    dot: colors.alarm,
-    tagType: 'alarm',
+    accent: colors.alarm,
     bg: colors.alarmTint,
     border: colors.alarmBorder,
-    textDark: colors.alarmDark,
-    textMid: colors.alarmMid,
+    title: colors.alarmDark,
+    meta: colors.alarmMid,
+    label: 'ALARM',
+    tag: 'alarm',
   },
   warn: {
-    dot: colors.warn,
-    tagType: 'warn',
+    accent: colors.warn,
     bg: colors.warnTint,
     border: colors.warnBorder,
-    textDark: colors.warnDark,
-    textMid: colors.warnMid,
-  },
-  safe: {
-    dot: colors.safe,
-    tagType: 'safe',
-    bg: colors.safeTint,
-    border: colors.safeBorder,
-    textDark: colors.textPrimary,
-    textMid: colors.textSecondary,
+    title: colors.warnDark,
+    meta: colors.warnMid,
+    label: 'WARN',
+    tag: 'warn',
   },
   info: {
-    dot: colors.textTertiary,
-    tagType: 'info',
+    accent: colors.textTertiary,
     bg: colors.bgPanel,
     border: colors.borderSubtle,
-    textDark: colors.textPrimary,
-    textMid: colors.textSecondary,
+    title: colors.textPrimary,
+    meta: colors.textSecondary,
+    label: 'INFO',
+    tag: 'info',
+  },
+  safe: {
+    accent: colors.safe,
+    bg: colors.safeTint,
+    border: colors.safeBorder,
+    title: colors.textPrimary,
+    meta: colors.textSecondary,
+    label: 'SAFE',
+    tag: 'safe',
   },
 };
 
 const STATUS_TAG = {
-  resolved:  { type: 'safe',  label: 'Resolved'  },
-  pending:   { type: 'warn',  label: 'Pending'   },
-  dismissed: { type: 'info',  label: 'Dismissed' },
+  new: { type: 'warn', label: 'Pending' },
+  ack: { type: 'safe', label: 'Resolved' },
 };
 
-// ── Single event card (matches Dashboard alert card shape) ────────────────────
-function EventRow({ event }) {
-  const [expanded, setExpanded] = useState(false);
-  const cfg  = TYPE_CONFIG[event.type] || TYPE_CONFIG.info;
-  const stag = STATUS_TAG[event.status] || STATUS_TAG.dismissed;
+function matchesFilter(event, filter) {
+  if (filter === 'all') return true;
+  if (filter === 'new' || filter === 'ack') return event.status === filter;
+  return event.category === filter;
+}
+
+function FilterDropdown({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const current = FILTERS.find((f) => f.key === value) || FILTERS[0];
 
   return (
-    <TouchableOpacity
-      style={[styles.eventCard, { backgroundColor: cfg.bg, borderColor: cfg.border }]}
-      onPress={() => setExpanded((e) => !e)}
-      activeOpacity={0.85}
-    >
-      <View style={[styles.eventStripe, { backgroundColor: cfg.dot }]} />
+    <>
+      <TouchableOpacity
+        style={styles.filterBtn}
+        onPress={() => setOpen(true)}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel={`Filter: ${current.label}`}
+      >
+        <Text style={styles.filterBtnText}>Filter: {current.label}</Text>
+        <Text style={styles.filterChevron}>▾</Text>
+      </TouchableOpacity>
 
-      <View style={styles.eventInner}>
-        <View style={styles.eventHeader}>
-          <View style={[styles.eventDot, { backgroundColor: cfg.dot }]} />
-          <View style={{ flex: 1, marginLeft: 10 }}>
-            <Text style={[styles.eventTitle, { color: cfg.textDark }]} numberOfLines={expanded ? undefined : 2}>
-              {event.title}
-            </Text>
-            <Mono style={{ color: cfg.textMid, marginTop: 2 }}>{event.meta}</Mono>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable style={styles.menuOverlay} onPress={() => setOpen(false)}>
+          <View style={styles.menuCard}>
+            <Text style={styles.menuTitle}>Filter alerts</Text>
+            {FILTERS.map((f) => {
+              const active = f.key === value;
+              return (
+                <TouchableOpacity
+                  key={f.key}
+                  style={[styles.menuItem, active && styles.menuItemActive]}
+                  onPress={() => {
+                    onChange(f.key);
+                    setOpen(false);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.menuItemText, active && styles.menuItemTextActive]}>
+                    {f.label}
+                  </Text>
+                  {active ? <Text style={styles.menuCheck}>✓</Text> : null}
+                </TouchableOpacity>
+              );
+            })}
           </View>
-          <Mono style={[styles.eventTime, { color: cfg.textMid }]}>{event.time}</Mono>
-        </View>
-
-        <View style={styles.eventTags}>
-          <Tag type={cfg.tagType}>{event.type.toUpperCase()}</Tag>
-          <Tag type={stag.type}>{stag.label}</Tag>
-        </View>
-
-        {expanded && (
-          <View style={[styles.eventExpanded, { backgroundColor: 'rgba(13, 27, 42, 0.04)' }]}>
-            {event.confidence !== null && event.confidence !== undefined && (
-              <View style={{ marginBottom: 8 }}>
-                <Text style={[styles.expandedLabel, { color: cfg.textMid }]}>
-                  ML confidence: {Math.round(event.confidence * 100)}%
-                </Text>
-                <ConfidenceBar value={event.confidence} color={cfg.dot} />
-              </View>
-            )}
-            <Text style={[styles.expandedHint, { color: cfg.textMid }]}>
-              Tap again to collapse
-            </Text>
-          </View>
-        )}
-      </View>
-    </TouchableOpacity>
+        </Pressable>
+      </Modal>
+    </>
   );
 }
 
-// ── Date section header ───────────────────────────────────────────────────────
-function DateHeader({ date }) {
-  return (
-    <View style={styles.dateHeader}>
-      <Text style={styles.dateHeaderText}>{date}</Text>
-      <View style={styles.dateHeaderLine} />
-    </View>
-  );
-}
+function AlertCard({ event }) {
+  const cfg = TYPE_CONFIG[event.type] || TYPE_CONFIG.info;
+  const status = STATUS_TAG[event.status] || STATUS_TAG.ack;
 
-// ── Filter chips ──────────────────────────────────────────────────────────────
-const FILTERS = [
-  { key: 'all',   label: 'All'    },
-  { key: 'alarm', label: 'Alarm'  },
-  { key: 'warn',  label: 'Warning' },
-  { key: 'safe',  label: 'Safe'   },
-  { key: 'info',  label: 'System' },
-];
-
-function FilterChips({ active, onSelect }) {
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.filterRow}
-    >
-      {FILTERS.map(f => (
-        <TouchableOpacity
-          key={f.key}
-          style={[styles.filterChip, active === f.key && styles.filterChipActive]}
-          onPress={() => onSelect(f.key)}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.filterChipText, active === f.key && styles.filterChipTextActive]}>
-            {f.label}
+    <View style={[styles.card, { backgroundColor: cfg.bg, borderColor: cfg.border }]}>
+      <View style={[styles.stripe, { backgroundColor: cfg.accent }]} />
+
+      <View style={styles.cardInner}>
+        <View style={styles.cardTop}>
+          <View style={[styles.dot, { backgroundColor: cfg.accent }]} />
+          <Text style={[styles.cardTitle, { color: cfg.title }]} numberOfLines={2}>
+            {event.title}
           </Text>
-        </TouchableOpacity>
-      ))}
-    </ScrollView>
-  );
-}
-
-// ── Stats strip ───────────────────────────────────────────────────────────────
-function StatsStrip({ events }) {
-  const counts = events.reduce((acc, e) => {
-    acc[e.type] = (acc[e.type] || 0) + 1;
-    return acc;
-  }, {});
-  return (
-    <View style={styles.statsStrip}>
-      {[
-        { label: 'Alarms', count: counts.alarm || 0, color: colors.alarm },
-        { label: 'Warnings', count: counts.warn || 0, color: colors.warn  },
-        { label: 'Safe',   count: counts.safe  || 0, color: colors.safe  },
-        { label: 'System', count: counts.info  || 0, color: colors.textTertiary },
-      ].map(s => (
-        <View key={s.label} style={styles.statItem}>
-          <Text style={[styles.statCount, { color: s.color }]}>{s.count}</Text>
-          <Text style={styles.statItemLabel}>{s.label}</Text>
+          <Text style={[styles.cardTime, { color: cfg.meta }]}>{event.time}</Text>
         </View>
-      ))}
+
+        <Text style={[styles.cardMeta, { color: cfg.meta }]} numberOfLines={2}>
+          {event.meta}
+        </Text>
+
+        <View style={styles.cardTags}>
+          <Tag type={cfg.tag}>{cfg.label}</Tag>
+          <Tag type={status.type}>{status.label}</Tag>
+        </View>
+      </View>
     </View>
   );
 }
 
-// ── Main screen ───────────────────────────────────────────────────────────────
 export default function LogScreen() {
   const { tabBarClearance } = useLayoutInsets();
   const [filter, setFilter] = useState('all');
 
-  const filtered = useMemo(() =>
-    filter === 'all' ? events : events.filter(e => e.type === filter),
-    [filter]
+  const filtered = useMemo(
+    () => events.filter((e) => matchesFilter(e, filter)),
+    [filter],
   );
-
-  // Group by date
-  const sections = useMemo(() => {
-    const map = {};
-    filtered.forEach(e => {
-      if (!map[e.date]) map[e.date] = [];
-      map[e.date].push(e);
-    });
-    return Object.entries(map).map(([date, data]) => ({ title: date, data }));
-  }, [filtered]);
 
   return (
     <View style={styles.container}>
-      {/* Filters — pinned above list */}
-      <View style={styles.headerArea}>
-        <StatsStrip events={events} />
-        <FilterChips active={filter} onSelect={setFilter} />
-        <View style={styles.resultCount}>
-          <Text style={styles.resultCountText}>
-            {filtered.length} event{filtered.length !== 1 ? 's' : ''}
-            {filter !== 'all' ? ` · filtered by ${filter}` : ' · all types'}
-          </Text>
-        </View>
+      <View style={styles.toolbar}>
+        <Text style={styles.resultText}>
+          {filtered.length} alert{filtered.length !== 1 ? 's' : ''}
+        </Text>
+        <FilterDropdown value={filter} onChange={setFilter} />
       </View>
 
-      {/* Event list grouped by date */}
-      <SectionList
-        sections={sections}
-        keyExtractor={item => item.id}
-        renderItem={({ item }) => (
-          <EventRow event={item} />
-        )}
-        renderSectionHeader={({ section }) => (
-          <DateHeader date={section.title} />
-        )}
+      <FlatList
+        data={filtered}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => <AlertCard event={item} />}
         contentContainerStyle={[styles.listContent, { paddingBottom: tabBarClearance }]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>No events match this filter</Text>
-            <Text style={styles.emptySub}>Try selecting a different event type above.</Text>
+            <Text style={styles.emptyTitle}>No alerts match this filter</Text>
+            <Text style={styles.emptySub}>Try another option in the filter dropdown.</Text>
           </View>
         }
-        stickySectionHeadersEnabled={false}
       />
     </View>
   );
@@ -232,165 +186,152 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bgApp,
-  },
-  headerArea: {
-    backgroundColor: colors.bgPanel,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
-    paddingBottom: 10,
-  },
-
-  // Stats strip
-  statsStrip: {
-    flexDirection: 'row',
     paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-    gap: 0,
   },
-  statItem: {
-    flex: 1,
+  toolbar: {
+    flexDirection: 'row',
     alignItems: 'center',
-    borderRightWidth: 1,
-    borderRightColor: colors.borderSubtle,
-    paddingVertical: 4,
+    justifyContent: 'space-between',
+    paddingBottom: 12,
   },
-  statCount: {
-    fontSize: 20,
-    fontWeight: '700',
-    fontFamily: 'Courier',
-  },
-  statItemLabel: {
-    fontSize: typography.xs,
+  resultText: {
+    fontSize: typography.sm,
     color: colors.textSecondary,
     fontWeight: '500',
-    marginTop: 2,
   },
-
-  // Filters
-  filterRow: {
-    paddingHorizontal: spacing.md,
+  filterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
-    paddingBottom: 2,
-  },
-  filterChip: {
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: radius.full,
-    backgroundColor: colors.bgInset,
+    backgroundColor: colors.bgPanel,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
+    ...shadow.sm,
   },
-  filterChipActive: {
-    backgroundColor: colors.accentTint,
-    borderColor: '#BFE8EE',
-  },
-  filterChipText: {
+  filterBtnText: {
     fontSize: typography.sm,
-    fontWeight: '500',
-    color: colors.textSecondary,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
-  filterChipTextActive: {
-    color: colors.accentStrong,
+  filterChevron: {
+    fontSize: 12,
+    color: colors.accent,
     fontWeight: '700',
   },
-  resultCount: {
-    paddingHorizontal: spacing.md,
-    paddingTop: 8,
+
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
   },
-  resultCountText: {
-    fontSize: typography.xs,
+  menuCard: {
+    backgroundColor: colors.bgPanel,
+    borderRadius: radius.xl,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    ...shadow.md,
+  },
+  menuTitle: {
+    fontSize: typography.sm,
+    fontWeight: '700',
     color: colors.textTertiary,
-    fontFamily: 'Courier',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-
-  // List
-  listContent: {
-    padding: spacing.md,
-  },
-
-  // Date header
-  dateHeader: {
+  menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 10,
-    marginTop: 12,
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: radius.md,
   },
-  dateHeaderText: {
-    fontSize: typography.xs,
+  menuItemActive: {
+    backgroundColor: colors.accentTint,
+  },
+  menuItemText: {
+    fontSize: typography.md,
+    color: colors.textPrimary,
+    fontWeight: '500',
+  },
+  menuItemTextActive: {
+    color: colors.accent,
     fontWeight: '700',
-    color: colors.textTertiary,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    flexShrink: 0,
   },
-  dateHeaderLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.borderSubtle,
+  menuCheck: {
+    color: colors.accent,
+    fontWeight: '700',
+    fontSize: 14,
   },
 
-  // Event card — same rounded card language as Dashboard alerts
-  eventCard: {
+  listContent: {
+    gap: 10,
+    paddingBottom: 8,
+  },
+
+  card: {
     borderRadius: radius.lg,
     borderWidth: 1,
     overflow: 'hidden',
     flexDirection: 'row',
-    marginBottom: 10,
     ...shadow.sm,
   },
-  eventStripe: {
-    width: 3,
+  stripe: {
+    width: 4,
   },
-  eventInner: {
+  cardInner: {
     flex: 1,
     padding: 13,
-    gap: 10,
+    gap: 8,
   },
-  eventHeader: {
+  cardTop: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    gap: 10,
   },
-  eventDot: {
+  dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     marginTop: 5,
     flexShrink: 0,
   },
-  eventTitle: {
+  cardTitle: {
+    flex: 1,
     fontSize: typography.base,
     fontWeight: '700',
     lineHeight: 19,
   },
-  eventTime: {
+  cardTime: {
     fontSize: typography.xs,
-    marginLeft: 8,
+    fontWeight: '600',
     flexShrink: 0,
+    marginTop: 2,
   },
-  eventTags: {
+  cardMeta: {
+    fontSize: typography.sm,
+    lineHeight: 18,
+    paddingLeft: 18,
+  },
+  cardTags: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-  },
-  eventExpanded: {
-    borderRadius: radius.sm,
-    padding: 10,
-  },
-  expandedLabel: {
-    fontSize: typography.xs,
-    marginBottom: 4,
-    fontWeight: '500',
-  },
-  expandedHint: {
-    fontSize: typography.xs,
-    fontWeight: '500',
+    paddingLeft: 18,
   },
 
-  // Empty state
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 48,
+    paddingHorizontal: 24,
     gap: 8,
   },
   emptyTitle: {

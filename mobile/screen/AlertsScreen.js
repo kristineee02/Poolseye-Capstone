@@ -9,7 +9,6 @@ import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
 import { alerts as initialAlerts } from '../data';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
-import ConfirmModal from '../components/ConfirmModal';
 import ProfileHero from '../components/ProfileHero';
 
 function getAlertMeta(alert) {
@@ -144,14 +143,10 @@ function StatsGrid({ stats }) {
   );
 }
 
-function RecentAlertRow({ alert, isLast, onPress }) {
+function RecentAlertRow({ alert, isLast }) {
   const m = getAlertMeta(alert);
   return (
-    <TouchableOpacity
-      style={[styles.recentRow, !isLast && styles.recentRowBorder]}
-      onPress={onPress}
-      activeOpacity={0.8}
-    >
+    <View style={[styles.recentRow, !isLast && styles.recentRowBorder]}>
       <CodeIcon isAlarm={m.isAlarm} accent={m.accent} />
       <View style={styles.recentCopy}>
         <Text style={styles.recentTitle} numberOfLines={1}>{alert.title}</Text>
@@ -161,22 +156,15 @@ function RecentAlertRow({ alert, isLast, onPress }) {
         <PriorityBadge label={m.priority} accent={m.accent} accentTint={m.accentTint} />
         <PriorityBadge label="NEW" accent={m.accent} accentTint={m.accentTint} />
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
-function RecentAlertsCard({ alerts, onOpen, onViewAll }) {
+function RecentAlertsCard({ alerts }) {
   return (
     <View style={styles.sectionCard}>
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>Recent Alerts</Text>
-        <TouchableOpacity
-          style={styles.viewAllBtn}
-          onPress={onViewAll}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.viewAllText}>View All</Text>
-        </TouchableOpacity>
       </View>
 
       {alerts.length === 0 ? (
@@ -187,7 +175,6 @@ function RecentAlertsCard({ alerts, onOpen, onViewAll }) {
             key={alert.id}
             alert={alert}
             isLast={i === alerts.length - 1}
-            onPress={() => onOpen(alert)}
           />
         ))
       )}
@@ -199,22 +186,15 @@ export default function AlertsScreen() {
   const { tabBarClearance } = useLayoutInsets();
   const [activeAlerts, setActiveAlerts] = useState(initialAlerts);
   const [acknowledged, setAcknowledged] = useState({});
-  const [dismissId, setDismissId] = useState(null);
-  const [detailAlert, setDetailAlert] = useState(null);
-  const [showViewAll, setShowViewAll] = useState(false);
 
   const handleAcknowledge = (id) => {
     const time = new Date().toLocaleTimeString('en-US');
     setAcknowledged((prev) => ({ ...prev, [id]: time }));
     setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
-    setDetailAlert(null);
   };
 
-  const confirmDismiss = () => {
-    if (!dismissId) return;
-    setActiveAlerts((prev) => prev.filter((a) => a.id !== dismissId));
-    setDismissId(null);
-    setDetailAlert(null);
+  const handleDismiss = (id) => {
+    setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
   };
 
   const latest = activeAlerts[0] || null;
@@ -234,84 +214,25 @@ export default function AlertsScreen() {
   }, [activeAlerts, acknowledged]);
 
   return (
-    <>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <ProfileHero online />
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance }]}
+      showsVerticalScrollIndicator={false}
+    >
+      <ProfileHero online />
 
-        <LatestAlertCard
-          alert={latest}
-          onAcknowledge={handleAcknowledge}
-          onDismiss={setDismissId}
-        />
-
-        <StatsGrid stats={stats} />
-
-        <RecentAlertsCard
-          alerts={recent}
-          onOpen={setDetailAlert}
-          onViewAll={() => setShowViewAll(true)}
-        />
-
-        <View style={{ height: spacing.sm }} />
-      </ScrollView>
-
-      <ConfirmModal
-        visible={!!dismissId}
-        onClose={() => setDismissId(null)}
-        title="Dismiss alert"
-        message="Mark this alert as dismissed without responding?"
-        confirmText="Dismiss"
-        cancelText="Cancel"
-        isDangerous
-        onConfirm={confirmDismiss}
+      <LatestAlertCard
+        alert={latest}
+        onAcknowledge={handleAcknowledge}
+        onDismiss={handleDismiss}
       />
 
-      <ConfirmModal
-        visible={!!detailAlert}
-        onClose={() => setDetailAlert(null)}
-        title={detailAlert?.title || 'Alert'}
-        message={
-          detailAlert
-            ? `${detailAlert.detail}\n\n${detailAlert.meta}`
-            : ''
-        }
-        actions={[
-          {
-            label: 'Dismiss',
-            tone: 'danger',
-            onPress: () => {
-              if (!detailAlert) return;
-              const id = detailAlert.id;
-              setDetailAlert(null);
-              setDismissId(id);
-            },
-          },
-          {
-            label: 'Acknowledge',
-            tone: 'primary',
-            onPress: () => {
-              if (detailAlert) handleAcknowledge(detailAlert.id);
-            },
-          },
-          {
-            label: 'Close',
-            tone: 'secondary',
-            onPress: () => setDetailAlert(null),
-          },
-        ]}
-      />
+      <StatsGrid stats={stats} />
 
-      <ConfirmModal
-        visible={showViewAll}
-        onClose={() => setShowViewAll(false)}
-        title="Recent alerts"
-        message="Open Event Log from the bottom tab for full history."
-      />
-    </>
+      <RecentAlertsCard alerts={recent} />
+
+      <View style={{ height: spacing.sm }} />
+    </ScrollView>
   );
 }
 
