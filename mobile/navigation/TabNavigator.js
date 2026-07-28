@@ -88,7 +88,7 @@ function PersonIcon({ color, filled }) {
 
 const TABS = [
   { key: 'alerts',  label: 'Home',    title: 'Dashboard',  subtitle: null, showDutyProfile: false },
-  { key: 'log',     label: 'Log',     title: 'Event Log',  subtitle: 'Chronological detection history', showDutyProfile: false },
+  { key: 'log',     label: 'Log',     title: 'All Alerts',  subtitle: null, showDutyProfile: false },
   { key: 'profile', label: 'Profile', title: 'Profile',    subtitle: null, showDutyProfile: false },
 ];
 
@@ -154,7 +154,7 @@ export default function TabNavigator({ alertBadgeCount = 2 }) {
                 ]}
                 onPress={() => setActive(tab.key)}
                 android_ripple={{
-                  color: 'rgba(0, 123, 255, 0.18)',
+                  color: 'rgba(30, 111, 255, 0.18)',
                   borderless: false,
                   radius: 22,
                 }}

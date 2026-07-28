@@ -1,5 +1,4 @@
-// PoolsEye — Login screen (gradient header + rounded white form sheet)
-// Layout matches the reference; colors match the web login palette.
+// PoolsEye — Login (Sky Harmony light layout matching design reference)
 
 import React, { useState } from 'react';
 import {
@@ -10,12 +9,45 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, radius, typography } from '../theme/tokens';
+import { colors, typography } from '../theme/tokens';
 import { DEMO_LIFEGUARD } from '../auth/demoAuth';
 import { useAuth } from '../context/AuthContext';
 
-const WEB_GRADIENT = ['#4FC3F7', '#007BFF', '#1565C0', '#0D47A1'];
+const BTN_GRADIENT = colors.brandGradient;
+const ICON_BLUE = colors.accent;
 const logo = require('../assets/logo.png');
+
+function UserIcon({ color = ICON_BLUE }) {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="8" r="3.5" stroke={color} strokeWidth={1.8} />
+      <Path
+        d="M5 19.5c0-3.2 3.1-5.5 7-5.5s7 2.3 7 5.5"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
+function LockIcon({ color = ICON_BLUE }) {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M7 11V8.5a5 5 0 0 1 10 0V11"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+      />
+      <Path
+        d="M6.5 11h11a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 17.5 21h-11A1.5 1.5 0 0 1 5 19.5v-7A1.5 1.5 0 0 1 6.5 11Z"
+        stroke={color}
+        strokeWidth={1.8}
+      />
+    </Svg>
+  );
+}
 
 function PasswordToggleIcon({ visible, color }) {
   if (visible) {
@@ -71,7 +103,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -82,40 +114,43 @@ export default function LoginScreen() {
           showsVerticalScrollIndicator={false}
           bounces={false}
         >
-          {/* ── Gradient header (same blues as web login) ── */}
-          <LinearGradient
-            colors={WEB_GRADIENT}
-            locations={[0, 0.32, 0.68, 1]}
-            start={{ x: 0, y: 0.5 }}
-            end={{ x: 1, y: 0.5 }}
-            style={[styles.header, { paddingTop: insets.top + 36 }]}
-          >
-            <View style={styles.logoWrap}>
-              <Image source={logo} style={styles.logo} resizeMode="contain" accessibilityLabel="PoolsEye logo" />
-            </View>
-          </LinearGradient>
-
-          {/* ── White form sheet with large top radius ── */}
-          <View style={[styles.sheet, { paddingBottom: insets.bottom + 28 }]}>
-            <TextInput
-              style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="Email"
-              placeholderTextColor={colors.textTertiary}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              autoComplete="email"
+          <View style={styles.logoWrap}>
+            <Image
+              source={logo}
+              style={styles.logo}
+              resizeMode="contain"
+              accessibilityLabel="PoolsEye logo"
             />
+          </View>
 
-            <View style={styles.passwordWrap}>
+          <View style={styles.form}>
+            <View style={styles.field}>
+              <View style={styles.fieldIcon}>
+                <UserIcon />
+              </View>
+              <TextInput
+                style={styles.input}
+                value={email}
+                onChangeText={setEmail}
+                placeholder="Email"
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
+              />
+            </View>
+
+            <View style={styles.field}>
+              <View style={styles.fieldIcon}>
+                <LockIcon />
+              </View>
               <TextInput
                 style={[styles.input, styles.passwordInput]}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
                 placeholder="Password"
-                placeholderTextColor={colors.textTertiary}
+                placeholderTextColor="#94A3B8"
                 autoComplete="password"
               />
               <TouchableOpacity
@@ -125,7 +160,7 @@ export default function LoginScreen() {
                 accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
                 activeOpacity={0.7}
               >
-                <PasswordToggleIcon visible={showPassword} color={colors.textTertiary} />
+                <PasswordToggleIcon visible={showPassword} color="#94A3B8" />
               </TouchableOpacity>
             </View>
 
@@ -138,8 +173,7 @@ export default function LoginScreen() {
               style={loading ? styles.buttonDisabled : null}
             >
               <LinearGradient
-                colors={WEB_GRADIENT}
-                locations={[0, 0.4, 0.78, 1]}
+                colors={BTN_GRADIENT}
                 start={{ x: 0, y: 0.5 }}
                 end={{ x: 1, y: 0.5 }}
                 style={styles.button}
@@ -151,11 +185,13 @@ export default function LoginScreen() {
                 )}
               </LinearGradient>
             </TouchableOpacity>
-
-            <Text style={styles.hint}>
-              Demo: {DEMO_LIFEGUARD.email} / {DEMO_LIFEGUARD.password}
-            </Text>
           </View>
+
+          <Text style={styles.hint}>
+            Demo: <Text style={styles.hintLink}>{DEMO_LIFEGUARD.email}</Text>
+            {' / '}
+            {DEMO_LIFEGUARD.password}
+          </Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -165,83 +201,62 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F0F8FF',
   },
   flex: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    paddingVertical: 40,
   },
 
-  // Header — about top 42% of screen feel
-  header: {
-    minHeight: 280,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingBottom: 56,
-  },
   logoWrap: {
-    width: 180,
-    height: 180,
-    borderRadius: 24,
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 6,
-    overflow: 'hidden',
-    shadowColor: '#0D47A1',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.22,
-    shadowRadius: 16,
-    elevation: 6,
+    marginBottom: 40,
   },
   logo: {
+    width: 200,
+    height: 200,
+  },
+
+  form: {
     width: '100%',
-    height: '100%',
   },
-
-  // White sheet overlapping the gradient
-  sheet: {
-    flex: 1,
-    marginTop: -36,
+  field: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 54,
+    borderRadius: 16,
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 36,
-    borderTopRightRadius: 36,
-    paddingHorizontal: 28,
-    paddingTop: 36,
-    shadowColor: '#0D47A1',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 8,
+    marginBottom: 14,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-
+  fieldIcon: {
+    width: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
   input: {
-    height: 52,
-    borderRadius: 12,
-    paddingHorizontal: 18,
+    flex: 1,
+    height: '100%',
     fontSize: typography.md,
     color: colors.textPrimary,
-    backgroundColor: '#F0F2F5',
-    marginBottom: 14,
-  },
-  passwordWrap: {
-    position: 'relative',
-    justifyContent: 'center',
+    paddingVertical: 0,
   },
   passwordInput: {
-    paddingRight: 52,
+    paddingRight: 8,
   },
   eyeButton: {
-    position: 'absolute',
-    right: 10,
-    top: 8,
     width: 36,
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.full,
   },
 
   error: {
@@ -252,22 +267,17 @@ const styles = StyleSheet.create({
     borderColor: colors.alarmBorder,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: radius.md,
+    borderRadius: 12,
     marginBottom: 14,
     overflow: 'hidden',
   },
 
   button: {
-    height: 52,
-    borderRadius: 14,
+    height: 54,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 8,
-    shadowColor: '#0D47A1',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.28,
-    shadowRadius: 16,
-    elevation: 5,
+    marginTop: 10,
   },
   buttonDisabled: {
     opacity: 0.7,
@@ -279,10 +289,14 @@ const styles = StyleSheet.create({
   },
 
   hint: {
-    marginTop: 22,
+    marginTop: 28,
     fontSize: typography.xs,
-    color: colors.textTertiary,
+    color: '#94A3B8',
     textAlign: 'center',
     lineHeight: 18,
+  },
+  hintLink: {
+    color: '#1E6FFF',
+    textDecorationLine: 'underline',
   },
 });
