@@ -1,0 +1,9 @@
+path: ../../dataset/drowning
+train: images/train
+val:   images/val
+test:  images/test
+
+nc: 2
+names:
+  0: person_normal
+  1: person_drowning

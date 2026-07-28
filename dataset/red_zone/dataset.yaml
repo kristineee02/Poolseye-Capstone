@@ -1,0 +1,9 @@
+path: ../../dataset/red_zone
+train: images/train
+val:   images/val
+test:  images/test
+
+nc: 2
+names:
+  0: person_supervised
+  1: person_unsupervised
