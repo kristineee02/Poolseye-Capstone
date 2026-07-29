@@ -1,0 +1,9 @@
+path: ../../dataset/deep_water_boundary
+train: images/train
+val:   images/val
+test:  images/test
+
+nc: 2
+names:
+  0: person_shallow
+  1: person_deep
