@@ -9,7 +9,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, typography } from '../theme/tokens';
+import { colors, typography, spacing, radius, shadow, touch } from '../theme/tokens';
 import { DEMO_LIFEGUARD } from '../auth/demoAuth';
 import { useAuth } from '../context/AuthContext';
 
@@ -195,7 +195,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F0F8FF',
+    backgroundColor: colors.bgApp,
   },
   flex: {
     flex: 1,
@@ -203,17 +203,17 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: 28,
-    paddingVertical: 40,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xxl,
   },
 
   logoWrap: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: spacing.xl,
   },
   logo: {
-    width: 200,
-    height: 200,
+    width: 180,
+    height: 180,
   },
 
   form: {
@@ -222,13 +222,14 @@ const styles = StyleSheet.create({
   field: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 54,
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-    marginBottom: 14,
-    paddingHorizontal: 14,
+    minHeight: touch.comfortable + 6,
+    borderRadius: radius.lg,
+    backgroundColor: colors.bgPanel,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.md,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.borderSubtle,
+    ...shadow.sm,
   },
   fieldIcon: {
     width: 28,
@@ -247,8 +248,8 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   eyeButton: {
-    width: 36,
-    height: 36,
+    width: touch.min,
+    height: touch.min,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -259,26 +260,27 @@ const styles = StyleSheet.create({
     backgroundColor: colors.alarmTint,
     borderWidth: 1,
     borderColor: colors.alarmBorder,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    marginBottom: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    marginBottom: spacing.md,
     overflow: 'hidden',
+    lineHeight: 18,
   },
 
   button: {
-    height: 54,
-    borderRadius: 999,
+    minHeight: touch.comfortable + 6,
+    borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 10,
+    marginTop: spacing.sm,
   },
   buttonDisabled: {
     opacity: 0.7,
   },
   buttonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: typography.md,
     fontWeight: '700',
   },
 });

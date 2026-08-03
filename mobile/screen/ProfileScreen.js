@@ -1,11 +1,10 @@
 // PoolsEye — ProfileScreen
-// Centered profile card → notification prefs → sign out
 
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
 } from 'react-native';
-import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
+import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
 import { notificationSettings, lifeguard as defaultLifeguard } from '../data';
 import {
   SectionLabel, Panel, PanelHead, Toggle,
@@ -41,7 +40,7 @@ function ProfileIdentity({ name, initials, roleLabel, online }) {
 function NotifRow({ setting, value, onChange, isLast }) {
   return (
     <View style={[styles.notifRow, !isLast && styles.notifRowBorder]}>
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={styles.notifLabel}>{setting.label}</Text>
         <Text style={styles.notifDesc}>{setting.description}</Text>
       </View>
@@ -54,7 +53,7 @@ function SignOutAction({ onPress }) {
   return (
     <TouchableOpacity style={styles.actionBtn} onPress={onPress} activeOpacity={0.8}>
       <View style={[styles.actionIcon, { backgroundColor: colors.alarmTint }]}>
-        <Text style={{ color: colors.alarm, fontSize: 14 }}>↩</Text>
+        <Text style={{ color: colors.alarm, fontSize: 15, fontWeight: '700' }}>↩</Text>
       </View>
       <View style={{ flex: 1 }}>
         <Text style={[styles.actionLabel, { color: colors.alarm }]}>Sign out</Text>
@@ -84,7 +83,7 @@ export default function ProfileScreen() {
     <>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance }]}
+        contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance + spacing.sm }]}
         showsVerticalScrollIndicator={false}
       >
         <ProfileIdentity
@@ -119,8 +118,6 @@ export default function ProfileScreen() {
         <Panel>
           <SignOutAction onPress={() => setShowSignOut(true)} />
         </Panel>
-
-        <View style={{ height: spacing.xl }} />
       </ScrollView>
 
       <ConfirmModal
@@ -143,7 +140,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgApp,
   },
   content: {
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
     gap: 10,
   },
 
@@ -154,7 +152,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSubtle,
     paddingTop: 28,
     paddingBottom: 24,
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.md,
     alignItems: 'center',
     ...shadow.sm,
   },
@@ -168,7 +166,7 @@ const styles = StyleSheet.create({
     borderRadius: 48,
     backgroundColor: colors.accentTint,
     borderWidth: 3,
-    borderColor: colors.accentLight,
+    borderColor: colors.accentHighlight,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -190,7 +188,7 @@ const styles = StyleSheet.create({
     borderColor: colors.bgPanel,
   },
   identityName: {
-    fontSize: 22,
+    fontSize: typography.xl,
     fontWeight: '800',
     color: colors.textPrimary,
     letterSpacing: -0.3,
@@ -206,13 +204,14 @@ const styles = StyleSheet.create({
 
   notifRow: {
     paddingHorizontal: spacing.md,
-    paddingVertical: 12,
+    paddingVertical: 14,
+    minHeight: touch.comfortable,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
   notifRowBorder: {
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.borderSubtle,
   },
   notifLabel: {
@@ -221,36 +220,39 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   notifDesc: {
-    fontSize: typography.xs,
+    fontSize: typography.sm,
     color: colors.textSecondary,
-    marginTop: 2,
+    marginTop: 3,
+    lineHeight: 18,
   },
   enabledCount: {
     fontSize: typography.xs,
     color: colors.textTertiary,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     paddingHorizontal: spacing.md,
+    minHeight: touch.comfortable,
     paddingVertical: 14,
   },
   actionIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   actionLabel: {
     fontSize: typography.base,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.textPrimary,
   },
   actionChevron: {
-    fontSize: 20,
+    fontSize: 22,
     color: colors.textTertiary,
+    fontWeight: '500',
   },
 });
