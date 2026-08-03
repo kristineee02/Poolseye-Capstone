@@ -1,7 +1,7 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { spacing } from '../theme/tokens';
 
-const TAB_BAR_PILL_HEIGHT = 60;
+const TAB_BAR_PILL_HEIGHT = 74;
 
 /**
  * Normalized safe-area insets for PoolsEye mobile screens.

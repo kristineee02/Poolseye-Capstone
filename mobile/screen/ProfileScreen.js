@@ -58,7 +58,6 @@ function SignOutAction({ onPress }) {
       </View>
       <View style={{ flex: 1 }}>
         <Text style={[styles.actionLabel, { color: colors.alarm }]}>Sign out</Text>
-        <Text style={styles.actionDesc}>Return to login screen</Text>
       </View>
       <Text style={[styles.actionChevron, { color: colors.alarm }]}>›</Text>
     </TouchableOpacity>
@@ -249,11 +248,6 @@ const styles = StyleSheet.create({
     fontSize: typography.base,
     fontWeight: '600',
     color: colors.textPrimary,
-  },
-  actionDesc: {
-    fontSize: typography.xs,
-    color: colors.textSecondary,
-    marginTop: 2,
   },
   actionChevron: {
     fontSize: 20,
