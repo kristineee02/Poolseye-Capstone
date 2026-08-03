@@ -1,47 +1,22 @@
 // PoolsEye — AppShell
-// Shared header — screen title only (no brand strip)
+// Clean screen header with consistent hierarchy
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { colors, spacing, typography, radius, shadow } from '../theme/tokens';
+import { colors, spacing, typography } from '../theme/tokens';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
-import { useAuth } from '../context/AuthContext';
-import { lifeguard as defaultLifeguard } from '../data';
 
-function OnlineBadge() {
-  return (
-    <View style={styles.onlineBadge}>
-      <View style={styles.onlineDot} />
-      <Text style={styles.onlineText}>Online</Text>
-    </View>
-  );
-}
-
-export default function AppShell({
-  title = 'Dashboard',
-  subtitle,
-  showDutyProfile = false,
-}) {
+export default function AppShell({ title = 'Home', subtitle }) {
   const { headerPaddingTop, horizontalInset } = useLayoutInsets();
-  const { user } = useAuth();
-  const padX = Math.max(horizontalInset, spacing.lg);
-  const lifeguard = user || defaultLifeguard;
-  const personLine = `${lifeguard.name} · Lifeguard`;
+  const padX = Math.max(horizontalInset, spacing.md);
 
   return (
     <View style={[styles.header, { paddingTop: headerPaddingTop }]}>
       <View style={[styles.titleBlock, { paddingHorizontal: padX }]}>
-        <View style={styles.titleRow}>
-          <View style={styles.titleCopy}>
-            <Text style={styles.screenTitle}>{title}</Text>
-            {showDutyProfile ? (
-              <Text style={styles.personLine}>{personLine}</Text>
-            ) : subtitle ? (
-              <Text style={styles.screenSubtitle}>{subtitle}</Text>
-            ) : null}
-          </View>
-          {showDutyProfile ? <OnlineBadge /> : null}
-        </View>
+        <Text style={styles.screenTitle} numberOfLines={1}>{title}</Text>
+        {subtitle ? (
+          <Text style={styles.screenSubtitle} numberOfLines={1}>{subtitle}</Text>
+        ) : null}
       </View>
     </View>
   );
@@ -53,58 +28,19 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   titleBlock: {
-    paddingTop: 4,
-    paddingBottom: 4,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  titleCopy: {
-    flex: 1,
-    minWidth: 0,
+    paddingTop: 2,
+    paddingBottom: 2,
   },
   screenTitle: {
-    fontSize: 22,
+    fontSize: typography.xl,
     fontWeight: '800',
     color: colors.textPrimary,
-    letterSpacing: -0.3,
+    letterSpacing: -0.4,
   },
-  personLine: {
+  screenSubtitle: {
     marginTop: 4,
     fontSize: typography.sm,
     color: colors.textSecondary,
     fontWeight: '500',
-  },
-  screenSubtitle: {
-    marginTop: 3,
-    fontSize: typography.sm,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  onlineBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    height: 32,
-    paddingHorizontal: 12,
-    borderRadius: radius.full,
-    backgroundColor: colors.bgPanel,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    ...shadow.sm,
-  },
-  onlineDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.safe,
-  },
-  onlineText: {
-    fontSize: typography.sm,
-    color: colors.textSecondary,
-    fontWeight: '600',
   },
 });

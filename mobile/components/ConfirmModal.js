@@ -9,7 +9,7 @@ import {
   StyleSheet,
   Pressable,
 } from 'react-native';
-import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
+import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
 
 function ActionButton({ label, tone = 'secondary', onPress }) {
   const isPrimary = tone === 'primary';
@@ -94,14 +94,6 @@ export default function ConfirmModal({
         <View style={styles.card}>
           <View style={styles.header}>
             <Text style={styles.title} numberOfLines={2}>{title}</Text>
-            <TouchableOpacity
-              style={styles.closeBtn}
-              onPress={onClose}
-              hitSlop={10}
-              accessibilityLabel="Close"
-            >
-              <Text style={styles.closeText}>×</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.body}>
@@ -146,8 +138,6 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
     paddingHorizontal: 18,
     paddingVertical: 16,
     borderBottomWidth: 1,
@@ -158,20 +148,6 @@ const styles = StyleSheet.create({
     fontSize: typography.lg,
     fontWeight: '700',
     color: colors.textPrimary,
-  },
-  closeBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: radius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accentTint,
-  },
-  closeText: {
-    fontSize: 20,
-    lineHeight: 22,
-    color: colors.accentStrong,
-    fontWeight: '600',
   },
   body: {
     paddingHorizontal: 18,
@@ -195,9 +171,9 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   btn: {
-    minHeight: 40,
-    paddingHorizontal: 14,
-    borderRadius: radius.sm,
+    minHeight: touch.min,
+    paddingHorizontal: 16,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -213,7 +189,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.alarm,
   },
   btnText: {
-    fontSize: typography.sm,
+    fontSize: typography.base,
     fontWeight: '700',
   },
   btnTextSecondary: {

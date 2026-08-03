@@ -1,11 +1,10 @@
 // PoolsEye — LogScreen (All Alerts)
-// Card design: tinted panels + left stripe + type/status tags (content unchanged).
 
 import React, { useMemo, useState } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, Modal, Pressable,
 } from 'react-native';
-import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
+import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
 import { events } from '../data';
 import { Tag } from '../components/Primitives';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
@@ -169,7 +168,7 @@ export default function LogScreen() {
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <AlertCard event={item} />}
-        contentContainerStyle={[styles.listContent, { paddingBottom: tabBarClearance }]}
+        contentContainerStyle={[styles.listContent, { paddingBottom: tabBarClearance + spacing.sm }]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyState}>
@@ -193,18 +192,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingBottom: 12,
+    gap: 12,
   },
   resultText: {
     fontSize: typography.sm,
     color: colors.textSecondary,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   filterBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    minHeight: touch.min,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderRadius: radius.full,
     backgroundColor: colors.bgPanel,
     borderWidth: 1,
@@ -224,9 +225,9 @@ const styles = StyleSheet.create({
 
   menuOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
     justifyContent: 'center',
-    paddingHorizontal: 28,
+    paddingHorizontal: spacing.xl,
   },
   menuCard: {
     backgroundColor: colors.bgPanel,
@@ -238,7 +239,7 @@ const styles = StyleSheet.create({
     ...shadow.md,
   },
   menuTitle: {
-    fontSize: typography.sm,
+    fontSize: typography.xs,
     fontWeight: '700',
     color: colors.textTertiary,
     textTransform: 'uppercase',
@@ -250,7 +251,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 12,
+    minHeight: touch.min,
+    paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: radius.md,
   },
@@ -269,11 +271,11 @@ const styles = StyleSheet.create({
   menuCheck: {
     color: colors.accent,
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 15,
   },
 
   listContent: {
-    gap: 10,
+    gap: 12,
     paddingBottom: 8,
   },
 
@@ -289,7 +291,7 @@ const styles = StyleSheet.create({
   },
   cardInner: {
     flex: 1,
-    padding: 13,
+    padding: spacing.md,
     gap: 8,
   },
   cardTop: {
@@ -301,14 +303,14 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    marginTop: 5,
+    marginTop: 6,
     flexShrink: 0,
   },
   cardTitle: {
     flex: 1,
     fontSize: typography.base,
     fontWeight: '700',
-    lineHeight: 19,
+    lineHeight: 20,
   },
   cardTime: {
     fontSize: typography.xs,
@@ -318,7 +320,7 @@ const styles = StyleSheet.create({
   },
   cardMeta: {
     fontSize: typography.sm,
-    lineHeight: 18,
+    lineHeight: 19,
     paddingLeft: 18,
   },
   cardTags: {
@@ -330,7 +332,7 @@ const styles = StyleSheet.create({
 
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 48,
+    paddingVertical: 56,
     paddingHorizontal: 24,
     gap: 8,
   },
@@ -343,5 +345,6 @@ const styles = StyleSheet.create({
     fontSize: typography.sm,
     color: colors.textTertiary,
     textAlign: 'center',
+    lineHeight: 18,
   },
 });

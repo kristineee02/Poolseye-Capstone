@@ -1,12 +1,13 @@
-// PoolsEye — Dashboard (AlertsScreen)
-// Layout: Latest Alert → 2×2 stats → Recent Alerts (PoolsEye light theme)
+// PoolsEye — Dashboard (Home)
+// Latest Alert → stats → Recent Alerts
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
+  Animated, LayoutAnimation,
 } from 'react-native';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
-import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
+import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
 import { alerts as initialAlerts } from '../data';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 import ProfileHero from '../components/ProfileHero';
@@ -24,13 +25,11 @@ function getAlertMeta(alert) {
   };
 }
 
-/** Intrusion = alert triangle · Warning = alert circle */
-function CodeIcon({ isAlarm, accent, code }) {
-  const alarm = typeof isAlarm === 'boolean' ? isAlarm : code === 'ALM';
+function CodeIcon({ isAlarm, accent }) {
   return (
-    <View style={[styles.codeIcon, { backgroundColor: accent }]} accessibilityLabel={alarm ? 'Alarm' : 'Warning'}>
-      <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-        {alarm ? (
+    <View style={[styles.codeIcon, { backgroundColor: accent }]} accessibilityLabel={isAlarm ? 'Alarm' : 'Warning'}>
+      <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+        {isAlarm ? (
           <>
             <Path
               d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
@@ -44,13 +43,7 @@ function CodeIcon({ isAlarm, accent, code }) {
           </>
         ) : (
           <>
-            <Circle
-              cx={12}
-              cy={12}
-              r={9}
-              stroke="#FFFFFF"
-              strokeWidth={1.85}
-            />
+            <Circle cx={12} cy={12} r={9} stroke="#FFFFFF" strokeWidth={1.85} />
             <Line x1={12} y1={8} x2={12} y2={12} stroke="#FFFFFF" strokeWidth={1.85} strokeLinecap="round" />
             <Circle cx={12} cy={16} r={1.15} fill="#FFFFFF" />
           </>
@@ -61,6 +54,20 @@ function CodeIcon({ isAlarm, accent, code }) {
 }
 
 function LatestAlertCard({ alert, unread, onOpen, onAcknowledge, onDismiss }) {
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (!unread) return undefined;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.35, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [unread, pulse]);
+
   if (!alert) {
     return (
       <View style={styles.sectionCard}>
@@ -90,7 +97,9 @@ function LatestAlertCard({ alert, unread, onOpen, onAcknowledge, onDismiss }) {
     >
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>Latest Alert</Text>
-        {unread ? <View style={styles.unreadDot} accessibilityLabel="Unacknowledged" /> : null}
+        {unread ? (
+          <Animated.View style={[styles.unreadDot, { opacity: pulse }]} accessibilityLabel="Unacknowledged" />
+        ) : null}
       </View>
 
       <TouchableOpacity
@@ -102,10 +111,7 @@ function LatestAlertCard({ alert, unread, onOpen, onAcknowledge, onDismiss }) {
       >
         <CodeIcon isAlarm={m.isAlarm} accent={m.accent} />
         <View style={styles.latestCopy}>
-          <Text
-            style={[styles.latestTitle, unread && styles.unreadTitle]}
-            numberOfLines={2}
-          >
+          <Text style={[styles.latestTitle, unread && styles.unreadTitle]} numberOfLines={2}>
             {alert.title}
           </Text>
           <Text style={styles.latestMeta}>{m.line}</Text>
@@ -194,16 +200,21 @@ export default function AlertsScreen() {
     setOpenedIds((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
   };
 
+  const removeAlert = (id) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
+  };
+
   const handleAcknowledge = (id) => {
     const time = new Date().toLocaleTimeString('en-US');
     markOpened(id);
     setAcknowledged((prev) => ({ ...prev, [id]: time }));
-    setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
+    removeAlert(id);
   };
 
   const handleDismiss = (id) => {
     markOpened(id);
-    setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
+    removeAlert(id);
   };
 
   const latest = activeAlerts[0] || null;
@@ -226,7 +237,7 @@ export default function AlertsScreen() {
   return (
     <ScrollView
       style={styles.scroll}
-      contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance }]}
+      contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance + spacing.sm }]}
       showsVerticalScrollIndicator={false}
     >
       <ProfileHero online />
@@ -242,8 +253,6 @@ export default function AlertsScreen() {
       <StatsGrid stats={stats} />
 
       <RecentAlertsCard alerts={recent} />
-
-      <View style={{ height: spacing.sm }} />
     </ScrollView>
   );
 }
@@ -254,8 +263,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgApp,
   },
   content: {
-    padding: spacing.md,
-    gap: 14,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    gap: spacing.md,
   },
 
   sectionCard: {
@@ -263,7 +273,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
-    padding: 16,
+    padding: spacing.md,
     ...shadow.sm,
   },
   sectionHead: {
@@ -277,11 +287,12 @@ const styles = StyleSheet.create({
     fontSize: typography.lg,
     fontWeight: '800',
     color: colors.textPrimary,
+    letterSpacing: -0.2,
   },
 
   unreadDot: {
-    width: 9,
-    height: 9,
+    width: 10,
+    height: 10,
     borderRadius: 5,
     backgroundColor: colors.accent,
     flexShrink: 0,
@@ -291,8 +302,8 @@ const styles = StyleSheet.create({
   },
 
   codeIcon: {
-    width: 48,
-    height: 48,
+    width: 46,
+    height: 46,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -304,6 +315,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     marginBottom: 14,
+    minHeight: touch.min,
   },
   latestCopy: {
     flex: 1,
@@ -313,34 +325,36 @@ const styles = StyleSheet.create({
     fontSize: typography.md,
     fontWeight: '700',
     color: colors.textPrimary,
-    lineHeight: 20,
+    lineHeight: 21,
   },
   latestMeta: {
     marginTop: 4,
     fontSize: typography.sm,
     color: colors.textSecondary,
     fontWeight: '500',
+    lineHeight: 18,
   },
 
   actionRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
   },
   primaryBtn: {
     flex: 1,
-    height: 44,
+    minHeight: touch.comfortable,
     borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 12,
   },
   primaryBtnText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: typography.base,
     fontWeight: '700',
   },
   secondaryBtn: {
-    height: 44,
-    paddingHorizontal: 14,
+    minHeight: touch.comfortable,
+    paddingHorizontal: 16,
     borderRadius: radius.md,
     borderWidth: 1,
     alignItems: 'center',
@@ -348,7 +362,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgPanel,
   },
   secondaryBtnText: {
-    fontSize: 13,
+    fontSize: typography.base,
     fontWeight: '600',
   },
 
@@ -356,7 +370,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
   },
   allClearDot: {
     width: 10,
@@ -398,10 +412,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   statValue: {
-    fontSize: 28,
+    fontSize: typography.kpi,
     fontWeight: '800',
     color: colors.textPrimary,
-    letterSpacing: -0.5,
+    letterSpacing: -0.6,
   },
 
   recentRow: {
@@ -409,9 +423,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     paddingVertical: 12,
+    minHeight: touch.min,
   },
   recentRowBorder: {
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.borderSubtle,
   },
   recentCopy: {
@@ -425,7 +440,7 @@ const styles = StyleSheet.create({
   },
   recentMeta: {
     marginTop: 3,
-    fontSize: typography.xs,
+    fontSize: typography.sm,
     color: colors.textSecondary,
     fontWeight: '500',
   },

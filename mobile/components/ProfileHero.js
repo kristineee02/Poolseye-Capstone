@@ -1,17 +1,17 @@
 // PoolsEye — ProfileHero
-// Avatar + greeting + name · Online pill (Dashboard / Profile)
+// Avatar + greeting + online status
 
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { colors, radius, typography, shadow } from '../theme/tokens';
+import { colors, radius, typography, shadow, spacing } from '../theme/tokens';
 import { useAuth } from '../context/AuthContext';
 import { lifeguard as defaultLifeguard } from '../data';
 
 function getGreeting() {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning!';
-  if (hour < 18) return 'Good afternoon!';
-  return 'Good evening!';
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
 }
 
 function getInitials(name, fallback = 'LG') {
@@ -56,13 +56,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: spacing.md,
     backgroundColor: colors.bgPanel,
     borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
     paddingVertical: 14,
-    paddingHorizontal: 14,
+    paddingHorizontal: spacing.md,
     ...shadow.sm,
   },
   heroLeft: {
@@ -78,7 +78,7 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     backgroundColor: colors.accentTint,
     borderWidth: 2,
-    borderColor: colors.accentLight,
+    borderColor: colors.accentHighlight,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
   },
   heroName: {
     marginTop: 2,
-    fontSize: 18,
+    fontSize: typography.lg,
     fontWeight: '800',
     color: colors.textPrimary,
     letterSpacing: -0.2,
@@ -109,8 +109,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    height: 36,
-    paddingHorizontal: 14,
+    minHeight: 36,
+    paddingHorizontal: 12,
     borderRadius: radius.full,
     backgroundColor: colors.safeTint,
     borderWidth: 1,
