@@ -1,5 +1,5 @@
 // PoolsEye — Tab Navigator
-// Compact floating pill (centered) — blue active circle, like reference
+// Compact floating pill — Sky Harmony blue · Home / Alerts / Profile
 
 import React, { useState } from 'react';
 import {
@@ -14,28 +14,50 @@ import LogScreen     from '../screen/LogScreen';
 import ProfileScreen from '../screen/ProfileScreen';
 import AppShell      from '../components/AppShell';
 
-function HomeIcon({ color, filled, hasBadge, badgeCount }) {
-  const stroke = filled ? color : color;
-  const fill = filled ? color : 'none';
-
+function HomeIcon({ color, filled }) {
   return (
     <View style={iconStyles.iconWrap}>
-      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+      <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
         <Path
           d="M12 3.2 4.2 9.8V20c0 .66.54 1.2 1.2 1.2h13.2c.66 0 1.2-.54 1.2-1.2V9.8L12 3.2z"
-          stroke={stroke}
-          strokeWidth={1.8}
+          stroke={color}
+          strokeWidth={1.85}
           strokeLinecap="round"
           strokeLinejoin="round"
-          fill={fill}
+          fill={filled ? color : 'none'}
         />
         <Path
           d="M10.2 21.2V16.2c0-1 .82-1.8 1.8-1.8s1.8.8 1.8 1.8v5"
-          stroke={stroke}
-          strokeWidth={1.8}
+          stroke={color}
+          strokeWidth={1.85}
           strokeLinecap="round"
           strokeLinejoin="round"
           fill="none"
+        />
+      </Svg>
+    </View>
+  );
+}
+
+/** Notification bell for Alerts tab */
+function BellIcon({ color, filled, hasBadge, badgeCount }) {
+  return (
+    <View style={iconStyles.iconWrap}>
+      <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+        <Path
+          d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"
+          stroke={color}
+          strokeWidth={1.85}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill={filled ? color : 'none'}
+        />
+        <Path
+          d="M13.73 21a2 2 0 0 1-3.46 0"
+          stroke={filled ? '#FFFFFF' : color}
+          strokeWidth={1.85}
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
       </Svg>
       {hasBadge && (
@@ -43,22 +65,6 @@ function HomeIcon({ color, filled, hasBadge, badgeCount }) {
           <Text style={iconStyles.badgeText}>{badgeCount}</Text>
         </View>
       )}
-    </View>
-  );
-}
-
-function ClipboardIcon({ color }) {
-  return (
-    <View style={iconStyles.iconWrap}>
-      <View style={[iconStyles.clipboard, { borderColor: color }]}>
-        {[0, 1, 2].map((i) => (
-          <View
-            key={i}
-            style={[iconStyles.clipLine, { backgroundColor: color, width: i === 2 ? 5 : 8 }]}
-          />
-        ))}
-      </View>
-      <View style={[iconStyles.clipTop, { backgroundColor: color }]} />
     </View>
   );
 }
@@ -87,37 +93,37 @@ function PersonIcon({ color, filled }) {
 }
 
 const TABS = [
-  { key: 'alerts',  label: 'Home',    title: 'Dashboard',  subtitle: null, showDutyProfile: false },
-  { key: 'log',     label: 'Log',     title: 'All Alerts',  subtitle: null, showDutyProfile: false },
+  { key: 'home',    label: 'Home',    title: 'Dashboard',  subtitle: null, showDutyProfile: false },
+  { key: 'alerts',  label: 'Alerts',  title: 'All Alerts', subtitle: null, showDutyProfile: false },
   { key: 'profile', label: 'Profile', title: 'Profile',    subtitle: null, showDutyProfile: false },
 ];
 
 export default function TabNavigator({ alertBadgeCount = 2 }) {
-  const [active, setActive] = useState('alerts');
+  const [active, setActive] = useState('home');
   const { tabBarPaddingBottom, horizontalInset } = useLayoutInsets();
 
   const screens = {
-    alerts:  <AlertsScreen />,
-    log:     <LogScreen />,
+    home:    <AlertsScreen />,
+    alerts:  <LogScreen />,
     profile: <ProfileScreen />,
   };
 
   const activeTab = TABS.find((t) => t.key === active) || TABS[0];
 
   const renderIcon = (key, isActive) => {
-    const iconColor = isActive ? '#FFFFFF' : colors.textTertiary;
+    const iconColor = isActive ? '#FFFFFF' : colors.accentLight;
     switch (key) {
+      case 'home':
+        return <HomeIcon color={iconColor} filled={isActive} />;
       case 'alerts':
         return (
-          <HomeIcon
+          <BellIcon
             color={iconColor}
             filled={isActive}
             hasBadge={!isActive && alertBadgeCount > 0}
             badgeCount={alertBadgeCount}
           />
         );
-      case 'log':
-        return <ClipboardIcon color={iconColor} />;
       case 'profile':
         return <PersonIcon color={iconColor} filled={isActive} />;
       default:
@@ -154,15 +160,24 @@ export default function TabNavigator({ alertBadgeCount = 2 }) {
                 ]}
                 onPress={() => setActive(tab.key)}
                 android_ripple={{
-                  color: 'rgba(30, 111, 255, 0.18)',
+                  color: 'rgba(30, 111, 255, 0.16)',
                   borderless: false,
-                  radius: 22,
+                  radius: 26,
                 }}
                 accessibilityRole="button"
                 accessibilityLabel={tab.label}
                 accessibilityState={{ selected: isActive }}
               >
                 {renderIcon(tab.key, isActive)}
+                <Text
+                  style={[
+                    styles.tabLabel,
+                    isActive ? styles.tabLabelActive : styles.tabLabelIdle,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {tab.label}
+                </Text>
               </Pressable>
             );
           })}
@@ -176,16 +191,16 @@ const iconStyles = StyleSheet.create({
   iconWrap: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 18,
-    height: 18,
+    width: 22,
+    height: 22,
   },
   badge: {
     position: 'absolute',
     top: -4,
-    right: -6,
-    minWidth: 12,
-    height: 12,
-    borderRadius: 6,
+    right: -7,
+    minWidth: 14,
+    height: 14,
+    borderRadius: 7,
     backgroundColor: colors.alarm,
     borderWidth: 1.5,
     borderColor: colors.bgPanel,
@@ -194,47 +209,23 @@ const iconStyles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   badgeText: {
-    fontSize: 7,
+    fontSize: 8,
     fontWeight: '700',
     color: '#fff',
   },
-  clipboard: {
-    width: 11,
-    height: 13,
-    borderRadius: 2,
-    borderWidth: 1.4,
-    marginTop: 3,
-    paddingTop: 2.5,
-    paddingHorizontal: 1.5,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
-  },
-  clipLine: {
-    height: 1.2,
-    borderRadius: 1,
-    marginBottom: 1.4,
-  },
-  clipTop: {
-    position: 'absolute',
-    top: 0.5,
-    width: 5.5,
-    height: 2.5,
-    borderRadius: 1.25,
-  },
   personHead: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    borderWidth: 1.4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 1.5,
     marginBottom: 1.5,
   },
   personBody: {
-    width: 11,
-    height: 5.5,
-    borderTopLeftRadius: 5.5,
-    borderTopRightRadius: 5.5,
-    borderWidth: 1.4,
+    width: 13,
+    height: 6.5,
+    borderTopLeftRadius: 6.5,
+    borderTopRightRadius: 6.5,
+    borderWidth: 1.5,
     borderBottomWidth: 0,
   },
 });
@@ -259,9 +250,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'center',
     gap: 6,
-    height: 52,
-    paddingHorizontal: 10,
+    minHeight: 62,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: radius.full,
     backgroundColor: colors.bgPanel,
     borderWidth: 1,
@@ -269,17 +262,30 @@ const styles = StyleSheet.create({
     ...shadow.md,
   },
   tabButton: {
-    width: 44,
-    height: 44,
+    minWidth: 74,
+    height: 52,
+    paddingHorizontal: 14,
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
+    gap: 2,
   },
   tabSlotActive: {
     backgroundColor: colors.accent,
   },
   tabSlotPressed: {
     backgroundColor: colors.accentTint,
+  },
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.1,
+  },
+  tabLabelActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  tabLabelIdle: {
+    color: colors.accentLight,
   },
 });

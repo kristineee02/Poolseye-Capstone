@@ -15,23 +15,13 @@ function getAlertMeta(alert) {
   const isAlarm = alert.type === 'alarm';
   return {
     isAlarm,
-    priority: isAlarm ? 'HIGH' : 'MED',
     accent: isAlarm ? colors.alarm : colors.warn,
     accentTint: isAlarm ? colors.alarmTint : colors.warnTint,
     accentBorder: isAlarm ? colors.alarmBorder : colors.warnBorder,
-    accentDark: isAlarm ? colors.alarmDark : colors.warnDark,
     accentMid: isAlarm ? colors.alarmMid : colors.warnMid,
     line: `${alert.zone} · ${alert.time} · ${isAlarm ? 'Needs response' : 'Check feed'}`,
-    recentLine: `${alert.zone} · ${alert.time} · ${isAlarm ? 'HIGH' : 'MED'}`,
+    recentLine: `${alert.zone} · ${alert.time}`,
   };
-}
-
-function PriorityBadge({ label, accent, accentTint }) {
-  return (
-    <View style={[styles.badge, { backgroundColor: accentTint, borderColor: accent + '44' }]}>
-      <Text style={[styles.badgeText, { color: accent }]}>{label}</Text>
-    </View>
-  );
 }
 
 /** Intrusion = alert triangle · Warning = alert circle */
@@ -70,7 +60,7 @@ function CodeIcon({ isAlarm, accent, code }) {
   );
 }
 
-function LatestAlertCard({ alert, onAcknowledge, onDismiss }) {
+function LatestAlertCard({ alert, unread, onOpen, onAcknowledge, onDismiss }) {
   if (!alert) {
     return (
       <View style={styles.sectionCard}>
@@ -89,22 +79,38 @@ function LatestAlertCard({ alert, onAcknowledge, onDismiss }) {
   const m = getAlertMeta(alert);
 
   return (
-    <View style={styles.sectionCard}>
+    <View
+      style={[
+        styles.sectionCard,
+        unread && {
+          backgroundColor: m.accentTint,
+          borderColor: m.accentBorder,
+        },
+      ]}
+    >
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>Latest Alert</Text>
-        <View style={styles.badgeRow}>
-          <PriorityBadge label={m.priority} accent={m.accent} accentTint={m.accentTint} />
-          <PriorityBadge label="NEW" accent={m.accent} accentTint={m.accentTint} />
-        </View>
+        {unread ? <View style={styles.unreadDot} accessibilityLabel="Unacknowledged" /> : null}
       </View>
 
-      <View style={styles.latestBody}>
+      <TouchableOpacity
+        style={styles.latestBody}
+        onPress={() => onOpen(alert.id)}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel={unread ? 'Open new alert' : 'Alert details'}
+      >
         <CodeIcon isAlarm={m.isAlarm} accent={m.accent} />
         <View style={styles.latestCopy}>
-          <Text style={styles.latestTitle} numberOfLines={2}>{alert.title}</Text>
+          <Text
+            style={[styles.latestTitle, unread && styles.unreadTitle]}
+            numberOfLines={2}
+          >
+            {alert.title}
+          </Text>
           <Text style={styles.latestMeta}>{m.line}</Text>
         </View>
-      </View>
+      </TouchableOpacity>
 
       <View style={styles.actionRow}>
         <TouchableOpacity
@@ -152,10 +158,6 @@ function RecentAlertRow({ alert, isLast }) {
         <Text style={styles.recentTitle} numberOfLines={1}>{alert.title}</Text>
         <Text style={styles.recentMeta} numberOfLines={1}>{m.recentLine}</Text>
       </View>
-      <View style={styles.recentBadges}>
-        <PriorityBadge label={m.priority} accent={m.accent} accentTint={m.accentTint} />
-        <PriorityBadge label="NEW" accent={m.accent} accentTint={m.accentTint} />
-      </View>
     </View>
   );
 }
@@ -186,19 +188,27 @@ export default function AlertsScreen() {
   const { tabBarClearance } = useLayoutInsets();
   const [activeAlerts, setActiveAlerts] = useState(initialAlerts);
   const [acknowledged, setAcknowledged] = useState({});
+  const [openedIds, setOpenedIds] = useState({});
+
+  const markOpened = (id) => {
+    setOpenedIds((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
+  };
 
   const handleAcknowledge = (id) => {
     const time = new Date().toLocaleTimeString('en-US');
+    markOpened(id);
     setAcknowledged((prev) => ({ ...prev, [id]: time }));
     setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
   };
 
   const handleDismiss = (id) => {
+    markOpened(id);
     setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
   };
 
   const latest = activeAlerts[0] || null;
   const recent = activeAlerts.slice(0, 4);
+  const latestUnread = latest ? !openedIds[latest.id] : false;
 
   const stats = useMemo(() => {
     const intrusion = activeAlerts.filter((a) => a.type === 'alarm').length;
@@ -223,6 +233,8 @@ export default function AlertsScreen() {
 
       <LatestAlertCard
         alert={latest}
+        unread={latestUnread}
+        onOpen={markOpened}
         onAcknowledge={handleAcknowledge}
         onDismiss={handleDismiss}
       />
@@ -267,20 +279,15 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
 
-  badgeRow: {
-    flexDirection: 'row',
-    gap: 6,
+  unreadDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: colors.accent,
+    flexShrink: 0,
   },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-    borderWidth: 1,
-  },
-  badgeText: {
-    fontSize: 10,
+  unreadTitle: {
     fontWeight: '800',
-    letterSpacing: 0.4,
   },
 
   codeIcon: {
@@ -397,20 +404,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
 
-  viewAllBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.bgRaised,
-  },
-  viewAllText: {
-    fontSize: typography.xs,
-    fontWeight: '700',
-    color: colors.accentStrong,
-  },
-
   recentRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -435,10 +428,6 @@ const styles = StyleSheet.create({
     fontSize: typography.xs,
     color: colors.textSecondary,
     fontWeight: '500',
-  },
-  recentBadges: {
-    gap: 4,
-    alignItems: 'flex-end',
   },
   emptyRecent: {
     fontSize: typography.sm,

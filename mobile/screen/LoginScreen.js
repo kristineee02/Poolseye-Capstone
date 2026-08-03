@@ -186,12 +186,6 @@ export default function LoginScreen() {
               </LinearGradient>
             </TouchableOpacity>
           </View>
-
-          <Text style={styles.hint}>
-            Demo: <Text style={styles.hintLink}>{DEMO_LIFEGUARD.email}</Text>
-            {' / '}
-            {DEMO_LIFEGUARD.password}
-          </Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -286,17 +280,5 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
-  },
-
-  hint: {
-    marginTop: 28,
-    fontSize: typography.xs,
-    color: '#94A3B8',
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  hintLink: {
-    color: '#1E6FFF',
-    textDecorationLine: 'underline',
   },
 });
