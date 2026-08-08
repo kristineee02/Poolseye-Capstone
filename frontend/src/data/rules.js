@@ -24,12 +24,12 @@ export const rules = [
   {
     id: 'rule-3',
     flow: [
-      { text: 'PIR motion only', tone: 'safe' },
-      { text: 'no human confirmed by camera', tone: 'neutral' },
+      { text: 'Low-confidence camera detection', tone: 'safe' },
+      { text: 'no person confirmed', tone: 'neutral' },
       { text: 'Log only, no notification', tone: 'neutral', isResult: true },
     ],
     description:
-      "Filters out debris, shadows, and animals so the lifeguard isn't paged for environmental noise.",
+      "Filters out debris, shadows, and non-person detections so the lifeguard isn't paged for visual noise.",
     enabled: true,
   },
   {

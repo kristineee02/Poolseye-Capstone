@@ -5,7 +5,7 @@ import SnapshotModal from '../components/history/SnapshotModal'
 import { events } from '../data/events'
 import '../components/history/HistoryTable.css'
 
-const TYPE_LABEL = { alarm: 'Intrusion', safe: 'Supervised', warn: 'PIR', info: 'System' }
+const TYPE_LABEL = { alarm: 'Intrusion', safe: 'Supervised', warn: 'Warning', info: 'System' }
 const TYPE_TAG = { alarm: 'tag-alarm', safe: 'tag-safe', warn: 'tag-info', info: 'tag-info' }
 const STATUS_TAG = { resolved: 'tag-safe', pending: 'tag-warn', dismissed: 'tag-info' }
 
@@ -55,7 +55,7 @@ export default function HistoryPage() {
             <option value="all">All event types</option>
             <option value="alarm">Unsupervised intrusion</option>
             <option value="safe">Supervised access</option>
-            <option value="warn">PIR trigger</option>
+            <option value="warn">Warning</option>
             <option value="info">System</option>
           </select>
           <select className="field-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>

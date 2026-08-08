@@ -1,15 +1,13 @@
 // PoolsEye — Shared UI Primitives
-// Mirrors the web dashboard's primitives.css as React Native components
+// Touch-friendly, Sky Harmony–consistent components
 
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
-
-// ── Tag / Pill ────────────────────────────────────────────────────────────────
+import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
 
 const TAG_STYLES = {
   alarm: { bg: colors.alarmTint, text: colors.alarm },
-  warn:  { bg: colors.warnTint,  text: colors.warn  },
+  warn:  { bg: colors.warnTint,  text: colors.warnDark },
   safe:  { bg: colors.safeTint,  text: colors.safe  },
   info:  { bg: colors.bgInset,   text: colors.textSecondary },
   accent:{ bg: colors.accentTint,text: colors.accentStrong  },
@@ -23,8 +21,6 @@ export function Tag({ type = 'info', children }) {
     </View>
   );
 }
-
-// ── Panel ─────────────────────────────────────────────────────────────────────
 
 export function Panel({ children, style }) {
   return (
@@ -41,15 +37,11 @@ export function PanelHead({ title, right }) {
   );
 }
 
-// ── Section label ─────────────────────────────────────────────────────────────
-
 export function SectionLabel({ children }) {
   return <Text style={styles.sectionLabel}>{children}</Text>;
 }
 
-// ── Avatar / Initials ─────────────────────────────────────────────────────────
-
-export function Avatar({ initials, size = 38, color = colors.accent, bg = colors.accentTint }) {
+export function Avatar({ initials, size = 40, color = colors.accent, bg = colors.accentTint }) {
   return (
     <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2, backgroundColor: bg }]}>
       <Text style={[styles.avatarText, { color, fontSize: size * 0.35 }]}>{initials}</Text>
@@ -57,13 +49,9 @@ export function Avatar({ initials, size = 38, color = colors.accent, bg = colors
   );
 }
 
-// ── Divider ───────────────────────────────────────────────────────────────────
-
 export function Divider() {
   return <View style={styles.divider} />;
 }
-
-// ── Button ────────────────────────────────────────────────────────────────────
 
 export function Button({ label, onPress, variant = 'primary', style }) {
   const variantStyle = {
@@ -78,7 +66,11 @@ export function Button({ label, onPress, variant = 'primary', style }) {
       onPress={onPress}
       style={[
         styles.btn,
-        { backgroundColor: variantStyle.bg, borderColor: variantStyle.border, borderWidth: variant === 'secondary' || variant === 'ghost' ? 1 : 0 },
+        {
+          backgroundColor: variantStyle.bg,
+          borderColor: variantStyle.border,
+          borderWidth: variant === 'secondary' || variant === 'ghost' ? 1 : 0,
+        },
         style,
       ]}
       activeOpacity={0.82}
@@ -87,8 +79,6 @@ export function Button({ label, onPress, variant = 'primary', style }) {
     </TouchableOpacity>
   );
 }
-
-// ── Status dot ────────────────────────────────────────────────────────────────
 
 export function StatusDot({ status }) {
   const dotColor = {
@@ -103,25 +93,26 @@ export function StatusDot({ status }) {
   return <View style={[styles.statusDot, { backgroundColor: dotColor }]} />;
 }
 
-// ── Toggle switch ─────────────────────────────────────────────────────────────
-
 export function Toggle({ value, onToggle }) {
   return (
     <TouchableOpacity
       onPress={() => onToggle(!value)}
       activeOpacity={0.8}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value }}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       style={[
         styles.toggle,
-        { backgroundColor: value ? colors.accent : colors.bgInset,
-          borderColor:      value ? colors.accent : colors.borderSubtle },
+        {
+          backgroundColor: value ? colors.accent : colors.bgInset,
+          borderColor: value ? colors.accent : colors.borderSubtle,
+        },
       ]}
     >
-      <View style={[styles.knob, { left: value ? 18 : 2 }]} />
+      <View style={[styles.knob, { left: value ? 22 : 2 }]} />
     </TouchableOpacity>
   );
 }
-
-// ── Confidence bar ────────────────────────────────────────────────────────────
 
 export function ConfidenceBar({ value, color = colors.accent }) {
   return (
@@ -131,19 +122,15 @@ export function ConfidenceBar({ value, color = colors.accent }) {
   );
 }
 
-// ── Mono text ─────────────────────────────────────────────────────────────────
-
 export function Mono({ children, style }) {
   return <Text style={[styles.mono, style]}>{children}</Text>;
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   tag: {
     alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: radius.full,
   },
   tagText: {
@@ -153,7 +140,7 @@ const styles = StyleSheet.create({
   },
   panel: {
     backgroundColor: colors.bgPanel,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
     overflow: 'hidden',
@@ -161,7 +148,7 @@ const styles = StyleSheet.create({
   },
   panelHead: {
     paddingHorizontal: spacing.md,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderSubtle,
     flexDirection: 'row',
@@ -170,17 +157,17 @@ const styles = StyleSheet.create({
   },
   panelHeadTitle: {
     fontSize: typography.base,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.textPrimary,
   },
   sectionLabel: {
     fontSize: typography.xs,
     fontWeight: '700',
-    letterSpacing: 0.8,
+    letterSpacing: 0.7,
     color: colors.textTertiary,
     textTransform: 'uppercase',
-    marginBottom: 6,
-    marginTop: 4,
+    marginBottom: 8,
+    marginTop: 8,
   },
   avatar: {
     alignItems: 'center',
@@ -190,42 +177,44 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   divider: {
-    height: 1,
+    height: StyleSheet.hairlineWidth,
     backgroundColor: colors.borderSubtle,
   },
   btn: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: radius.sm,
+    minHeight: touch.min,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
   btnText: {
-    fontSize: 12.5,
-    fontWeight: '600',
+    fontSize: typography.base,
+    fontWeight: '700',
   },
   statusDot: {
-    width: 7,
-    height: 7,
+    width: 8,
+    height: 8,
     borderRadius: radius.full,
   },
   toggle: {
-    width: 38,
-    height: 22,
-    borderRadius: 11,
+    width: 46,
+    height: 28,
+    borderRadius: 14,
     borderWidth: 1,
     position: 'relative',
+    justifyContent: 'center',
   },
   knob: {
     position: 'absolute',
     top: 2,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: '#fff',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.14,
     shadowRadius: 2,
     elevation: 2,
   },

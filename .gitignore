@@ -3,3 +3,22 @@ dist
 .DS_Store
 *.log
 .expo
+
+# Dataset images and labels (too large for git)
+dataset/**/images/**/*.jpg
+dataset/**/images/**/*.jpeg
+dataset/**/images/**/*.png
+dataset/**/labels/**/*.txt
+
+# Trained YOLO model weights
+ai/models/*.pt
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+env/
+
+# Backend env
+backend/.env
+ai/.env

@@ -1,18 +1,53 @@
-// PoolsEye — Login screen (demo)
+// PoolsEye — Login (Sky Harmony light layout matching design reference)
 
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Image, KeyboardAvoidingView, Platform, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ActivityIndicator,
+  ScrollView, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
+import { colors, typography, spacing, radius, shadow, touch } from '../theme/tokens';
 import { DEMO_LIFEGUARD } from '../auth/demoAuth';
 import { useAuth } from '../context/AuthContext';
 
-const logo = require('../assets/logo-header.png');
+const BTN_GRADIENT = colors.brandGradient;
+const ICON_BLUE = colors.accent;
+const logo = require('../assets/logo.png');
+
+function UserIcon({ color = ICON_BLUE }) {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="8" r="3.5" stroke={color} strokeWidth={1.8} />
+      <Path
+        d="M5 19.5c0-3.2 3.1-5.5 7-5.5s7 2.3 7 5.5"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
+function LockIcon({ color = ICON_BLUE }) {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M7 11V8.5a5 5 0 0 1 10 0V11"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+      />
+      <Path
+        d="M6.5 11h11a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 17.5 21h-11A1.5 1.5 0 0 1 5 19.5v-7A1.5 1.5 0 0 1 6.5 11Z"
+        stroke={color}
+        strokeWidth={1.8}
+      />
+    </Svg>
+  );
+}
 
 function PasswordToggleIcon({ visible, color }) {
   if (visible) {
@@ -68,41 +103,54 @@ export default function LoginScreen() {
   };
 
   return (
-    <LinearGradient
-      colors={[colors.accentDeep, colors.accentStrong, colors.accent]}
-      style={styles.gradient}
-    >
+    <View style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <KeyboardAvoidingView
-        style={[styles.container, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}
+        style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.card}>
-          <Image source={logo} style={styles.logo} resizeMode="contain" />
-          <Text style={styles.title}>PoolsEye</Text>
-          <Text style={styles.subtitle}>Lifeguard sign in</Text>
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              autoComplete="email"
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          <View style={styles.logoWrap}>
+            <Image
+              source={logo}
+              style={styles.logo}
+              resizeMode="contain"
+              accessibilityLabel="PoolsEye logo"
             />
           </View>
 
-          <View style={styles.field}>
-            <Text style={styles.label}>Password</Text>
-            <View style={styles.passwordWrap}>
+          <View style={styles.form}>
+            <View style={styles.field}>
+              <View style={styles.fieldIcon}>
+                <UserIcon />
+              </View>
+              <TextInput
+                style={styles.input}
+                value={email}
+                onChangeText={setEmail}
+                placeholder="Email"
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
+              />
+            </View>
+
+            <View style={styles.field}>
+              <View style={styles.fieldIcon}>
+                <LockIcon />
+              </View>
               <TextInput
                 style={[styles.input, styles.passwordInput]}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
-                placeholder="lifeguard123"
-                placeholderTextColor={colors.textTertiary}
+                placeholder="Password"
+                placeholderTextColor="#94A3B8"
                 autoComplete="password"
               />
               <TouchableOpacity
@@ -112,130 +160,127 @@ export default function LoginScreen() {
                 accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
                 activeOpacity={0.7}
               >
-                <PasswordToggleIcon visible={showPassword} color={colors.textTertiary} />
+                <PasswordToggleIcon visible={showPassword} color="#94A3B8" />
               </TouchableOpacity>
             </View>
+
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+
+            <TouchableOpacity
+              onPress={handleSignIn}
+              disabled={loading}
+              activeOpacity={0.85}
+              style={loading ? styles.buttonDisabled : null}
+            >
+              <LinearGradient
+                colors={BTN_GRADIENT}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={styles.button}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>Sign in</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
-
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleSignIn}
-            disabled={loading}
-            activeOpacity={0.85}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Sign in</Text>
-            )}
-          </TouchableOpacity>
-
-          <Text style={styles.hint}>
-            Demo: {DEMO_LIFEGUARD.email} / {DEMO_LIFEGUARD.password}
-          </Text>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  gradient: {
+  screen: {
     flex: 1,
-  },
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
-  },
-  card: {
-    backgroundColor: colors.bgPanel,
-    borderRadius: radius.xl,
-    padding: 24,
-    ...shadow.md,
-  },
-  logo: {
-    width: 56,
-    height: 56,
-    alignSelf: 'center',
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: typography.xl,
-    fontWeight: '700',
-    color: colors.accentStrong,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: typography.sm,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 24,
-    marginTop: 4,
-  },
-  field: {
-    marginBottom: 14,
-  },
-  label: {
-    fontSize: typography.xs,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginBottom: 6,
-  },
-  input: {
-    height: 44,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    borderRadius: radius.md,
-    paddingHorizontal: 14,
-    fontSize: typography.base,
-    color: colors.textPrimary,
     backgroundColor: colors.bgApp,
   },
-  passwordWrap: {
-    position: 'relative',
+  flex: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xxl,
+  },
+
+  logoWrap: {
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  logo: {
+    width: 180,
+    height: 180,
+  },
+
+  form: {
+    width: '100%',
+  },
+  field: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: touch.comfortable + 6,
+    borderRadius: radius.lg,
+    backgroundColor: colors.bgPanel,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    ...shadow.sm,
+  },
+  fieldIcon: {
+    width: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  input: {
+    flex: 1,
+    height: '100%',
+    fontSize: typography.md,
+    color: colors.textPrimary,
+    paddingVertical: 0,
   },
   passwordInput: {
-    paddingRight: 48,
+    paddingRight: 8,
   },
   eyeButton: {
-    position: 'absolute',
-    right: 4,
-    width: 36,
-    height: 36,
+    width: touch.min,
+    height: touch.min,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.sm,
   },
+
   error: {
     fontSize: typography.sm,
-    color: colors.alarm,
-    marginBottom: 10,
-  },
-  button: {
-    height: 44,
+    color: colors.alarmDark,
+    backgroundColor: colors.alarmTint,
+    borderWidth: 1,
+    borderColor: colors.alarmBorder,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderRadius: radius.md,
-    backgroundColor: colors.accent,
+    marginBottom: spacing.md,
+    overflow: 'hidden',
+    lineHeight: 18,
+  },
+
+  button: {
+    minHeight: touch.comfortable + 6,
+    borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 6,
+    marginTop: spacing.sm,
   },
   buttonDisabled: {
     opacity: 0.7,
   },
   buttonText: {
-    color: '#fff',
-    fontSize: typography.base,
-    fontWeight: '600',
-  },
-  hint: {
-    marginTop: 18,
-    fontSize: typography.xs,
-    color: colors.textTertiary,
-    textAlign: 'center',
-    lineHeight: 18,
+    color: '#FFFFFF',
+    fontSize: typography.md,
+    fontWeight: '700',
   },
 });
