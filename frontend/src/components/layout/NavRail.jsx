@@ -1,28 +1,23 @@
 import { Icon } from '../ui/Icon'
 import Logo from '../ui/Logo'
-import { useAuth } from '../../auth/AuthContext'
 import './NavRail.css'
 
 const NAV_ITEMS = [
   { id: 'live',       label: 'Live monitoring',     icon: Icon.Grid   },
   { id: 'geofence',   label: 'Geofence editor',     icon: Icon.Fence  },
-  { id: 'cameras',    label: 'IP Cameras',          icon: Icon.Camera },
   { id: 'lifeguards', label: 'Lifeguard accounts',  icon: Icon.Users  },
   { id: 'history',    label: 'Event history',       icon: Icon.Clock  },
   { id: 'analytics',  label: 'Analytics & reports', icon: Icon.Chart  },
 ]
 
-export default function NavRail({ activePage, onNavigate }) {
-  const { signOut } = useAuth()
-
+export default function NavRail({ activePage, onNavigate, onRequestSignOut }) {
   return (
     <nav className="navrail" aria-label="Main navigation">
       <div className="navrail-top">
         <div className="navrail-brand">
           <span className="navrail-mark" aria-hidden="true">
-            <Logo size={46} />
+            <Logo size={56} />
           </span>
-          <span className="navrail-name">PoolsEye</span>
         </div>
 
         <div className="navrail-items">
@@ -51,7 +46,7 @@ export default function NavRail({ activePage, onNavigate }) {
           className="navitem navitem-logout"
           title="Sign out"
           aria-label="Sign out"
-          onClick={signOut}
+          onClick={onRequestSignOut}
         >
           <Icon.LogOut />
         </button>

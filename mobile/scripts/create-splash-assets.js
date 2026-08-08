@@ -1,62 +1,47 @@
 /**
- * Creates padded splash + icon assets so the logo fits Android's circular splash mask.
+ * Professional app icon: logo at 85% of square, equal padding, no stretch/crop.
  */
 const path = require('path');
+const fs = require('fs');
 const sharp = require('sharp');
 
 const ASSETS = path.join(__dirname, '..', 'assets');
-const SOURCE = path.join(ASSETS, 'logo.png');
-const BG = { r: 245, g: 249, b: 252, alpha: 1 }; // #F5F9FC
+const SOURCE = fs.existsSync(path.join(ASSETS, 'logo-source.png'))
+  ? path.join(ASSETS, 'logo-source.png')
+  : path.join(ASSETS, 'logo.png');
+const BG = { r: 255, g: 255, b: 255, alpha: 1 };
+const FILL = 0.85;
 
-async function createPaddedSquare({ output, size, logoScale }) {
-  const logoSize = Math.round(size * logoScale);
-  const offset = Math.round((size - logoSize) / 2);
+async function makeIcon(output, size, fill = FILL) {
+  const trimmed = await sharp(SOURCE).trim({ threshold: 25 }).png().toBuffer();
+  const { width: tw, height: th } = await sharp(trimmed).metadata();
 
-  const logo = await sharp(SOURCE)
-    .resize(logoSize, logoSize, {
-      fit: 'contain',
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    })
-    .toBuffer();
+  const maxInner = Math.round(size * fill);
+  const scale = Math.min(maxInner / tw, maxInner / th);
+  const newW = Math.round(tw * scale);
+  const newH = Math.round(th * scale);
+  const logo = await sharp(trimmed).resize(newW, newH, { fit: 'inside' }).png().toBuffer();
+
+  const left = Math.round((size - newW) / 2);
+  const top = Math.round((size - newH) / 2);
 
   await sharp({
-    create: {
-      width: size,
-      height: size,
-      channels: 4,
-      background: BG,
-    },
+    create: { width: size, height: size, channels: 4, background: BG },
   })
-    .composite([{ input: logo, top: offset, left: offset }])
+    .composite([{ input: logo, top, left }])
     .png()
     .toFile(output);
 
-  console.log(`Created ${path.basename(output)} (${size}px, logo ${logoScale * 100}%)`);
+  console.log(`Created ${path.basename(output)} (${newW}x${newH} @ ${Math.round(fill * 100)}%)`);
 }
 
 async function main() {
-  const meta = await sharp(SOURCE).metadata();
-  console.log(`Source logo: ${meta.width}x${meta.height}, ${meta.format}`);
-
-  // ~58% fits safely inside Android's circular splash mask (2/3 diameter rule)
-  await createPaddedSquare({
-    output: path.join(ASSETS, 'splash-icon.png'),
-    size: 1024,
-    logoScale: 0.58,
-  });
-
-  await createPaddedSquare({
-    output: path.join(ASSETS, 'adaptive-icon.png'),
-    size: 1024,
-    logoScale: 0.58,
-  });
-
-  // In-app header logo — slightly larger, still padded
-  await createPaddedSquare({
-    output: path.join(ASSETS, 'logo-header.png'),
-    size: 512,
-    logoScale: 0.72,
-  });
+  await makeIcon(path.join(ASSETS, 'icon-v12.png'), 1024);
+  await makeIcon(path.join(ASSETS, 'icon.png'), 1024);
+  await makeIcon(path.join(ASSETS, 'app-icon.png'), 1024);
+  await makeIcon(path.join(ASSETS, 'adaptive-icon.png'), 1024);
+  await makeIcon(path.join(ASSETS, 'splash-icon.png'), 1024);
+  await makeIcon(path.join(ASSETS, 'logo-header.png'), 512);
 }
 
 main().catch((err) => {

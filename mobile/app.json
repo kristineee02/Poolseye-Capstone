@@ -1,24 +1,24 @@
 {
   "expo": {
-    "name": "PoolsEye Lifeguard",
-    "slug": "poolseye-lifeguard",
-    "version": "1.0.0",
+    "name": "PoolsEye",
+    "slug": "poolseye-capstone",
+    "version": "1.2.4",
     "orientation": "portrait",
-    "icon": "./assets/adaptive-icon.png",
+    "icon": "./assets/icon-v12.png",
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F5F9FC",
-      "imageWidth": 250
+      "backgroundColor": "#FFFFFF",
+      "imageWidth": 300
     },
     "plugins": [
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F5F9FC",
+          "backgroundColor": "#FFFFFF",
           "image": "./assets/splash-icon.png",
-          "imageWidth": 250,
+          "imageWidth": 300,
           "resizeMode": "contain"
         }
       ]
@@ -31,10 +31,10 @@
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#F5F9FC"
+        "backgroundColor": "#FFFFFF"
       },
       "navigationBar": {
-        "backgroundColor": "#F5F9FC"
+        "backgroundColor": "#FFFFFF"
       }
     }
   }

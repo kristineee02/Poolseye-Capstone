@@ -1,91 +1,69 @@
 // PoolsEye — Tab Navigator
-// Floating pill tab bar — icon circles, teal active state, safe-area aware
+// Compact floating pill — Home / Alerts / Profile
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
-  View, Text, Pressable, StyleSheet,
+  View, Text, Pressable, StyleSheet, Animated,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import { colors, radius } from '../theme/tokens';
+import { colors, radius, shadow, typography } from '../theme/tokens';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 
 import AlertsScreen  from '../screen/AlertsScreen';
-import ZonesScreen   from '../screen/ZonesScreen';
 import LogScreen     from '../screen/LogScreen';
 import ProfileScreen from '../screen/ProfileScreen';
 import AppShell      from '../components/AppShell';
 
-function HomeIcon({ color, filled, hasBadge, badgeCount }) {
-  const stroke = filled ? '#FFFFFF' : color;
-  const fill = filled ? color : 'none';
-
+function HomeIcon({ color, filled }) {
   return (
     <View style={iconStyles.iconWrap}>
       <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
         <Path
           d="M12 3.2 4.2 9.8V20c0 .66.54 1.2 1.2 1.2h13.2c.66 0 1.2-.54 1.2-1.2V9.8L12 3.2z"
-          stroke={stroke}
-          strokeWidth={1.75}
+          stroke={color}
+          strokeWidth={1.85}
           strokeLinecap="round"
           strokeLinejoin="round"
-          fill={fill}
+          fill={filled ? color : 'none'}
         />
         <Path
           d="M10.2 21.2V16.2c0-1 .82-1.8 1.8-1.8s1.8.8 1.8 1.8v5"
-          stroke={stroke}
-          strokeWidth={1.75}
+          stroke={color}
+          strokeWidth={1.85}
           strokeLinecap="round"
           strokeLinejoin="round"
           fill="none"
         />
       </Svg>
-      {hasBadge && (
+    </View>
+  );
+}
+
+function BellIcon({ color, filled, hasBadge, badgeCount }) {
+  return (
+    <View style={iconStyles.iconWrap}>
+      <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+        <Path
+          d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"
+          stroke={color}
+          strokeWidth={1.85}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill={filled ? color : 'none'}
+        />
+        <Path
+          d="M13.73 21a2 2 0 0 1-3.46 0"
+          stroke={filled ? '#FFFFFF' : color}
+          strokeWidth={1.85}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </Svg>
+      {hasBadge ? (
         <View style={iconStyles.badge}>
           <Text style={iconStyles.badgeText}>{badgeCount}</Text>
         </View>
-      )}
-    </View>
-  );
-}
-
-function ShieldIcon({ color, filled }) {
-  return (
-    <View style={iconStyles.iconWrap}>
-      <View
-        style={[
-          iconStyles.shield,
-          filled
-            ? { backgroundColor: color, borderColor: color }
-            : { backgroundColor: 'transparent', borderColor: color },
-        ]}
-      >
-        {filled ? (
-          <View style={[iconStyles.shieldInner, { backgroundColor: '#FFFFFF' }]} />
-        ) : (
-          <View style={[iconStyles.shieldInner, { backgroundColor: color }]} />
-        )}
-      </View>
-    </View>
-  );
-}
-
-function ClipboardIcon({ color, filled }) {
-  const lineColor = filled ? '#FFFFFF' : color;
-  return (
-    <View style={iconStyles.iconWrap}>
-      <View
-        style={[
-          iconStyles.clipboard,
-          filled
-            ? { backgroundColor: color, borderColor: color }
-            : { backgroundColor: 'transparent', borderColor: color },
-        ]}
-      >
-        {[0, 1, 2].map((i) => (
-          <View key={i} style={[iconStyles.clipLine, { backgroundColor: lineColor, width: i === 2 ? 8 : 12 }]} />
-        ))}
-      </View>
-      <View style={[iconStyles.clipTop, { backgroundColor: color }]} />
+      ) : null}
     </View>
   );
 }
@@ -113,78 +91,119 @@ function PersonIcon({ color, filled }) {
   );
 }
 
+function TabButton({ tab, isActive, onPress, renderIcon }) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const pressIn = () => {
+    Animated.spring(scale, {
+      toValue: 0.94,
+      useNativeDriver: true,
+      speed: 40,
+      bounciness: 0,
+    }).start();
+  };
+
+  const pressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 28,
+      bounciness: 6,
+    }).start();
+  };
+
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <Pressable
+        style={[styles.tabButton, isActive && styles.tabSlotActive]}
+        onPress={onPress}
+        onPressIn={pressIn}
+        onPressOut={pressOut}
+        android_ripple={{
+          color: 'rgba(30, 111, 255, 0.14)',
+          borderless: false,
+          radius: 28,
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={tab.label}
+        accessibilityState={{ selected: isActive }}
+      >
+        {renderIcon(tab.key, isActive)}
+        <Text
+          style={[
+            styles.tabLabel,
+            isActive ? styles.tabLabelActive : styles.tabLabelIdle,
+          ]}
+          numberOfLines={1}
+        >
+          {tab.label}
+        </Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 const TABS = [
-  { key: 'alerts',  label: 'Home'    },
-  { key: 'zones',   label: 'Zones'   },
-  { key: 'log',     label: 'Log'     },
-  { key: 'profile', label: 'Profile' },
+  { key: 'home',    label: 'Home',    title: 'Home',       subtitle: null },
+  { key: 'alerts',  label: 'Alerts',  title: 'All Alerts', subtitle: null },
+  { key: 'profile', label: 'Profile', title: 'Profile',    subtitle: null },
 ];
 
 export default function TabNavigator({ alertBadgeCount = 2 }) {
-  const [active, setActive] = useState('alerts');
-  const { tabBarPaddingBottom, tabBarPaddingHorizontal, horizontalInset } = useLayoutInsets();
+  const [active, setActive] = useState('home');
+  const { tabBarPaddingBottom, horizontalInset } = useLayoutInsets();
 
   const screens = {
-    alerts:  <AlertsScreen />,
-    zones:   <ZonesScreen />,
-    log:     <LogScreen />,
+    home:    <AlertsScreen />,
+    alerts:  <LogScreen />,
     profile: <ProfileScreen />,
   };
 
-  const renderIcon = (key, isActive, pressed) => {
-    const filled = isActive || pressed;
-    const iconColor = filled ? colors.accent : colors.textTertiary;
+  const activeTab = TABS.find((t) => t.key === active) || TABS[0];
+
+  const renderIcon = (key, isActive) => {
+    const iconColor = isActive ? '#FFFFFF' : colors.accentLight;
     switch (key) {
+      case 'home':
+        return <HomeIcon color={iconColor} filled={isActive} />;
       case 'alerts':
         return (
-          <HomeIcon
+          <BellIcon
             color={iconColor}
-            filled={filled}
+            filled={isActive}
             hasBadge={!isActive && alertBadgeCount > 0}
             badgeCount={alertBadgeCount}
           />
         );
-      case 'zones':   return <ShieldIcon color={iconColor} filled={filled} />;
-      case 'log':     return <ClipboardIcon color={iconColor} filled={filled} />;
-      case 'profile': return <PersonIcon color={iconColor} filled={filled} />;
-      default:        return null;
+      case 'profile':
+        return <PersonIcon color={iconColor} filled={isActive} />;
+      default:
+        return null;
     }
   };
 
   return (
     <View style={styles.root}>
-      <AppShell />
+      <AppShell title={activeTab.title} subtitle={activeTab.subtitle} />
 
       <View style={[styles.screenArea, { paddingHorizontal: horizontalInset }]}>
         {screens[active]}
       </View>
 
       <View
-        style={[
-          styles.tabBarAnchor,
-          {
-            marginBottom: tabBarPaddingBottom,
-            marginHorizontal: tabBarPaddingHorizontal,
-          },
-        ]}
+        style={[styles.tabBarAnchor, { marginBottom: tabBarPaddingBottom }]}
         pointerEvents="box-none"
       >
         <View style={styles.tabBarPill}>
-          {TABS.map((tab) => {
-            const isActive = tab.key === active;
-            return (
-              <Pressable
-                key={tab.key}
-                style={styles.tabButton}
-                onPress={() => setActive(tab.key)}
-                accessibilityRole="button"
-                accessibilityLabel={tab.label}
-                accessibilityState={{ selected: isActive }}
-              >
-                {({ pressed }) => renderIcon(tab.key, isActive, pressed)}
-              </Pressable>
-            );
-          })}
+          {TABS.map((tab) => (
+            <TabButton
+              key={tab.key}
+              tab={tab}
+              isActive={tab.key === active}
+              onPress={() => setActive(tab.key)}
+              renderIcon={renderIcon}
+            />
+          ))}
         </View>
       </View>
     </View>
@@ -195,81 +214,41 @@ const iconStyles = StyleSheet.create({
   iconWrap: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 24,
-    height: 24,
+    width: 22,
+    height: 22,
   },
   badge: {
     position: 'absolute',
-    top: -2,
-    right: -4,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    top: -5,
+    right: -8,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: colors.alarm,
     borderWidth: 1.5,
     borderColor: colors.bgPanel,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 3,
   },
   badgeText: {
-    fontSize: 7.5,
+    fontSize: 9,
     fontWeight: '700',
     color: '#fff',
   },
-  shield: {
-    width: 14,
-    height: 16,
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-    borderBottomLeftRadius: 6,
-    borderBottomRightRadius: 6,
-    borderWidth: 1.8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  shieldInner: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-  },
-  clipboard: {
-    width: 14,
-    height: 16,
-    borderRadius: 2,
-    borderWidth: 1.5,
-    marginTop: 5,
-    paddingTop: 4,
-    paddingHorizontal: 2,
-    gap: 2.5,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-  },
-  clipLine: {
-    height: 1.5,
-    borderRadius: 1,
-    marginBottom: 2,
-  },
-  clipTop: {
-    position: 'absolute',
-    top: 2,
-    width: 7,
-    height: 3,
-    borderRadius: 1.5,
-  },
   personHead: {
-    width: 9,
-    height: 9,
-    borderRadius: 4.5,
-    borderWidth: 1.6,
-    marginBottom: 2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    marginBottom: 1.5,
   },
   personBody: {
-    width: 14,
-    height: 7,
-    borderTopLeftRadius: 7,
-    borderTopRightRadius: 7,
-    borderWidth: 1.6,
+    width: 13,
+    height: 6.5,
+    borderTopLeftRadius: 6.5,
+    borderTopRightRadius: 6.5,
+    borderWidth: 1.5,
     borderBottomWidth: 0,
   },
 });
@@ -289,31 +268,45 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     backgroundColor: 'transparent',
-    elevation: 0,
-    shadowOpacity: 0,
   },
   tabBarPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    alignSelf: 'stretch',
-    width: '100%',
-    backgroundColor: colors.bgPanel,
+    justifyContent: 'center',
+    alignSelf: 'center',
+    gap: 6,
+    minHeight: 64,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: radius.full,
+    backgroundColor: colors.bgPanel,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    shadowColor: colors.accentDeep,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 3,
+    ...shadow.md,
   },
   tabButton: {
-    flex: 1,
+    minWidth: 76,
+    minHeight: 52,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 48,
+    gap: 3,
+  },
+  tabSlotActive: {
+    backgroundColor: colors.accent,
+  },
+  tabLabel: {
+    fontSize: typography.xs,
+    fontWeight: '600',
+    letterSpacing: 0.15,
+  },
+  tabLabelActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  tabLabelIdle: {
+    color: colors.accentLight,
   },
 });

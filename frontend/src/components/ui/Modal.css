@@ -1,7 +1,9 @@
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(13, 71, 161, 0.28);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -16,8 +18,9 @@
 
 .modal {
   background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-lg), 0 12px 40px rgba(13, 71, 161, 0.12);
   max-height: 90vh;
   overflow-y: auto;
   animation: slideUp 0.25s ease-out;
@@ -56,11 +59,14 @@
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
-  transition: color 0.15s;
+  transition: color 0.15s, background 0.15s;
   border-radius: var(--r-sm);
 }
 
-.modal-close:hover { color: var(--text-primary); }
+.modal-close:hover {
+  color: var(--text-primary);
+  background: var(--accent-tint);
+}
 
 .modal-close svg { width: 18px; height: 18px; }
 
@@ -101,9 +107,13 @@
   font-weight: 600;
   padding: 9px 15px;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background 0.12s, border-color 0.12s;
 }
-.btn-secondary:hover { background: var(--bg-inset); }
+.btn-secondary:hover {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
 
 .btn-danger {
   background: var(--alarm);
@@ -114,9 +124,12 @@
   font-weight: 600;
   padding: 9px 15px;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background 0.12s, box-shadow 0.12s;
 }
-.btn-danger:hover { background: #b52b3c; }
+.btn-danger:hover {
+  background: #b52b3c;
+  box-shadow: 0 4px 12px rgba(214, 54, 74, 0.28);
+}
 
 .btn-icon-secondary {
   background: var(--bg-inset);

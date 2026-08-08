@@ -1,6 +1,7 @@
 import { Icon } from '../ui/Icon'
 import CameraFeedIllustration from './CameraFeedIllustration'
 import { telemetry } from '../../data/site'
+import { ZONE_TYPES } from '../../data/geofence'
 import './CameraPanel.css'
 
 export default function CameraPanel({ compact = false }) {
@@ -21,8 +22,8 @@ export default function CameraPanel({ compact = false }) {
           <span className="dot" />
           LIVE
         </div>
-        <div className="name">South Patio — Pool Perimeter</div>
-        <div className="id">CAM-01 · OV9281</div>
+        <div className="name">Main Pool — CCTV</div>
+        <div className="id">CAM-01 · OV9281 · single feed</div>
         <div className="camera-head-right">
           <div className="telemetry-inline">
             <div className="t-item">FPS <span>{telemetry.fps}</span></div>
@@ -38,10 +39,27 @@ export default function CameraPanel({ compact = false }) {
 
       <div className="camera-footbar">
         <div className="legend">
-          <span className="legend-item"><span className="legend-swatch" style={{ background: '#1B9C6E' }} />Adult — supervised</span>
-          <span className="legend-item"><span className="legend-swatch" style={{ background: '#B6790A' }} />Child — tracked</span>
-          <span className="legend-item"><span className="legend-swatch" style={{ background: '#007BFF' }} />Geofence boundary</span>
-          <span className="legend-item"><span className="legend-swatch" style={{ background: '#D6364A' }} />Proximity exceeded</span>
+          <span className="legend-item">
+            <span className="legend-swatch" style={{ background: '#1B9C6E' }} />
+            Adult — supervised
+          </span>
+          <span className="legend-item">
+            <span className="legend-swatch" style={{ background: '#B6790A' }} />
+            Child — tracked
+          </span>
+          {Object.values(ZONE_TYPES).map((t) => (
+            <span className="legend-item" key={t.id}>
+              <span
+                className={`legend-swatch ${t.geometry === 'polyline' ? 'legend-swatch-line' : ''}`}
+                style={{ background: t.color }}
+              />
+              {t.label}
+            </span>
+          ))}
+          <span className="legend-item">
+            <span className="legend-swatch" style={{ background: '#D6364A' }} />
+            Proximity exceeded
+          </span>
         </div>
         <div className="camera-controls">
           <button className="ctrl-btn" title="Zoom"><Icon.Search /></button>

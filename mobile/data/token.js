@@ -1,37 +1,41 @@
 // PoolsEye React Native — Design Tokens
-// Mirrors the web dashboard blue brand palette
+// Sky Harmony blue brand · mobile-optimized scale
 
 export const colors = {
   // Surfaces
-  bgApp:    '#F5F9FC',
+  bgApp:    '#F0F8FF',
   bgPanel:  '#FFFFFF',
   bgRaised: '#FAFCFE',
-  bgInset:  '#EEF4F9',
+  bgInset:  '#E8F3FC',
 
   // Borders
   borderSubtle: '#DCE8F2',
   borderStrong: '#C5D9E8',
 
   // Text
-  textPrimary:   '#0D1B2A',
+  textPrimary:   '#0F172A',
   textSecondary: '#5A6B7D',
   textTertiary:  '#8FA3B8',
 
-  // Brand blues
-  accent:       '#007BFF',
-  accentStrong: '#1565C0',
-  accentDeep:   '#0D47A1',
-  accentLight:  '#4FC3F7',
-  accentTint:   '#E8F4FF',
+  // Brand blues — Sky Harmony
+  accent:       '#1E6FFF',
+  accentStrong: '#1E6FFF',
+  accentDeep:   '#1557D6',
+  accentLight:  '#4DB8FF',
+  accentHighlight: '#A7ECFF',
+  accentTint:   '#F0F8FF',
+  brandGradient: ['#4DB8FF', '#1E6FFF'],
 
   // Status trio
   safe:       '#1B9C6E',
   safeTint:   '#E6F6EF',
   safeBorder: '#B3E2D0',
 
-  warn:       '#B6790A',
-  warnTint:   '#FBF1DE',
-  warnBorder: '#EDD59A',
+  warn:       '#E6B800',
+  warnTint:   '#FFF9E0',
+  warnBorder: '#F0D86A',
+  warnDark:   '#8A7000',
+  warnMid:    '#C4A000',
 
   alarm:       '#D6364A',
   alarmTint:   '#FCEAEE',
@@ -42,45 +46,54 @@ export const colors = {
 
 export const radius = {
   sm: 10,
-  md: 12,
-  lg: 14,
-  xl: 16,
+  md: 14,
+  lg: 16,
+  xl: 20,
   full: 999,
 };
 
+/** Consistent spacing rhythm for mobile layouts */
 export const spacing = {
   xs: 4,
   sm: 8,
-  md: 14,
-  lg: 18,
-  xl: 24,
+  md: 16,
+  lg: 20,
+  xl: 28,
+  xxl: 36,
 };
 
+/** Readable mobile type scale (min ~11px) */
 export const typography = {
   ui:   'System',
   mono: 'Courier',
-  xs:   10,
-  sm:   11.5,
-  base: 13,
-  md:   14,
-  lg:   15,
-  xl:   19,
-  kpi:  25,
+  xs:   11,
+  sm:   13,
+  base: 14,
+  md:  15,
+  lg:  17,
+  xl:  22,
+  kpi: 28,
+};
+
+/** Minimum comfortable tap target */
+export const touch = {
+  min: 44,
+  comfortable: 48,
 };
 
 export const shadow = {
   sm: {
-    shadowColor: '#0D47A1',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 3,
-    elevation: 1,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
   md: {
-    shadowColor: '#0D47A1',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowColor: '#1E6FFF',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 4,
   },
 };

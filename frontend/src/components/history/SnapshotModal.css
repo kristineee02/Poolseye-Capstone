@@ -1,0 +1,40 @@
+.snapshot-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.snapshot-frame {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--bg-inset);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+}
+
+.snapshot-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.snapshot-meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.snapshot-meta-row .k {
+  color: var(--text-secondary);
+}
+
+.snapshot-meta-row .v {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: right;
+}

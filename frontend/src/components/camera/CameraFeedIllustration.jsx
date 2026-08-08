@@ -1,8 +1,60 @@
-export default function CameraFeedIllustration() {
+import { initialZones, getZoneTypeMeta } from '../../data/geofence'
+
+function GeofenceOverlay({ zones }) {
+  return (
+    <g className="live-geofence-overlay">
+      {zones.map((zone) => {
+        const meta = getZoneTypeMeta(zone.type)
+        if (!zone.points?.length) return null
+
+        const pts = zone.points.map((p) => `${p.x},${p.y}`).join(' ')
+        const isPolygon = meta.geometry === 'polygon' && zone.points.length >= 3
+
+        return (
+          <g key={zone.id}>
+            {isPolygon ? (
+              <polygon
+                points={pts}
+                fill={meta.fill}
+                stroke={meta.color}
+                strokeWidth="2.5"
+                strokeLinejoin="round"
+                opacity="0.95"
+              />
+            ) : (
+              <polyline
+                points={pts}
+                fill="none"
+                stroke={meta.color}
+                strokeWidth="3.5"
+                strokeDasharray="10 6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity="0.95"
+              />
+            )}
+            {/* Zone label at first point */}
+            <text
+              x={zone.points[0].x + 6}
+              y={zone.points[0].y - 8}
+              fill={meta.color}
+              fontFamily="Roboto Mono, monospace"
+              fontSize="11"
+              fontWeight="700"
+            >
+              {meta.label.toUpperCase()} · {zone.name.toUpperCase()}
+            </text>
+          </g>
+        )
+      })}
+    </g>
+  )
+}
+
+export default function CameraFeedIllustration({ zones = initialZones }) {
   const PX = 160, PY = 76, PW = 680, PH = 360
 
   // Deck figures — bottom-aligned to just above the pool edge (PY - 4)
-  // Kept fully within the deck strip (y >= 4)
   const adult = { x: PX + 360, y: 4,  w: 72, h: PY - 26 }
   const child  = { x: PX + 180, y: 10, w: 54, h: PY - 32 }
   const adultCx = adult.x + adult.w / 2
@@ -45,6 +97,17 @@ export default function CameraFeedIllustration() {
       <rect x={PX} y={PY} width={PW} height={PH} rx="36" ry="36"
         fill="url(#cf-ripple)" opacity="0.55" />
 
+      {/* Shallow / deep hint */}
+      <line
+        x1={PX + PW * 0.52} y1={PY + 8}
+        x2={PX + PW * 0.52} y2={PY + PH - 8}
+        stroke="#FFFFFF" strokeWidth="1.5" strokeDasharray="6 8" opacity="0.22"
+      />
+      <text x={PX + 28} y={PY + PH - 18} fill="#fff" fontFamily="Roboto Mono, monospace"
+        fontSize="11" opacity="0.5">SHALLOW</text>
+      <text x={PX + PW - 28} y={PY + PH - 18} fill="#fff" fontFamily="Roboto Mono, monospace"
+        fontSize="11" opacity="0.5" textAnchor="end">DEEP</text>
+
       {/* Lane lines clipped to pool */}
       <g clipPath="url(#cf-pool-clip)">
         <line x1={PX} y1={PY + PH * 0.33} x2={PX + PW} y2={PY + PH * 0.33}
@@ -74,16 +137,11 @@ export default function CameraFeedIllustration() {
       {/* Pool label */}
       <text x={PX + PW / 2} y={PY + 28} fill="#fff" fontFamily="Roboto Mono, monospace"
         fontSize="12" fontWeight="700" textAnchor="middle" opacity="0.55" letterSpacing="2">
-        MAIN POOL — TOP VIEW
+        MAIN POOL — LIVE CCTV
       </text>
 
-      {/* Geofence overlay — red, outside pool boundary */}
-      <rect x={PX - 22} y={PY - 22} width={PW + 44} height={PH + 44} rx="48" ry="48"
-        fill="none" stroke="#D6364A" strokeWidth="2.5" strokeDasharray="12 7" opacity="0.85" />
-      <text x={PX - 4} y={PY - 28} fill="#D6364A"
-        fontFamily="Roboto Mono, monospace" fontSize="11" fontWeight="600">
-        VIRTUAL GEOFENCE — POOL PERIMETER
-      </text>
+      {/* Safety geofence zones from Geofence editor (Yellow / Orange / Red) */}
+      <GeofenceOverlay zones={zones} />
 
       {/* ── Adult bounding box — deck, before pool ── */}
       <rect x={adult.x} y={adult.y} width={adult.w} height={adult.h} rx="4"

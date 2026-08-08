@@ -20,7 +20,7 @@ export const kpis = [
 export const todaySummary = [
   { label: 'Intrusions flagged', value: 1 },
   { label: 'Supervised visits', value: 6 },
-  { label: 'PIR triggers', value: 14 },
+  { label: 'Boundary crossings', value: 3 },
   { label: 'Avg. response', value: '340ms' },
 ]
 

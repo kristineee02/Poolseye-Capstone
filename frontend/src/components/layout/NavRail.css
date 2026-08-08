@@ -30,8 +30,8 @@
 }
 
 .navrail-mark {
-  width: 48px;
-  height: 48px;
+  width: 64px;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -42,15 +42,6 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
-}
-
-.navrail-name {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--accent-strong);
-  letter-spacing: 0.02em;
-  text-align: center;
-  line-height: 1.2;
 }
 
 .navrail-items {
@@ -114,9 +105,5 @@
   .navrail {
     border-radius: 0;
     box-shadow: none;
-  }
-
-  .navrail-name {
-    display: none;
   }
 }

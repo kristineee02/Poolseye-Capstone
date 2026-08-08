@@ -2,22 +2,27 @@ import { useState } from 'react'
 import { Icon } from '../components/ui/Icon'
 import Toggle from '../components/ui/Toggle'
 import GeofenceStage from '../components/geofence/GeofenceStage'
-import { initialZones } from '../data/geofence'
+import { initialZones, ZONE_TYPES, getZoneTypeMeta } from '../data/geofence'
 import '../components/geofence/GeofenceEditor.css'
-
-const ZONE_COLORS = ['#007BFF', '#B6790A', '#1B9C6E', '#7A5CC9', '#D6364A']
 
 function makeZoneId() {
   return `zone-${Date.now()}`
 }
 
+const DEFAULT_NAMES = {
+  warning: 'Warning zone',
+  transition: 'Transition boundary',
+  danger: 'Danger zone',
+}
+
 export default function GeofenceEditorPage() {
   const [zones, setZones] = useState(initialZones)
   const [activeZoneId, setActiveZoneId] = useState(initialZones[0].id)
-  const [mode, setMode] = useState('move') // 'move' | 'add' | 'delete'
+  const [mode, setMode] = useState('add') // default to Add Point for drawing
   const [savedNotice, setSavedNotice] = useState(false)
 
   const activeZone = zones.find((z) => z.id === activeZoneId)
+  const activeMeta = activeZone ? getZoneTypeMeta(activeZone.type) : null
 
   function updateZonePoints(zoneId, points) {
     setZones((prev) => prev.map((z) => (z.id === zoneId ? { ...z, points } : z)))
@@ -27,27 +32,28 @@ export default function GeofenceEditorPage() {
     setZones((prev) => prev.map((z) => (z.id === activeZoneId ? { ...z, ...patch } : z)))
   }
 
-  function addZone() {
-    const color = ZONE_COLORS[zones.length % ZONE_COLORS.length]
+  function addZone(type) {
+    const meta = getZoneTypeMeta(type)
+    const countOfType = zones.filter((z) => z.type === type).length
     const newZone = {
       id: makeZoneId(),
-      name: `Zone ${zones.length + 1}`,
-      color,
-      direction: 'toward',
-      threshold: 1.5,
+      name: countOfType === 0 ? DEFAULT_NAMES[type] : `${DEFAULT_NAMES[type]} ${countOfType + 1}`,
+      type,
+      direction: type === 'transition' ? 'both' : 'toward',
       activeDuringStandby: true,
       points: [],
     }
     setZones((prev) => [...prev, newZone])
     setActiveZoneId(newZone.id)
     setMode('add')
+    return meta
   }
 
   function removeZone(zoneId) {
     const remaining = zones.filter((z) => z.id !== zoneId)
     setZones(remaining)
-    if (activeZoneId === zoneId && remaining.length > 0) {
-      setActiveZoneId(remaining[0].id)
+    if (activeZoneId === zoneId) {
+      setActiveZoneId(remaining[0]?.id ?? null)
     }
   }
 
@@ -64,7 +70,7 @@ export default function GeofenceEditorPage() {
   function discardChanges() {
     setZones(initialZones)
     setActiveZoneId(initialZones[0].id)
-    setMode('move')
+    setMode('add')
   }
 
   function saveZone() {
@@ -73,11 +79,13 @@ export default function GeofenceEditorPage() {
   }
 
   return (
-    <div className="page">
-      <div className="pagehead">
+    <div className="page geofence-page">
+      <div className="pagehead geofence-pagehead">
         <div>
           <h1>Geofence editor</h1>
-          <div className="sub">Draw and adjust the virtual boundary for each pool access point</div>
+          <div className="sub">
+            Manually draw Yellow warning zones, Orange transition boundaries, and Red danger zones
+          </div>
         </div>
         <div className="pagehead-right">
           <button className="chip-btn" onClick={discardChanges}>
@@ -85,16 +93,22 @@ export default function GeofenceEditorPage() {
           </button>
           <button className="btn-primary" onClick={saveZone}>
             <Icon.Save />
-            {savedNotice ? 'Saved' : 'Save zone'}
+            {savedNotice ? 'Saved' : 'Save zones'}
           </button>
         </div>
       </div>
 
-      <div className="twocol">
-        <div className="camera-panel">
+      <div className="geofence-layout">
+        <div className="geofence-canvas-col">
+          <div className="camera-panel">
           <div className="camera-head">
             <div className="name">South Patio — Pool Perimeter</div>
-            <div className="id">CAM-01 · {activeZone ? `editing "${activeZone.name}"` : 'select a zone'}</div>
+            <div className="id">
+              CAM-01 ·{' '}
+              {activeZone
+                ? `drawing "${activeZone.name}" (${activeMeta?.label})`
+                : 'select or add a zone'}
+            </div>
             <div className="camera-head-right">
               <div className="mode-btn-row">
                 <button
@@ -131,16 +145,21 @@ export default function GeofenceEditorPage() {
                 onUpdateZonePoints={updateZonePoints}
               />
             ) : (
-              <div className="zone-list-empty">No zone selected. Add a zone to start drawing.</div>
+              <div className="zone-list-empty">
+                No zone selected. Add a Yellow, Orange, or Red component to start drawing.
+              </div>
             )}
           </div>
 
           <div className="camera-footbar">
             <div className="legend">
-              {zones.map((z) => (
-                <span className="legend-item" key={z.id}>
-                  <span className="legend-swatch" style={{ background: z.color }} />
-                  {z.name}
+              {Object.values(ZONE_TYPES).map((t) => (
+                <span className="legend-item" key={t.id}>
+                  <span
+                    className={`legend-swatch ${t.geometry === 'polyline' ? 'legend-swatch-line' : ''}`}
+                    style={{ background: t.color }}
+                  />
+                  {t.label}
                 </span>
               ))}
             </div>
@@ -148,48 +167,104 @@ export default function GeofenceEditorPage() {
               <button className="ctrl-btn" title="Undo last point" onClick={undoLastPoint}>
                 <Icon.Undo />
               </button>
-              <button className="ctrl-btn" title="Clear zone" onClick={clearActiveZonePoints}>
+              <button className="ctrl-btn" title="Clear points" onClick={clearActiveZonePoints}>
                 <Icon.Trash />
               </button>
             </div>
           </div>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <aside className="geofence-sidebar" aria-label="Geofence features panel">
+          <div className="geofence-sidebar-scroll">
+          {/* Add drawing components */}
           <div className="panel">
             <div className="panel-head">
-              <h3>Zones for this camera</h3>
+              <h3>Add drawing component</h3>
             </div>
-            <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {zones.map((z) => (
+            <div className="zone-type-add-grid">
+              {Object.values(ZONE_TYPES).map((t) => (
                 <button
-                  key={z.id}
-                  className={`zone-tab ${z.id === activeZoneId ? 'active' : ''}`}
-                  onClick={() => setActiveZoneId(z.id)}
+                  key={t.id}
+                  type="button"
+                  className={`zone-type-add-btn zone-type-add-btn--${t.id}`}
+                  onClick={() => addZone(t.id)}
                 >
-                  <span className="zdot" style={{ background: z.color }} />
-                  {z.name}
-                  <span className="zcount mono">{z.points.length} pts</span>
+                  <span className="zone-type-add-swatch" style={{ background: t.color }} />
+                  <span className="zone-type-add-copy">
+                    <strong>{t.label}</strong>
+                    <span>{t.geometry === 'polygon' ? 'Polygon · click to draw' : 'Polyline · click to draw'}</span>
+                  </span>
+                  <Icon.Plus />
                 </button>
               ))}
-              <button className="chip-btn" style={{ justifyContent: 'center', marginTop: 4 }} onClick={addZone}>
-                <Icon.Plus />
-                Add new zone
-              </button>
             </div>
           </div>
 
-          {activeZone && (
+          {/* Zone list */}
+          <div className="panel">
+            <div className="panel-head">
+              <h3>Zones on this camera</h3>
+            </div>
+            <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {zones.length === 0 && (
+                <div className="zone-list-empty">No zones yet. Add one above to begin.</div>
+              )}
+              {zones.map((z) => {
+                const meta = getZoneTypeMeta(z.type)
+                return (
+                  <button
+                    key={z.id}
+                    className={`zone-tab zone-tab--${z.type} ${z.id === activeZoneId ? 'active' : ''}`}
+                    onClick={() => {
+                      setActiveZoneId(z.id)
+                      setMode('add')
+                    }}
+                  >
+                    <span className="zdot" style={{ background: meta.color }} />
+                    <span className="zone-tab-copy">
+                      <span className="zone-tab-name">{z.name}</span>
+                      <span className="zone-tab-type">{meta.label}</span>
+                    </span>
+                    <span className="zcount mono">{z.points.length} pts</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {activeZone && activeMeta && (
             <div className="panel">
               <div className="panel-head">
-                <h3>{activeZone.name} settings</h3>
-                <span className="view-all" onClick={() => removeZone(activeZone.id)} style={{ color: 'var(--alarm)' }}>
-                  Delete zone
+                <h3>{activeZone.name}</h3>
+                <span
+                  className="view-all"
+                  onClick={() => removeZone(activeZone.id)}
+                  style={{ color: 'var(--alarm)' }}
+                >
+                  Delete
                 </span>
               </div>
               <div style={{ padding: 16 }}>
+                <div className={`zone-alert-banner zone-alert-banner--${activeZone.type}`}>
+                  <span className="zone-alert-dot" style={{ background: activeMeta.color }} />
+                  <div>
+                    <strong>{activeMeta.alertLabel}</strong>
+                    <p>{activeMeta.alertDescription}</p>
+                  </div>
+                </div>
+
                 <div className="field-row">
-                  <label className="field-label">Zone name</label>
+                  <label className="field-label">Component type</label>
+                  <div className="zone-type-readonly">
+                    <span className="zdot" style={{ background: activeMeta.color }} />
+                    {activeMeta.label}
+                    <span className="zone-type-geo">{activeMeta.geometry}</span>
+                  </div>
+                </div>
+
+                <div className="field-row">
+                  <label className="field-label">Name</label>
                   <input
                     className="field-input"
                     type="text"
@@ -197,35 +272,31 @@ export default function GeofenceEditorPage() {
                     onChange={(e) => updateActiveZone({ name: e.target.value })}
                   />
                 </div>
-                <div className="field-row">
-                  <label className="field-label">Trigger direction</label>
-                  <select
-                    className="field-input"
-                    value={activeZone.direction}
-                    onChange={(e) => updateActiveZone({ direction: e.target.value })}
-                  >
-                    <option value="toward">Toward pool only</option>
-                    <option value="both">Both directions</option>
-                    <option value="away">Away from pool only</option>
-                  </select>
-                </div>
-                <div className="field-row">
-                  <label className="field-label">
-                    Proximity threshold — minimum adult distance
-                  </label>
-                  <div className="threshold-slider-row">
-                    <input
-                      type="range"
-                      min="0.5"
-                      max="4"
-                      step="0.1"
-                      value={activeZone.threshold}
-                      onChange={(e) => updateActiveZone({ threshold: parseFloat(e.target.value) })}
-                    />
-                    <span className="threshold-readout">{activeZone.threshold.toFixed(1)} m</span>
+
+                {activeZone.type === 'transition' && (
+                  <div className="field-row">
+                    <label className="field-label">Crossing direction</label>
+                    <select
+                      className="field-input"
+                      value={activeZone.direction}
+                      onChange={(e) => updateActiveZone({ direction: e.target.value })}
+                    >
+                      <option value="both">Either direction (shallow ↔ deep)</option>
+                      <option value="toward">Toward deep end only</option>
+                      <option value="away">Toward shallow end only</option>
+                    </select>
                   </div>
-                </div>
-                <div className="field-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 0 }}>
+                )}
+
+                <div
+                  className="field-row"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: 0,
+                  }}
+                >
                   <label className="field-label" style={{ margin: 0 }}>
                     Active during standby hours
                   </label>
@@ -241,17 +312,28 @@ export default function GeofenceEditorPage() {
 
           <div className="panel">
             <div className="panel-head">
-              <h3>How this works</h3>
+              <h3>How to draw</h3>
             </div>
-            <p className="editor-helptext">
-              Use <b>Add point</b> and click the stage to trace the boundary nearest the water,
-              <b> Move</b> to drag a point into place, and <b>Remove point</b> to delete one. The
-              system uses centroid tracking to flag a crossing only when movement matches the
-              trigger direction. The proximity threshold sets how close an adult must stay to a
-              detected child before the zone is considered supervised.
-            </p>
+            <div className="editor-helptext">
+              <ol className="editor-help-list">
+                <li>
+                  Choose a component: <b>Yellow Zone</b> (warning polygon),{' '}
+                  <b>Orange Boundary</b> (transition polyline), or <b>Red Zone</b> (danger polygon).
+                </li>
+                <li>
+                  Select <b>Add point</b>, then click the pool stage to place vertices one by one.
+                </li>
+                <li>
+                  Polygons close automatically at <b>3+ points</b>. The orange boundary stays an open line.
+                </li>
+                <li>
+                  Use <b>Move</b> to drag points, or <b>Remove point</b> to delete a vertex.
+                </li>
+              </ol>
+            </div>
           </div>
-        </div>
+          </div>
+        </aside>
       </div>
     </div>
   )

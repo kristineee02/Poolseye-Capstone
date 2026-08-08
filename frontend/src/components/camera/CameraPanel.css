@@ -110,6 +110,11 @@
   height: 10px;
   border-radius: 3px;
 }
+.legend-swatch-line {
+  height: 3px;
+  width: 14px;
+  border-radius: 2px;
+}
 .camera-controls {
   display: flex;
   gap: 8px;

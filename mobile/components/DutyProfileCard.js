@@ -82,7 +82,7 @@ export default function DutyProfileCard() {
 
   return (
     <LinearGradient
-      colors={[colors.accentDeep, colors.accentStrong, colors.accent]}
+      colors={colors.brandGradient}
       start={{ x: 0, y: 0.5 }}
       end={{ x: 1, y: 0.5 }}
       style={styles.card}

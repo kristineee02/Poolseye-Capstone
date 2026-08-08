@@ -1,44 +1,68 @@
-import React from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Image, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import TabNavigator from './navigation/TabNavigator';
 import LoginScreen from './screen/LoginScreen';
 import { colors } from './theme/tokens';
 
-function Root() {
+const logo = require('./assets/logo.png');
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
+
+function BrandSplash() {
+  return (
+    <View style={styles.splash}>
+      <Image source={logo} style={styles.splashLogo} resizeMode="contain" />
+    </View>
+  );
+}
+
+function Root({ onReady }) {
   const { user, ready } = useAuth();
 
-  if (!ready) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={colors.accent} />
-      </View>
-    );
-  }
+  useEffect(() => {
+    if (ready) onReady?.();
+  }, [ready, onReady]);
 
+  if (!ready) return <BrandSplash />;
   if (!user) return <LoginScreen />;
-
   return <TabNavigator />;
 }
 
 export default function App() {
+  const [appReady, setAppReady] = useState(false);
+
+  const onReady = useCallback(() => {
+    setAppReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!appReady) return;
+    SplashScreen.hideAsync().catch(() => {});
+  }, [appReady]);
+
   return (
     <SafeAreaProvider>
       <AuthProvider>
         <StatusBar style="dark" />
-        <Root />
+        <Root onReady={onReady} />
       </AuthProvider>
     </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  loading: {
+  splash: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.bgApp,
+    backgroundColor: '#F0F8FF',
+  },
+  splashLogo: {
+    width: 240,
+    height: 240,
   },
 });
