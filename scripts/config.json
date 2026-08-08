@@ -1,0 +1,8 @@
+{
+    "DROWNING_LOGIC": {
+        "angle_threshold": 20.0,
+        "movement_threshold": 5.0,
+        "confidence_threshold": 0.75,
+        "danger_time_threshold": 10
+    }
+}
