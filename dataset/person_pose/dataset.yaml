@@ -1,0 +1,10 @@
+path: C:/Users/Administrator/Desktop/Capstone/dataset/person_pose
+train: images/train
+val: images/val
+test: images/test
+
+nc: 1
+names: ["person"]
+
+# Add this line:
+kpt_shape: [17, 3]
