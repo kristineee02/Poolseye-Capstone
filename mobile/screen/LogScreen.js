@@ -275,12 +275,12 @@ const styles = StyleSheet.create({
   },
 
   listContent: {
-    gap: 12,
+    gap: 10,
     paddingBottom: 8,
   },
 
   card: {
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     borderWidth: 1,
     overflow: 'hidden',
     flexDirection: 'row',
@@ -291,43 +291,44 @@ const styles = StyleSheet.create({
   },
   cardInner: {
     flex: 1,
-    padding: spacing.md,
-    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    gap: 6,
   },
   cardTop: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 10,
+    gap: 8,
   },
   dot: {
-    width: 8,
-    height: 8,
+    width: 7,
+    height: 7,
     borderRadius: 4,
-    marginTop: 6,
+    marginTop: 5,
     flexShrink: 0,
   },
   cardTitle: {
     flex: 1,
-    fontSize: typography.base,
+    fontSize: typography.sm,
     fontWeight: '700',
-    lineHeight: 20,
+    lineHeight: 18,
   },
   cardTime: {
-    fontSize: typography.xs,
+    fontSize: 10,
     fontWeight: '600',
     flexShrink: 0,
-    marginTop: 2,
+    marginTop: 1,
   },
   cardMeta: {
-    fontSize: typography.sm,
-    lineHeight: 19,
-    paddingLeft: 18,
+    fontSize: typography.xs,
+    lineHeight: 16,
+    paddingLeft: 15,
   },
   cardTags: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    paddingLeft: 18,
+    paddingLeft: 15,
   },
 
   emptyState: {

@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import TabNavigator from './navigation/TabNavigator';
 import LoginScreen from './screen/LoginScreen';
+import ChangePasswordScreen from './screen/ChangePasswordScreen';
 import { colors } from './theme/tokens';
 
 const logo = require('./assets/logo.png');
@@ -29,6 +30,9 @@ function Root({ onReady }) {
 
   if (!ready) return <BrandSplash />;
   if (!user) return <LoginScreen />;
+  if (user.mustChangePassword) {
+    return <ChangePasswordScreen forced />;
+  }
   return <TabNavigator />;
 }
 

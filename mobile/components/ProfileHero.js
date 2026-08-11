@@ -1,44 +1,29 @@
-// PoolsEye — ProfileHero
-// Avatar + greeting + online status
+// PoolsEye — ProfileHero (greeting + online, matches dashboard reference)
 
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { colors, radius, typography, shadow, spacing } from '../theme/tokens';
+import { colors, radius, typography } from '../theme/tokens';
 import { useAuth } from '../context/AuthContext';
 import { lifeguard as defaultLifeguard } from '../data';
 
 function getGreeting() {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
-}
-
-function getInitials(name, fallback = 'LG') {
-  if (!name || typeof name !== 'string') return fallback;
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return fallback;
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  if (hour < 12) return 'Good morning,';
+  if (hour < 18) return 'Good afternoon,';
+  return 'Good evening,';
 }
 
 export default function ProfileHero({ online = true }) {
   const { user } = useAuth();
   const lifeguard = user || defaultLifeguard;
   const name = lifeguard.name || 'Lifeguard';
-  const initials = lifeguard.initials || getInitials(name);
   const greeting = useMemo(() => getGreeting(), []);
 
   return (
     <View style={styles.hero}>
-      <View style={styles.heroLeft}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initials}</Text>
-        </View>
-        <View style={styles.heroCopy}>
-          <Text style={styles.greeting}>{greeting}</Text>
-          <Text style={styles.heroName} numberOfLines={1}>{name}</Text>
-        </View>
+      <View style={styles.heroCopy}>
+        <Text style={styles.greeting}>{greeting}</Text>
+        <Text style={styles.heroName} numberOfLines={1}>{name}</Text>
       </View>
 
       <View style={[styles.statusPill, !online && styles.statusPillOffline]}>
@@ -56,38 +41,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing.md,
-    backgroundColor: colors.bgPanel,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.md,
-    ...shadow.sm,
-  },
-  heroLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 12,
-    minWidth: 0,
-  },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: colors.accentTint,
-    borderWidth: 2,
-    borderColor: colors.accentHighlight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  avatarText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: colors.accentStrong,
-    letterSpacing: 0.3,
+    paddingTop: 4,
+    paddingBottom: 2,
   },
   heroCopy: {
     flex: 1,
@@ -100,16 +56,16 @@ const styles = StyleSheet.create({
   },
   heroName: {
     marginTop: 2,
-    fontSize: typography.lg,
+    fontSize: 26,
     fontWeight: '800',
     color: colors.textPrimary,
-    letterSpacing: -0.2,
+    letterSpacing: -0.5,
   },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    minHeight: 36,
+    minHeight: 34,
     paddingHorizontal: 12,
     borderRadius: radius.full,
     backgroundColor: colors.safeTint,
