@@ -174,6 +174,12 @@ export const Icon = {
       <circle cx="12" cy="7" r="4" />
     </svg>
   ),
+  Lock: (p) => (
+    <svg {...base} {...p}>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </svg>
+  ),
   Shield: (p) => (
     <svg {...base} {...p}>
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />

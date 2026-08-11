@@ -24,49 +24,49 @@ export default function LoginPage() {
 
   return (
     <div className="login-page">
-      <div className="login-card">
+      <div className="login-panel">
         <div className="login-brand">
           <div className="login-logo-wrap">
-            <Logo size={120} />
+            <Logo size={180} />
           </div>
-          <p>Admin sign in</p>
         </div>
 
         <form className="login-form" onSubmit={handleSubmit}>
-          <div className="login-fields">
-            <label className="login-field">
-              <span>Email</span>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="username"
-                required
-              />
-            </label>
+          <label className="login-field">
+            <span className="login-field-icon" aria-hidden="true">
+              <Icon.User />
+            </span>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="username"
+              placeholder="Email"
+              required
+            />
+          </label>
 
-            <label className="login-field">
-              <span>Password</span>
-              <div className="login-password-wrap">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                  placeholder="admin123"
-                  required
-                />
-                <button
-                  type="button"
-                  className="login-password-toggle"
-                  onClick={() => setShowPassword((v) => !v)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? <Icon.EyeOff /> : <Icon.Eye />}
-                </button>
-              </div>
-            </label>
-          </div>
+          <label className="login-field">
+            <span className="login-field-icon" aria-hidden="true">
+              <Icon.Lock />
+            </span>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              placeholder="Password"
+              required
+            />
+            <button
+              type="button"
+              className="login-password-toggle"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <Icon.EyeOff /> : <Icon.Eye />}
+            </button>
+          </label>
 
           {error && <p className="login-error">{error}</p>}
 
@@ -76,7 +76,9 @@ export default function LoginPage() {
         </form>
 
         <p className="login-hint">
-          Demo: <code>{DEMO_ADMIN.email}</code> / <code>{DEMO_ADMIN.password}</code>
+          Demo: <span className="login-hint-link">{DEMO_ADMIN.email}</span>
+          {' / '}
+          {DEMO_ADMIN.password}
         </p>
       </div>
     </div>

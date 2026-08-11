@@ -52,7 +52,7 @@
   width: 56px;
   height: 36px;
   border-radius: var(--r-sm);
-  background: #f3f1ec;
+  background: var(--bg-inset);
   flex-shrink: 0;
   display: flex;
   align-items: center;

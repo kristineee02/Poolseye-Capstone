@@ -3,27 +3,30 @@
    Inspired by official logo palette
    =========================================================== */
 :root {
+  /* text */
+  --text-primary: #0F172A;
+  --text-secondary: #5A6B7D;
+  --text-tertiary: #8FA3B8;
+
+  /* brand blues — Sky Harmony */
+  --accent: #1E6FFF;
+  --accent-strong: #1E6FFF;
+  --accent-deep: #1557D6;
+  --accent-light: #4DB8FF;
+  --accent-highlight: #A7ECFF;
+  --accent-tint: #F0F8FF;
+  --brand-gradient: linear-gradient(90deg, #4DB8FF 0%, #1E6FFF 100%);
+  --brand-gradient-diag: linear-gradient(135deg, #A7ECFF 0%, #4DB8FF 40%, #1E6FFF 100%);
+
   /* surfaces */
-  --bg-app: #F5F9FC;
+  --bg-app: #F0F8FF;
   --bg-panel: #FFFFFF;
   --bg-raised: #FAFCFE;
-  --bg-inset: #EEF4F9;
+  --bg-inset: #E8F3FC;
 
   /* borders */
   --border-subtle: #DCE8F2;
   --border-strong: #C5D9E8;
-
-  /* text */
-  --text-primary: #0D1B2A;
-  --text-secondary: #5A6B7D;
-  --text-tertiary: #8FA3B8;
-
-  /* brand blues */
-  --accent: #007BFF;
-  --accent-strong: #1565C0;
-  --accent-deep: #0D47A1;
-  --accent-light: #4FC3F7;
-  --accent-tint: #E8F4FF;
 
   /* status trio */
   --safe: #1B9C6E;
@@ -34,9 +37,9 @@
   --alarm-tint: #FCEAEE;
 
   /* shadows */
-  --shadow-sm: 0 1px 3px rgba(13, 71, 161, 0.06);
-  --shadow-md: 0 4px 14px rgba(13, 71, 161, 0.08);
-  --shadow-lg: 0 10px 28px rgba(13, 71, 161, 0.1);
+  --shadow-sm: 0 1px 3px rgba(30, 111, 255, 0.06);
+  --shadow-md: 0 4px 14px rgba(30, 111, 255, 0.08);
+  --shadow-lg: 0 10px 28px rgba(30, 111, 255, 0.1);
 
   /* radii */
   --r-sm: 10px;
