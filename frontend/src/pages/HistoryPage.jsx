@@ -5,9 +5,10 @@ import SnapshotModal from '../components/history/SnapshotModal'
 import { events } from '../data/events'
 import '../components/history/HistoryTable.css'
 
-const TYPE_LABEL = { alarm: 'Intrusion', safe: 'Supervised', warn: 'Warning', info: 'System' }
+const TYPE_LABEL = { alarm: 'Alarm', safe: 'Safe', warn: 'Warning', info: 'Info' }
 const TYPE_TAG = { alarm: 'tag-alarm', safe: 'tag-safe', warn: 'tag-info', info: 'tag-info' }
 const STATUS_TAG = { resolved: 'tag-safe', pending: 'tag-warn', dismissed: 'tag-info' }
+const STATUS_LABEL = { resolved: 'ACK', pending: 'NEW', dismissed: 'Dismissed' }
 
 export default function HistoryPage() {
   const [search, setSearch] = useState('')
@@ -52,17 +53,15 @@ export default function HistoryPage() {
             <option value="all">All cameras</option>
           </select>
           <select className="field-input" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
-            <option value="all">All event types</option>
-            <option value="alarm">Unsupervised intrusion</option>
-            <option value="safe">Supervised access</option>
-            <option value="warn">Warning</option>
-            <option value="info">System</option>
+            <option value="all">All alerts</option>
+            <option value="alarm">High severity</option>
+            <option value="warn">Warnings</option>
+            <option value="info">Deep-water / info</option>
           </select>
           <select className="field-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="all">All statuses</option>
-            <option value="pending">Pending</option>
-            <option value="resolved">Resolved</option>
-            <option value="dismissed">Dismissed</option>
+            <option value="pending">New</option>
+            <option value="resolved">Acknowledged</option>
           </select>
           <select className="field-input" disabled defaultValue="7">
             <option value="7">Last 7 days</option>
@@ -92,7 +91,7 @@ export default function HistoryPage() {
                 <td className="mono">{e.camera}</td>
                 <td className="mono">{e.confidence ?? '—'}</td>
                 <td className="mono">{e.date}, {e.time}</td>
-                <td><span className={`tag ${STATUS_TAG[e.status]}`}>{e.status[0].toUpperCase() + e.status.slice(1)}</span></td>
+                <td><span className={`tag ${STATUS_TAG[e.status]}`}>{STATUS_LABEL[e.status] || e.status}</span></td>
                 <td><button className="row-link" onClick={() => setReviewing(e)}>Review →</button></td>
               </tr>
             ))}

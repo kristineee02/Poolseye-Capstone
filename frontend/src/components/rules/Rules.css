@@ -45,7 +45,7 @@
 .rule-pill.tone-warn { color: var(--warn); border-color: #F0DCAE; background: var(--warn-tint); }
 .rule-pill.tone-alarm { color: var(--alarm); border-color: #F4C6CD; background: var(--alarm-tint); }
 .rule-pill.tone-safe { color: var(--safe); border-color: #BFE6D3; background: var(--safe-tint); }
-.rule-pill.tone-accent { color: var(--accent-strong); border-color: #BCE3E8; background: var(--accent-tint); }
+.rule-pill.tone-accent { color: var(--accent-strong); border-color: var(--accent-highlight); background: var(--accent-tint); }
 .rule-arrow {
   color: var(--text-tertiary);
 }

@@ -75,7 +75,7 @@
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 8.2;
-  background: #f3f1ec;
+  background: var(--bg-inset);
   overflow: hidden;
 }
 .camera-stage svg {

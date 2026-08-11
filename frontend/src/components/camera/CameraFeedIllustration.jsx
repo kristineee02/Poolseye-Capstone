@@ -66,21 +66,21 @@ export default function CameraFeedIllustration({ zones = initialZones }) {
     <svg viewBox="0 0 1000 512" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="cf-water" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor="#29B6D8" />
-          <stop offset="100%" stopColor="#0D6E8A" />
+          <stop offset="0%"   stopColor="#4DB8FF" />
+          <stop offset="100%" stopColor="#1E6FFF" />
         </linearGradient>
         <linearGradient id="cf-deck" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor="#E8E3D8" />
-          <stop offset="100%" stopColor="#D6D0C2" />
+          <stop offset="0%"   stopColor="#F0F8FF" />
+          <stop offset="100%" stopColor="#E8F3FC" />
         </linearGradient>
         <pattern id="cf-tile" width="50" height="50" patternUnits="userSpaceOnUse">
-          <rect width="50" height="50" fill="none" stroke="#C8C2B2" strokeWidth="0.7" opacity="0.45" />
+          <rect width="50" height="50" fill="none" stroke="#C5D9E8" strokeWidth="0.7" opacity="0.45" />
         </pattern>
         <pattern id="cf-ripple" width="80" height="20" patternUnits="userSpaceOnUse">
-          <path d="M0 10 Q20 3 40 10 T80 10" stroke="#7DDCE8" strokeWidth="1.2" fill="none" opacity="0.4" />
+          <path d="M0 10 Q20 3 40 10 T80 10" stroke="#A7ECFF" strokeWidth="1.2" fill="none" opacity="0.4" />
         </pattern>
         <filter id="cf-shadow">
-          <feDropShadow dx="0" dy="6" stdDeviation="10" floodColor="#0D6E8A" floodOpacity="0.28" />
+          <feDropShadow dx="0" dy="6" stdDeviation="10" floodColor="#1E6FFF" floodOpacity="0.28" />
         </filter>
         <clipPath id="cf-pool-clip">
           <rect x={PX} y={PY} width={PW} height={PH} rx="36" ry="36" />
@@ -111,14 +111,14 @@ export default function CameraFeedIllustration({ zones = initialZones }) {
       {/* Lane lines clipped to pool */}
       <g clipPath="url(#cf-pool-clip)">
         <line x1={PX} y1={PY + PH * 0.33} x2={PX + PW} y2={PY + PH * 0.33}
-          stroke="#5ECDE0" strokeWidth="1.5" opacity="0.5" />
+          stroke="#4DB8FF" strokeWidth="1.5" opacity="0.5" />
         <line x1={PX} y1={PY + PH * 0.66} x2={PX + PW} y2={PY + PH * 0.66}
-          stroke="#5ECDE0" strokeWidth="1.5" opacity="0.5" />
+          stroke="#4DB8FF" strokeWidth="1.5" opacity="0.5" />
       </g>
 
       {/* Pool coping */}
       <rect x={PX} y={PY} width={PW} height={PH} rx="36" ry="36"
-        fill="none" stroke="#A8D8E0" strokeWidth="6" />
+        fill="none" stroke="#A7ECFF" strokeWidth="6" />
 
       {/* Lane rope anchors */}
       {[PY + PH * 0.33, PY + PH * 0.66].map((y, i) => (
