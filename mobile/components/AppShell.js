@@ -1,23 +1,31 @@
 // PoolsEye — AppShell
-// Clean screen header with consistent hierarchy
+// Screen header; hidden when title is empty (Home uses ProfileHero)
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { colors, spacing, typography } from '../theme/tokens';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 
-export default function AppShell({ title = 'Home', subtitle }) {
+export default function AppShell({ title, subtitle }) {
   const { headerPaddingTop, horizontalInset } = useLayoutInsets();
   const padX = Math.max(horizontalInset, spacing.md);
+  const showTitle = Boolean(title);
 
   return (
-    <View style={[styles.header, { paddingTop: headerPaddingTop }]}>
-      <View style={[styles.titleBlock, { paddingHorizontal: padX }]}>
-        <Text style={styles.screenTitle} numberOfLines={1}>{title}</Text>
-        {subtitle ? (
-          <Text style={styles.screenSubtitle} numberOfLines={1}>{subtitle}</Text>
-        ) : null}
-      </View>
+    <View
+      style={[
+        styles.header,
+        { paddingTop: headerPaddingTop, paddingBottom: showTitle ? spacing.sm : 0 },
+      ]}
+    >
+      {showTitle ? (
+        <View style={[styles.titleBlock, { paddingHorizontal: padX }]}>
+          <Text style={styles.screenTitle} numberOfLines={1}>{title}</Text>
+          {subtitle ? (
+            <Text style={styles.screenSubtitle} numberOfLines={1}>{subtitle}</Text>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -25,7 +33,6 @@ export default function AppShell({ title = 'Home', subtitle }) {
 const styles = StyleSheet.create({
   header: {
     backgroundColor: colors.bgApp,
-    paddingBottom: spacing.sm,
   },
   titleBlock: {
     paddingTop: 2,

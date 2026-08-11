@@ -1,5 +1,5 @@
 // PoolsEye — Tab Navigator
-// Compact floating pill — Home / Alerts / Profile
+// Floating white bar — soft blue active pill (matches dashboard reference)
 
 import React, { useRef, useState } from 'react';
 import {
@@ -13,6 +13,9 @@ import AlertsScreen  from '../screen/AlertsScreen';
 import LogScreen     from '../screen/LogScreen';
 import ProfileScreen from '../screen/ProfileScreen';
 import AppShell      from '../components/AppShell';
+
+const IDLE_ICON = '#8FA3B8';
+const ACTIVE_ICON = colors.accent;
 
 function HomeIcon({ color, filled }) {
   return (
@@ -28,7 +31,7 @@ function HomeIcon({ color, filled }) {
         />
         <Path
           d="M10.2 21.2V16.2c0-1 .82-1.8 1.8-1.8s1.8.8 1.8 1.8v5"
-          stroke={color}
+          stroke={filled ? colors.accentTint : color}
           strokeWidth={1.85}
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -53,7 +56,7 @@ function BellIcon({ color, filled, hasBadge, badgeCount }) {
         />
         <Path
           d="M13.73 21a2 2 0 0 1-3.46 0"
-          stroke={filled ? '#FFFFFF' : color}
+          stroke={color}
           strokeWidth={1.85}
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -120,7 +123,7 @@ function TabButton({ tab, isActive, onPress, renderIcon }) {
         onPressIn={pressIn}
         onPressOut={pressOut}
         android_ripple={{
-          color: 'rgba(30, 111, 255, 0.14)',
+          color: 'rgba(30, 111, 255, 0.12)',
           borderless: false,
           radius: 28,
         }}
@@ -144,7 +147,7 @@ function TabButton({ tab, isActive, onPress, renderIcon }) {
 }
 
 const TABS = [
-  { key: 'home',    label: 'Home',    title: 'Home',       subtitle: null },
+  { key: 'home',    label: 'Home',    title: null,         subtitle: null },
   { key: 'alerts',  label: 'Alerts',  title: 'All Alerts', subtitle: null },
   { key: 'profile', label: 'Profile', title: 'Profile',    subtitle: null },
 ];
@@ -154,7 +157,9 @@ export default function TabNavigator({ alertBadgeCount = 2 }) {
   const { tabBarPaddingBottom, horizontalInset } = useLayoutInsets();
 
   const screens = {
-    home:    <AlertsScreen />,
+    home: (
+      <AlertsScreen onViewAllAlerts={() => setActive('alerts')} />
+    ),
     alerts:  <LogScreen />,
     profile: <ProfileScreen />,
   };
@@ -162,7 +167,7 @@ export default function TabNavigator({ alertBadgeCount = 2 }) {
   const activeTab = TABS.find((t) => t.key === active) || TABS[0];
 
   const renderIcon = (key, isActive) => {
-    const iconColor = isActive ? '#FFFFFF' : colors.accentLight;
+    const iconColor = isActive ? ACTIVE_ICON : IDLE_ICON;
     switch (key) {
       case 'home':
         return <HomeIcon color={iconColor} filled={isActive} />;
@@ -272,41 +277,42 @@ const styles = StyleSheet.create({
   tabBarPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
-    gap: 6,
-    minHeight: 64,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: radius.full,
+    justifyContent: 'space-evenly',
+    alignSelf: 'stretch',
+    marginHorizontal: 18,
+    height: 58,
+    paddingHorizontal: 6,
+    borderRadius: 999,
     backgroundColor: colors.bgPanel,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
     ...shadow.md,
   },
   tabButton: {
-    minWidth: 76,
-    minHeight: 52,
-    paddingHorizontal: 14,
+    minWidth: 88,
+    minHeight: 46,
+    paddingHorizontal: 18,
     paddingVertical: 6,
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
+    gap: 2,
   },
   tabSlotActive: {
-    backgroundColor: colors.accent,
+    backgroundColor: '#E8F1FF',
+    paddingHorizontal: 22,
+    minWidth: 96,
   },
   tabLabel: {
-    fontSize: typography.xs,
+    fontSize: 11,
     fontWeight: '600',
-    letterSpacing: 0.15,
+    letterSpacing: 0.1,
   },
   tabLabelActive: {
-    color: '#FFFFFF',
+    color: colors.accent,
     fontWeight: '700',
   },
   tabLabelIdle: {
-    color: colors.accentLight,
+    color: IDLE_ICON,
   },
 });

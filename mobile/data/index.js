@@ -35,14 +35,14 @@ export const alerts = [
     id: 'evt-3',
     type: 'warn',
     title: 'Transition boundary crossed',
-    detail: 'Person crossed the shallow–deep Orange Boundary. Admin notification sent.',
-    meta: 'CAM-01 · Main Pool · Orange Boundary',
-    time: '10:31:02 AM',
+    detail: 'Person crossed the shallow–deep Yellow Zone boundary. Admin notification sent.',
+    meta: 'CAM-01 · Main Pool · Yellow Zone',
+    time: '10:18:05 AM',
     date: 'Jun 22',
     status: 'pending',
     confidence: 0.88,
     camera: 'CAM-01',
-    zone: 'Orange Boundary',
+    zone: 'Yellow Zone',
   },
 ];
 
