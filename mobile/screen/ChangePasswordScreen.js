@@ -1,18 +1,29 @@
-// PoolsEye — Change / Create Password
+// PoolsEye — Change / Create Password (screenshot layout)
 
 import React, { useMemo, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, radius, shadow, touch } from '../theme/tokens';
-import { DEMO_LIFEGUARD, getPasswordRuleChecks, getPasswordStrength } from '../auth/demoAuth';
+import { DEMO_LIFEGUARD, getPasswordRuleChecks } from '../auth/demoAuth';
 import { useAuth } from '../context/AuthContext';
 
-const BTN_GRADIENT = colors.brandGradient;
+function BackArrow({ color = colors.accent, size = 22 }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M15 6 9 12l6 6"
+        stroke={color}
+        strokeWidth={2.2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
 
 function PasswordToggleIcon({ visible, color }) {
   if (visible) {
@@ -83,115 +94,147 @@ function PasswordField({
   );
 }
 
-function RuleRow({ label, met }) {
+function RuleRow({ label, met, isLast }) {
   return (
-    <View style={styles.ruleRow}>
-      <View style={[styles.ruleCheck, met && styles.ruleCheckMet]}>
-        <Text style={[styles.ruleCheckMark, met && styles.ruleCheckMarkMet]}>
-          {met ? '✓' : ''}
-        </Text>
+    <View style={[styles.ruleRow, !isLast && styles.ruleRowBorder]}>
+      <View style={[styles.ruleDot, met && styles.ruleDotMet]}>
+        {met ? <Text style={styles.ruleCheckMark}>✓</Text> : null}
       </View>
       <Text style={[styles.ruleLabel, met && styles.ruleLabelMet]}>{label}</Text>
     </View>
   );
 }
 
-function StrengthMeter({ strength }) {
-  if (strength.level === 'empty') return null;
-
-  return (
-    <View style={styles.strengthWrap}>
-      <View style={styles.strengthHeader}>
-        <Text style={styles.strengthCaption}>Password strength</Text>
-        <Text style={[styles.strengthLabel, { color: strength.color }]}>
-          {strength.label}
-        </Text>
-      </View>
-      <View style={styles.strengthTrack}>
-        <View
-          style={[
-            styles.strengthFill,
-            {
-              width: `${Math.round((strength.progress || 0) * 100)}%`,
-              backgroundColor: strength.color,
-            },
-          ]}
-        />
-      </View>
-    </View>
-  );
-}
-
-export default function ChangePasswordScreen({ forced = false, onCancel }) {
+/**
+ * @param {object} props
+ * @param {boolean} [props.forced] first-login after temp password
+ * @param {() => void} [props.onCancel]
+ * @param {boolean} [props.resetMode] forgot-password reset (no current password)
+ * @param {(payload: { newPassword: string }) => Promise<{ok:boolean,error?:string}>} [props.onResetSubmit]
+ * @param {string} [props.resetEmail]
+ */
+export default function ChangePasswordScreen({
+  forced = false,
+  onCancel,
+  resetMode = false,
+  onResetSubmit,
+  resetEmail,
+}) {
   const insets = useSafeAreaInsets();
   const { changePassword, user } = useAuth();
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const email = user?.email || DEMO_LIFEGUARD.email;
+  const email = resetEmail || user?.email || DEMO_LIFEGUARD.email;
+  const showCurrentField = !forced && !resetMode;
+  const showBack = Boolean(onCancel) && !forced;
+  // Inside Profile tab AppShell already handles safe area — keep header tight under "Profile"
+  const embedded = Boolean(onCancel) && !forced && !resetMode;
 
   const rules = useMemo(() => getPasswordRuleChecks(newPassword), [newPassword]);
-
-  const strength = useMemo(
-    () =>
-      getPasswordStrength(newPassword, {
-        email,
-        tempPassword: DEMO_LIFEGUARD.password,
-      }),
-    [newPassword, email],
-  );
-
   const allRulesMet = rules.every((r) => r.met);
+
+  const title = forced
+    ? 'Create new password'
+    : resetMode
+      ? 'Reset password'
+      : 'Change password';
+
+  const subtitle = forced
+    ? 'Your temporary password must be replaced before you can continue.'
+    : resetMode
+      ? 'Choose a new password for your lifeguard account.'
+      : 'Update your password to keep your account secure.';
 
   const handleSubmit = async () => {
     setError('');
+
     if (!allRulesMet) {
       setError('Please meet all password requirements below.');
       return;
     }
+    if (newPassword !== confirmPassword) {
+      setError('New password and confirmation do not match.');
+      return;
+    }
+    if (showCurrentField && !currentPassword) {
+      setError('Enter your current password.');
+      return;
+    }
+
     setLoading(true);
-    const result = await changePassword({
-      currentPassword,
-      newPassword,
-      skipCurrentCheck: forced,
-    });
+    let result;
+    if (resetMode && onResetSubmit) {
+      result = await onResetSubmit({ newPassword });
+    } else {
+      result = await changePassword({
+        currentPassword,
+        newPassword,
+        skipCurrentCheck: forced || resetMode,
+      });
+    }
     setLoading(false);
+
     if (!result.ok) {
       setError(result.error || 'Could not update password.');
       return;
     }
+
     setCurrentPassword('');
     setNewPassword('');
+    setConfirmPassword('');
     if (!forced && onCancel) onCancel();
   };
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <View
+      style={[
+        styles.screen,
+        {
+          paddingTop: embedded ? spacing.xs : insets.top,
+          paddingBottom: embedded ? 0 : insets.bottom,
+        },
+      ]}
+    >
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[
+            styles.content,
+            { paddingBottom: (embedded ? insets.bottom : 0) + spacing.xxl },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           bounces={false}
         >
-          <Text style={styles.title}>
-            {forced ? 'Create new password' : 'Change password'}
-          </Text>
-          <Text style={styles.subtitle}>
-            {forced
-              ? 'Set your own password to continue.'
-              : 'Enter your current password, then choose a new one.'}
-          </Text>
+          {showBack ? (
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={onCancel}
+              activeOpacity={0.75}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+            >
+              <BackArrow />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.backSpacer} />
+          )}
 
-          {!forced ? (
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.subtitle}>{subtitle}</Text>
+
+          {showCurrentField ? (
             <PasswordField
               value={currentPassword}
               onChangeText={setCurrentPassword}
@@ -209,12 +252,23 @@ export default function ChangePasswordScreen({ forced = false, onCancel }) {
             onToggleVisible={() => setShowNew((v) => !v)}
           />
 
-          <StrengthMeter strength={strength} />
+          <PasswordField
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            placeholder="Confirm new password"
+            visible={showConfirm}
+            onToggleVisible={() => setShowConfirm((v) => !v)}
+          />
 
           <View style={styles.rulesBox}>
             <Text style={styles.rulesTitle}>Password requirements</Text>
-            {rules.map((rule) => (
-              <RuleRow key={rule.id} label={rule.label} met={rule.met} />
+            {rules.map((rule, index) => (
+              <RuleRow
+                key={rule.id}
+                label={rule.label}
+                met={rule.met}
+                isLast={index === rules.length - 1}
+              />
             ))}
           </View>
 
@@ -224,28 +278,30 @@ export default function ChangePasswordScreen({ forced = false, onCancel }) {
             onPress={handleSubmit}
             disabled={loading || !allRulesMet}
             activeOpacity={0.85}
-            style={(loading || !allRulesMet) ? styles.buttonDisabled : null}
+            style={[
+              styles.button,
+              (loading || !allRulesMet) && styles.buttonDisabled,
+            ]}
           >
-            <LinearGradient
-              colors={BTN_GRADIENT}
-              start={{ x: 0, y: 0.5 }}
-              end={{ x: 1, y: 0.5 }}
-              style={styles.button}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>
-                  {forced ? 'Continue' : 'Save password'}
-                </Text>
-              )}
-            </LinearGradient>
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>
+                {forced ? 'Continue' : resetMode ? 'Reset password' : 'Save password'}
+              </Text>
+            )}
           </TouchableOpacity>
 
           {!forced && onCancel ? (
             <TouchableOpacity onPress={onCancel} style={styles.cancelBtn} activeOpacity={0.8}>
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
+          ) : null}
+
+          {forced ? (
+            <Text style={styles.forcedHint}>
+              Signed in as {email}
+            </Text>
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
@@ -263,35 +319,43 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
+    paddingHorizontal: spacing.md,
+    paddingTop: 0,
+  },
+  backBtn: {
+    width: 36,
+    height: 32,
+    alignItems: 'flex-start',
     justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.xxl,
+    marginBottom: 2,
+  },
+  backSpacer: {
+    height: 4,
   },
   title: {
     fontSize: typography.xl,
     fontWeight: '800',
     color: colors.textPrimary,
-    letterSpacing: -0.3,
-    textAlign: 'center',
+    letterSpacing: -0.4,
   },
   subtitle: {
-    marginTop: 8,
-    marginBottom: spacing.xl,
+    marginTop: 6,
+    marginBottom: spacing.lg,
     fontSize: typography.sm,
     lineHeight: 20,
     color: colors.textSecondary,
-    textAlign: 'center',
+    fontWeight: '500',
   },
   field: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: touch.comfortable + 4,
-    borderRadius: radius.lg,
+    minHeight: touch.comfortable + 6,
+    borderRadius: radius.full,
     backgroundColor: colors.bgPanel,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
     marginBottom: 12,
-    paddingLeft: spacing.md,
+    paddingLeft: spacing.md + 4,
     paddingRight: 6,
     ...shadow.sm,
   },
@@ -309,83 +373,58 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  strengthWrap: {
-    marginTop: -4,
-    marginBottom: 14,
-  },
-  strengthHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  strengthCaption: {
-    fontSize: typography.xs,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  strengthLabel: {
-    fontSize: typography.sm,
-    fontWeight: '800',
-  },
-  strengthTrack: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.bgInset,
-    overflow: 'hidden',
-  },
-  strengthFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
   rulesBox: {
-    marginTop: 4,
-    marginBottom: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: radius.lg,
+    marginTop: 8,
+    marginBottom: 16,
+    borderRadius: 18,
     backgroundColor: colors.bgPanel,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
+    overflow: 'hidden',
+    ...shadow.sm,
   },
   rulesTitle: {
-    fontSize: typography.sm,
-    fontWeight: '700',
+    fontSize: typography.md,
+    fontWeight: '800',
     color: colors.textPrimary,
-    marginBottom: 10,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 10,
   },
   ruleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 8,
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
-  ruleCheck: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+  ruleRowBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.borderSubtle,
+  },
+  ruleDot: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     borderWidth: 1.5,
     borderColor: colors.borderStrong,
-    backgroundColor: colors.bgInset,
+    backgroundColor: colors.bgPanel,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ruleCheckMet: {
+  ruleDotMet: {
     borderColor: colors.safe,
     backgroundColor: colors.safeTint,
   },
   ruleCheckMark: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
-    color: 'transparent',
-  },
-  ruleCheckMarkMet: {
     color: colors.safe,
   },
   ruleLabel: {
     flex: 1,
     fontSize: typography.sm,
-    color: colors.textTertiary,
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   ruleLabelMet: {
@@ -406,14 +445,15 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   button: {
-    minHeight: touch.comfortable + 4,
+    minHeight: touch.comfortable + 6,
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.accent,
     marginTop: 4,
   },
   buttonDisabled: {
-    opacity: 0.55,
+    opacity: 0.5,
   },
   buttonText: {
     color: '#FFFFFF',
@@ -425,8 +465,15 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
   },
   cancelText: {
-    fontSize: typography.sm,
-    fontWeight: '600',
-    color: colors.textSecondary,
+    fontSize: typography.base,
+    fontWeight: '700',
+    color: colors.accent,
+  },
+  forcedHint: {
+    marginTop: 8,
+    textAlign: 'center',
+    fontSize: typography.xs,
+    color: colors.textTertiary,
+    fontWeight: '500',
   },
 });
