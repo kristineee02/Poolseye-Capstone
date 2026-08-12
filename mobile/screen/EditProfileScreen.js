@@ -21,6 +21,20 @@ function getInitials(name, fallback = 'LG') {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
+function BackArrow({ color = colors.accent, size = 22 }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M15 6 9 12l6 6"
+        stroke={color}
+        strokeWidth={2.2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 function CameraIcon({ color = '#FFFFFF', size = 14 }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -101,14 +115,22 @@ export default function EditProfileScreen({ onCancel }) {
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          {
-            paddingTop: insets.top + spacing.md,
-            paddingBottom: insets.bottom + spacing.xl,
-          },
+          { paddingBottom: insets.bottom + spacing.xl },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={onCancel}
+          activeOpacity={0.75}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <BackArrow />
+        </TouchableOpacity>
+
         <Text style={styles.title}>Edit Profile</Text>
         <Text style={styles.subtitle}>Update your photo and display name</Text>
 
@@ -196,18 +218,29 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
     gap: 12,
   },
+  backBtn: {
+    width: 36,
+    height: 32,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
   title: {
-    fontSize: 24,
+    fontSize: typography.xl,
     fontWeight: '800',
     color: colors.textPrimary,
     letterSpacing: -0.4,
   },
   subtitle: {
+    marginTop: -4,
     fontSize: typography.sm,
     color: colors.textSecondary,
-    marginBottom: 8,
+    marginBottom: 4,
+    fontWeight: '500',
+    lineHeight: 20,
   },
   avatarWrap: {
     alignSelf: 'center',
@@ -313,8 +346,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   cancelText: {
-    color: colors.textSecondary,
+    color: colors.accent,
     fontSize: typography.base,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });

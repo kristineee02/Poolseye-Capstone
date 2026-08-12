@@ -144,6 +144,45 @@ export function AuthProvider({ children }) {
     return updateProfile({ photoUri });
   };
 
+  const verifyResetEmail = async (email) => {
+    const normalized = String(email || '').trim().toLowerCase();
+    if (!normalized) {
+      return { ok: false, error: 'Enter your account email.' };
+    }
+    if (normalized !== DEMO_LIFEGUARD.email) {
+      return { ok: false, error: 'No lifeguard account found for that email.' };
+    }
+    return { ok: true, email: normalized };
+  };
+
+  const resetPassword = async ({ email, newPassword }) => {
+    const normalized = String(email || '').trim().toLowerCase();
+    if (normalized !== DEMO_LIFEGUARD.email) {
+      return { ok: false, error: 'No lifeguard account found for that email.' };
+    }
+    if (!newPassword) {
+      return { ok: false, error: 'Please enter a new password.' };
+    }
+
+    const check = validateNewPassword(newPassword, {
+      email: normalized,
+      tempPassword: DEMO_LIFEGUARD.password,
+    });
+    if (!check.ok) return check;
+
+    await writeCreds({
+      email: normalized,
+      password: newPassword,
+      mustChangePassword: false,
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Clear any locked session so they sign in fresh with the new password
+    setUser(null);
+    await AsyncStorage.removeItem(STORAGE_KEY);
+    return { ok: true };
+  };
+
   const signOut = async () => {
     setUser(null);
     await AsyncStorage.removeItem(STORAGE_KEY);
@@ -159,6 +198,8 @@ export function AuthProvider({ children }) {
         changePassword,
         updateProfile,
         updateAvatar,
+        verifyResetEmail,
+        resetPassword,
         tempPasswordHint: DEMO_LIFEGUARD.password,
       }}
     >

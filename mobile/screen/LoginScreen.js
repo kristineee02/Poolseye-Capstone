@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, radius, shadow, touch } from '../theme/tokens';
 import { DEMO_LIFEGUARD } from '../auth/demoAuth';
 import { useAuth } from '../context/AuthContext';
+import ForgotPasswordScreen from './ForgotPasswordScreen';
 
 const BTN_GRADIENT = colors.brandGradient;
 const ICON_BLUE = colors.accent;
@@ -93,6 +94,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
 
   const handleSignIn = async () => {
     setError('');
@@ -101,6 +103,10 @@ export default function LoginScreen() {
     setLoading(false);
     if (!result.ok) setError(result.error);
   };
+
+  if (showForgot) {
+    return <ForgotPasswordScreen onCancel={() => setShowForgot(false)} />;
+  }
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
@@ -163,6 +169,14 @@ export default function LoginScreen() {
                 <PasswordToggleIcon visible={showPassword} color="#94A3B8" />
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={styles.forgotBtn}
+              onPress={() => setShowForgot(true)}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </TouchableOpacity>
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -252,6 +266,18 @@ const styles = StyleSheet.create({
     height: touch.min,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  forgotBtn: {
+    alignSelf: 'flex-end',
+    marginTop: -4,
+    marginBottom: spacing.md,
+    paddingVertical: 4,
+  },
+  forgotText: {
+    fontSize: typography.sm,
+    fontWeight: '700',
+    color: colors.accent,
   },
 
   error: {

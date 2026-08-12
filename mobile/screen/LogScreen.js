@@ -88,7 +88,7 @@ function FilterDropdown({ value, onChange }) {
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.menuOverlay} onPress={() => setOpen(false)}>
-          <View style={styles.menuCard}>
+          <Pressable style={styles.menuCard} onPress={(e) => e.stopPropagation?.()}>
             <Text style={styles.menuTitle}>Filter alerts</Text>
             {FILTERS.map((f) => {
               const active = f.key === value;
@@ -100,16 +100,15 @@ function FilterDropdown({ value, onChange }) {
                     onChange(f.key);
                     setOpen(false);
                   }}
-                  activeOpacity={0.8}
+                  activeOpacity={0.7}
                 >
                   <Text style={[styles.menuItemText, active && styles.menuItemTextActive]}>
                     {f.label}
                   </Text>
-                  {active ? <Text style={styles.menuCheck}>✓</Text> : null}
                 </TouchableOpacity>
               );
             })}
-          </View>
+          </Pressable>
         </Pressable>
       </Modal>
     </>
@@ -225,14 +224,14 @@ const styles = StyleSheet.create({
 
   menuOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    backgroundColor: 'rgba(15, 23, 42, 0.35)',
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
   },
   menuCard: {
     backgroundColor: colors.bgPanel,
-    borderRadius: radius.xl,
-    paddingVertical: 10,
+    borderRadius: 18,
+    paddingVertical: 8,
     paddingHorizontal: 8,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
@@ -245,16 +244,15 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.6,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingTop: 10,
+    paddingBottom: 8,
   },
   menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     minHeight: touch.min,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: radius.md,
+    borderRadius: 12,
+    justifyContent: 'center',
   },
   menuItemActive: {
     backgroundColor: colors.accentTint,
@@ -267,11 +265,6 @@ const styles = StyleSheet.create({
   menuItemTextActive: {
     color: colors.accent,
     fontWeight: '700',
-  },
-  menuCheck: {
-    color: colors.accent,
-    fontWeight: '700',
-    fontSize: 15,
   },
 
   listContent: {
