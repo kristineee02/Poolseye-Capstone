@@ -4,5 +4,46 @@
         "movement_threshold": 5.0,
         "confidence_threshold": 0.75,
         "danger_time_threshold": 10
+    },
+    "ZONES": {
+        "coord_space": "editor",
+        "editor_size": [1000, 512],
+        "confidence_threshold": 0.25,
+        "keypoint_confidence": 0.3,
+        "orange_proximity": 0.02,
+        "yellow": {
+            "enabled": true,
+            "name": "Yellow Zone",
+            "label": "warning",
+            "geometry": "polygon",
+            "points": [
+                [180, 100],
+                [520, 100],
+                [520, 250],
+                [180, 250]
+            ]
+        },
+        "red": {
+            "enabled": true,
+            "name": "Red Zone",
+            "label": "critical",
+            "geometry": "polygon",
+            "points": [
+                [530, 110],
+                [820, 110],
+                [820, 410],
+                [530, 410]
+            ]
+        },
+        "orange": {
+            "enabled": true,
+            "name": "Orange Boundary",
+            "label": "boundary",
+            "geometry": "polyline",
+            "points": [
+                [520, 90],
+                [520, 420]
+            ]
+        }
     }
 }

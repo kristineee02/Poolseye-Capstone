@@ -76,7 +76,7 @@ def main():
     print("\n[test] annotated output images saved under runs/pose/predict*/")
     print("[test] open them and check: are people detected reliably, and are ankle keypoints stable/accurate?")
     print("[test] if yes -> you likely don't need to fine-tune, skip straight to zone_check.py wiring.")
-    print("[test] if no  -> proceed with Roboflow annotation + prepare_dataset.py ingest + train_person_pose.py")
+    print("[test] if no  -> fine-tune with train_person_pose.py after you have YOLO-pose labels.")
 
 
 if __name__ == "__main__":
