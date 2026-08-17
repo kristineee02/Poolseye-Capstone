@@ -3,9 +3,8 @@
 
 import React, { useRef, useState } from 'react';
 import {
-  View, Text, Pressable, StyleSheet, Animated,
+  View, Text, Pressable, StyleSheet, Animated, Image,
 } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
 import { colors, radius, shadow, typography } from '../theme/tokens';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 
@@ -17,51 +16,20 @@ import AppShell      from '../components/AppShell';
 const IDLE_ICON = '#8FA3B8';
 const ACTIVE_ICON = colors.accent;
 
-function HomeIcon({ color, filled }) {
-  return (
-    <View style={iconStyles.iconWrap}>
-      <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-        <Path
-          d="M12 3.2 4.2 9.8V20c0 .66.54 1.2 1.2 1.2h13.2c.66 0 1.2-.54 1.2-1.2V9.8L12 3.2z"
-          stroke={color}
-          strokeWidth={1.85}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill={filled ? color : 'none'}
-        />
-        <Path
-          d="M10.2 21.2V16.2c0-1 .82-1.8 1.8-1.8s1.8.8 1.8 1.8v5"
-          stroke={filled ? colors.accentTint : color}
-          strokeWidth={1.85}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-        />
-      </Svg>
-    </View>
-  );
-}
+const TAB_ICONS = {
+  home: require('../assets/icons/nav-home.png'),
+  alerts: require('../assets/icons/nav-alerts.png'),
+  profile: require('../assets/icons/nav-profile.png'),
+};
 
-function BellIcon({ color, filled, hasBadge, badgeCount }) {
+function TabIcon({ name, color, hasBadge, badgeCount }) {
   return (
     <View style={iconStyles.iconWrap}>
-      <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-        <Path
-          d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"
-          stroke={color}
-          strokeWidth={1.85}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill={filled ? color : 'none'}
-        />
-        <Path
-          d="M13.73 21a2 2 0 0 1-3.46 0"
-          stroke={color}
-          strokeWidth={1.85}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </Svg>
+      <Image
+        source={TAB_ICONS[name]}
+        style={[iconStyles.iconImage, { tintColor: color }]}
+        resizeMode="contain"
+      />
       {hasBadge ? (
         <View style={iconStyles.badge}>
           <Text style={iconStyles.badgeText}>{badgeCount}</Text>
@@ -71,27 +39,23 @@ function BellIcon({ color, filled, hasBadge, badgeCount }) {
   );
 }
 
-function PersonIcon({ color, filled }) {
+function HomeIcon({ color }) {
+  return <TabIcon name="home" color={color} />;
+}
+
+function BellIcon({ color, hasBadge, badgeCount }) {
   return (
-    <View style={iconStyles.iconWrap}>
-      <View
-        style={[
-          iconStyles.personHead,
-          filled
-            ? { backgroundColor: color, borderColor: color }
-            : { backgroundColor: 'transparent', borderColor: color },
-        ]}
-      />
-      <View
-        style={[
-          iconStyles.personBody,
-          filled
-            ? { backgroundColor: color, borderColor: color }
-            : { backgroundColor: 'transparent', borderColor: color },
-        ]}
-      />
-    </View>
+    <TabIcon
+      name="alerts"
+      color={color}
+      hasBadge={hasBadge}
+      badgeCount={badgeCount}
+    />
   );
+}
+
+function PersonIcon({ color }) {
+  return <TabIcon name="profile" color={color} />;
 }
 
 function TabButton({ tab, isActive, onPress, renderIcon }) {
@@ -170,18 +134,17 @@ export default function TabNavigator({ alertBadgeCount = 2 }) {
     const iconColor = isActive ? ACTIVE_ICON : IDLE_ICON;
     switch (key) {
       case 'home':
-        return <HomeIcon color={iconColor} filled={isActive} />;
+        return <HomeIcon color={iconColor} />;
       case 'alerts':
         return (
           <BellIcon
             color={iconColor}
-            filled={isActive}
             hasBadge={!isActive && alertBadgeCount > 0}
             badgeCount={alertBadgeCount}
           />
         );
       case 'profile':
-        return <PersonIcon color={iconColor} filled={isActive} />;
+        return <PersonIcon color={iconColor} />;
       default:
         return null;
     }
@@ -222,6 +185,10 @@ const iconStyles = StyleSheet.create({
     width: 22,
     height: 22,
   },
+  iconImage: {
+    width: 22,
+    height: 22,
+  },
   badge: {
     position: 'absolute',
     top: -5,
@@ -240,21 +207,6 @@ const iconStyles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     color: '#fff',
-  },
-  personHead: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    marginBottom: 1.5,
-  },
-  personBody: {
-    width: 13,
-    height: 6.5,
-    borderTopLeftRadius: 6.5,
-    borderTopRightRadius: 6.5,
-    borderWidth: 1.5,
-    borderBottomWidth: 0,
   },
 });
 

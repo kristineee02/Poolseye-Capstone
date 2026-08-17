@@ -6,7 +6,7 @@ import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Path, Circle } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
 import { notificationSettings, lifeguard as defaultLifeguard, site } from '../data';
 import { Toggle } from '../components/Primitives';
@@ -15,6 +15,10 @@ import { useAuth } from '../context/AuthContext';
 import ConfirmModal from '../components/ConfirmModal';
 import ChangePasswordScreen from './ChangePasswordScreen';
 import EditProfileScreen from './EditProfileScreen';
+import CameraIcon from '../components/CameraIcon';
+
+const editProfileIcon = require('../assets/icons/edit-profile.png');
+const changePasswordIcon = require('../assets/icons/change-password.png');
 
 function getInitials(name, fallback = 'LG') {
   if (!name || typeof name !== 'string') return fallback;
@@ -22,53 +26,6 @@ function getInitials(name, fallback = 'LG') {
   if (parts.length === 0) return fallback;
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-}
-
-function PersonIcon({ color = '#FFFFFF', size = 16 }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Circle cx={12} cy={8} r={3.2} stroke={color} strokeWidth={1.9} />
-      <Path
-        d="M5.5 19c1.6-3.2 4-4.8 6.5-4.8S16.9 15.8 18.5 19"
-        stroke={color}
-        strokeWidth={1.9}
-        strokeLinecap="round"
-      />
-    </Svg>
-  );
-}
-
-function LockIcon({ color = '#FFFFFF', size = 16 }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M7 11V8.5a5 5 0 0 1 10 0V11"
-        stroke={color}
-        strokeWidth={1.9}
-        strokeLinecap="round"
-      />
-      <Path
-        d="M6.5 11h11v9h-11V11z"
-        stroke={color}
-        strokeWidth={1.9}
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-function CameraIcon({ color = '#FFFFFF', size = 12 }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M4 9h3l1.5-2h7L17 9h3v9H4V9z"
-        stroke={color}
-        strokeWidth={1.8}
-        strokeLinejoin="round"
-      />
-      <Circle cx={12} cy={13.5} r={2.8} stroke={color} strokeWidth={1.8} />
-    </Svg>
-  );
 }
 
 function ProfileCard({ name, initials, role, siteName, photoUri, onChangePhoto }) {
@@ -95,7 +52,7 @@ function ProfileCard({ name, initials, role, siteName, photoUri, onChangePhoto }
             </LinearGradient>
           )}
           <View style={styles.cameraBadge}>
-            <CameraIcon size={12} />
+            <CameraIcon size={14} color="#FFFFFF" />
           </View>
         </TouchableOpacity>
 
@@ -138,7 +95,7 @@ function AccountMenuItem({ icon, label, description, onPress, isLast }) {
       onPress={onPress}
       activeOpacity={0.75}
     >
-      <View style={styles.listIcon}>{icon}</View>
+      {icon}
       <View style={styles.listCopy}>
         <Text style={styles.listLabel}>{label}</Text>
         {description ? <Text style={styles.listDesc}>{description}</Text> : null}
@@ -219,13 +176,25 @@ export default function ProfileScreen() {
 
         <View style={styles.panelCard}>
           <AccountMenuItem
-            icon={<PersonIcon size={16} />}
+            icon={
+              <Image
+                source={editProfileIcon}
+                style={styles.accountIcon}
+                resizeMode="contain"
+              />
+            }
             label="Edit Profile"
             description="Change picture, name, and profile details"
             onPress={() => setShowEditProfile(true)}
           />
           <AccountMenuItem
-            icon={<LockIcon size={16} />}
+            icon={
+              <Image
+                source={changePasswordIcon}
+                style={styles.accountIcon}
+                resizeMode="contain"
+              />
+            }
             label="Change Password"
             description="Update your personal login password"
             onPress={() => setShowChangePassword(true)}
@@ -394,13 +363,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.borderSubtle,
   },
-  listIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
+  accountIcon: {
+    width: 22,
+    height: 22,
+    tintColor: colors.accent,
     flexShrink: 0,
   },
   listCopy: {

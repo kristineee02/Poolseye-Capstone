@@ -7,11 +7,12 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import Svg, { Path, Circle } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
 import { useAuth } from '../context/AuthContext';
 import { site } from '../data';
+import CameraIcon from '../components/CameraIcon';
 
 function getInitials(name, fallback = 'LG') {
   if (!name || typeof name !== 'string') return fallback;
@@ -31,20 +32,6 @@ function BackArrow({ color = colors.accent, size = 22 }) {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </Svg>
-  );
-}
-
-function CameraIcon({ color = '#FFFFFF', size = 14 }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M4 9h3l1.5-2h7L17 9h3v9H4V9z"
-        stroke={color}
-        strokeWidth={1.8}
-        strokeLinejoin="round"
-      />
-      <Circle cx={12} cy={13.5} r={2.8} stroke={color} strokeWidth={1.8} />
     </Svg>
   );
 }
@@ -152,7 +139,7 @@ export default function EditProfileScreen({ onCancel }) {
             </LinearGradient>
           )}
           <View style={styles.cameraBadge}>
-            <CameraIcon size={12} />
+            <CameraIcon size={14} color="#FFFFFF" />
           </View>
         </TouchableOpacity>
         <Text style={styles.photoHint}>Tap to change picture</Text>
