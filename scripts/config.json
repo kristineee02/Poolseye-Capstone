@@ -14,35 +14,37 @@
         "yellow": {
             "enabled": true,
             "name": "Yellow Zone",
-            "label": "warning",
+            "label": "monitor",
             "geometry": "polygon",
             "points": [
-                [180, 100],
-                [520, 100],
-                [520, 250],
-                [180, 250]
+                [80, 70],
+                [920, 70],
+                [920, 460],
+                [80, 460]
             ]
         },
         "red": {
             "enabled": true,
             "name": "Red Zone",
-            "label": "critical",
+            "label": "intrusion",
             "geometry": "polygon",
             "points": [
-                [530, 110],
-                [820, 110],
-                [820, 410],
-                [530, 410]
+                [220, 130],
+                [800, 130],
+                [800, 420],
+                [220, 420]
             ]
         },
         "orange": {
             "enabled": true,
-            "name": "Orange Boundary",
-            "label": "boundary",
-            "geometry": "polyline",
+            "name": "Orange Zone",
+            "label": "deep_pool",
+            "geometry": "polygon",
             "points": [
-                [520, 90],
-                [520, 420]
+                [380, 200],
+                [700, 200],
+                [700, 380],
+                [380, 380]
             ]
         }
     }

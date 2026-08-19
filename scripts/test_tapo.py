@@ -1,8 +1,6 @@
 import cv2
 
-# Replace these values with your actual Tapo credentials and IP address:
-# Example: "rtsp://admin:poolseye123@192.168.1.50:554/stream1"
-rtsp_url = "rtsp://admin123:poolseye123@192.168.1.19:554/stream1"
+rtsp_url = "rtsp://PoolsEye:PoolsEyeCapstone@192.168.1.14:554/stream1"
 
 print("Attempting to connect to Tapo C320WS stream...")
 cap = cv2.VideoCapture(rtsp_url)

@@ -10,9 +10,9 @@ function makeZoneId() {
 }
 
 const DEFAULT_NAMES = {
-  warning: 'Warning zone',
-  transition: 'Transition boundary',
-  danger: 'Danger zone',
+  warning: 'Outer safety zone',
+  danger: 'Warning boundary',
+  transition: 'Deep pool',
 }
 
 export default function GeofenceEditorPage() {
@@ -84,7 +84,7 @@ export default function GeofenceEditorPage() {
         <div>
           <h1>Geofence editor</h1>
           <div className="sub">
-            Manually draw Yellow warning zones, Orange transition boundaries, and Red danger zones
+            Manually draw nested zones: Yellow (largest) ⊃ Red (inside yellow) ⊃ Orange (inside red)
           </div>
         </div>
         <div className="pagehead-right">
@@ -317,14 +317,14 @@ export default function GeofenceEditorPage() {
             <div className="editor-helptext">
               <ol className="editor-help-list">
                 <li>
-                  Choose a component: <b>Yellow Zone</b> (warning polygon),{' '}
-                  <b>Orange Boundary</b> (transition polyline), or <b>Red Zone</b> (danger polygon).
+                  Choose a component: <b>Yellow Zone</b> (outer safety, largest),{' '}
+                  <b>Red Zone</b> (intrusion, inside yellow), or <b>Orange Zone</b> (deep pool, inside red).
                 </li>
                 <li>
                   Select <b>Add point</b>, then click the pool stage to place vertices one by one.
                 </li>
                 <li>
-                  Polygons close automatically at <b>3+ points</b>. The orange boundary stays an open line.
+                  Polygons close automatically at <b>3+ points</b>. Keep red fully inside yellow, and orange fully inside red.
                 </li>
                 <li>
                   Use <b>Move</b> to drag points, or <b>Remove point</b> to delete a vertex.

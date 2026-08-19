@@ -1,33 +1,3 @@
-"""
-PoolsEye - person pose + geofence intrusion check.
-
-Does not train anything. Uses stock yolo11n-pose (or another .pt) to find
-people, then tests a foot point against the three zones in config.json:
-
-  yellow polygon  - warning (not close to the pool)
-  red polygon     - critical (closer to the pool)
-  orange polyline - deep-pool boundary (near on stills, crossed on video)
-
-Foot point = average of visible ankles (COCO 15/16). If neither ankle is
-confident, falls back to the bottom-center of the person box.
-If a person hits more than one zone, the highest severity wins:
-  critical > boundary > warning > clear
-
-Zone points in scripts/config.json currently match the dashboard geofence
-editor template (1000 x 512). Redraw them on your real camera view before
-trusting alerts.
-
-Usage
------
-Single image:
-    python scripts/zone_check.py --source path/to/frame.jpg
-
-Folder:
-    python scripts/zone_check.py --source dataset/person_pose/images/val
-
-Live Tapo stream:
-    python scripts/zone_check.py --source rtsp://USER:PASS@IP:554/stream1
-"""
 
 from __future__ import annotations
 
@@ -64,16 +34,25 @@ COLORS = {
 
 SEVERITY_RANK = {
     "clear": 0,
-    "warning": 1,
-    "boundary": 2,
-    "critical": 3,
+    "monitor": 1,
+    "intrusion": 2,
+    "deep_pool": 3,
 }
 
 STATUS_TEXT = {
     "clear": "CLEAR",
-    "warning": "WARNING",
-    "boundary": "BOUNDARY",
-    "critical": "CRITICAL",
+    "monitor": "MONITOR",
+    "intrusion": "INTRUSION",
+    "deep_pool": "DEEP-POOL",
+}
+
+ALERT_SEVERITIES = {"intrusion", "deep_pool"}
+
+BOX_COLOR = {
+    "deep_pool": "orange",
+    "intrusion": "red",
+    "monitor": "yellow",
+    "clear": "clear",
 }
 
 
@@ -166,41 +145,59 @@ def foot_point(xyxy, kxy, kcf, kpt_conf):
     return (x1 + x2) / 2.0, y2, "bbox"
 
 
-def classify_foot(x, y, zones_px, orange_proximity_px, prev_side):
+def in_orange_shape(x, y, orange, orange_proximity_px) -> bool:
+    pts = orange["points"]
+    geom = orange.get("geometry", "polygon")
+    if not orange["enabled"] or len(pts) < 2:
+        return False
+    if geom != "polyline" and len(pts) >= 3:
+        return point_in_polygon(x, y, pts)
+    return dist_to_polyline(x, y, pts) <= orange_proximity_px
+
+
+def classify_foot(x, y, zones_px, orange_proximity_px, prev_zone):
+    in_yellow = zones_px["yellow"]["enabled"] and point_in_polygon(
+        x, y, zones_px["yellow"]["points"]
+    )
+    in_red = (
+        in_yellow
+        and zones_px["red"]["enabled"]
+        and point_in_polygon(x, y, zones_px["red"]["points"])
+    )
+    in_orange = in_red and in_orange_shape(x, y, zones_px["orange"], orange_proximity_px)
+
     hits = []
-    if zones_px["red"]["enabled"] and point_in_polygon(x, y, zones_px["red"]["points"]):
-        hits.append("red")
-    if zones_px["yellow"]["enabled"] and point_in_polygon(x, y, zones_px["yellow"]["points"]):
+    if in_yellow:
         hits.append("yellow")
+    if in_red:
+        hits.append("red")
+    if in_orange:
+        hits.append("orange")
 
-    orange_near = False
-    orange_crossed = False
-    side = None
-    if zones_px["orange"]["enabled"] and len(zones_px["orange"]["points"]) >= 2:
-        d = dist_to_polyline(x, y, zones_px["orange"]["points"])
-        orange_near = d <= orange_proximity_px
-        side = side_of_polyline(x, y, zones_px["orange"]["points"])
-        if prev_side is not None and abs(prev_side) > 1e-3 and abs(side) > 1e-3:
-            if (prev_side > 0) != (side > 0):
-                orange_crossed = True
-        if orange_near or orange_crossed:
-            hits.append("orange")
+    if in_orange:
+        zone, severity = "orange", "deep_pool"
+    elif in_red:
+        zone, severity = "red", "intrusion"
+    elif in_yellow:
+        zone, severity = "yellow", "monitor"
+    else:
+        zone, severity = "clear", "clear"
 
-    severity = "clear"
-    if "red" in hits:
-        severity = "critical"
-    elif "orange" in hits:
-        severity = "boundary"
-    elif "yellow" in hits:
-        severity = "warning"
+    event = None
+    if prev_zone is not None:
+        if zone == "red" and prev_zone in {"clear", "yellow"}:
+            event = "entered_red"
+        elif zone == "orange" and prev_zone in {"clear", "yellow", "red"}:
+            event = "entered_orange"
 
     return {
         "hits": hits,
+        "zone": zone,
         "severity": severity,
         "status": STATUS_TEXT[severity],
-        "orange_near": orange_near,
-        "orange_crossed": orange_crossed,
-        "side": side,
+        "event": event,
+        "orange_crossed": event == "entered_orange",
+        "side": None,
     }
 
 
@@ -213,6 +210,7 @@ def zone_pixels(zcfg, frame_w, frame_h):
         out[key] = {
             "enabled": bool(block.get("enabled", True)),
             "name": block.get("name", key),
+            "geometry": block.get("geometry", "polygon"),
             "points": to_pixel_points(
                 block.get("points") or [], frame_w, frame_h, space, editor_size
             ),
@@ -222,37 +220,35 @@ def zone_pixels(zcfg, frame_w, frame_h):
 
 def draw_zones(frame, zones_px):
     overlay = frame.copy()
-    for key in ("yellow", "red"):
-        if not zones_px[key]["enabled"] or len(zones_px[key]["points"]) < 3:
+    for key in ("yellow", "red", "orange"):
+        z = zones_px[key]
+        if not z["enabled"] or len(z["points"]) < 3 or z.get("geometry") == "polyline":
             continue
-        pts = np.array(zones_px[key]["points"], dtype=np.int32)
+        pts = np.array(z["points"], dtype=np.int32)
         cv2.fillPoly(overlay, [pts], COLORS[key])
     frame[:] = cv2.addWeighted(overlay, 0.22, frame, 0.78, 0)
-    for key in ("yellow", "red"):
-        if not zones_px[key]["enabled"] or len(zones_px[key]["points"]) < 3:
+    for key in ("yellow", "red", "orange"):
+        z = zones_px[key]
+        if not z["enabled"] or len(z["points"]) < 2:
             continue
-        pts = np.array(zones_px[key]["points"], dtype=np.int32)
-        cv2.polylines(frame, [pts], isClosed=True, color=COLORS[key], thickness=2)
-    if zones_px["orange"]["enabled"] and len(zones_px["orange"]["points"]) >= 2:
-        pts = np.array(zones_px["orange"]["points"], dtype=np.int32)
-        cv2.polylines(frame, [pts], isClosed=False, color=COLORS["orange"], thickness=3)
+        pts = np.array(z["points"], dtype=np.int32)
+        closed = z.get("geometry") != "polyline" and len(z["points"]) >= 3
+        thickness = 3 if key == "orange" else 2
+        cv2.polylines(frame, [pts], isClosed=closed, color=COLORS[key], thickness=thickness)
 
 
 def draw_person(frame, xyxy, foot, verdict):
     x1, y1, x2, y2 = (int(v) for v in xyxy)
-    color = COLORS.get(
-        "red" if verdict["severity"] == "critical"
-        else "orange" if verdict["severity"] == "boundary"
-        else "yellow" if verdict["severity"] == "warning"
-        else "clear"
-    )
+    color = COLORS[BOX_COLOR.get(verdict["severity"], "clear")]
     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
     fx, fy = int(foot[0]), int(foot[1])
     cv2.circle(frame, (fx, fy), 6, COLORS["foot"], -1)
     cv2.circle(frame, (fx, fy), 8, color, 2)
     label = verdict["status"]
-    if verdict["orange_crossed"]:
-        label += " CROSSED"
+    if verdict.get("event") == "entered_red":
+        label += " ENTERED"
+    elif verdict.get("event") == "entered_orange":
+        label += " ENTERED"
     cv2.putText(
         frame, label, (x1, max(20, y1 - 8)),
         cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA,
@@ -295,7 +291,7 @@ def people_from_result(result):
         yield int(ids[i]), xyxy[i], (None if kxy is None else kxy[i]), (None if kcf is None else kcf[i])
 
 
-def process_result(result, zcfg, tracker, kpt_conf, persist_sides):
+def process_result(result, zcfg, tracker, kpt_conf, persist_zone):
     frame = result.orig_img.copy()
     h, w = frame.shape[:2]
     zones_px = zone_pixels(zcfg, w, h)
@@ -305,10 +301,10 @@ def process_result(result, zcfg, tracker, kpt_conf, persist_sides):
     reports = []
     for track_id, xyxy, kxy, kcf in people_from_result(result):
         fx, fy, src = foot_point(xyxy, kxy, kcf, kpt_conf)
-        prev_side = tracker.get(track_id) if persist_sides else None
-        verdict = classify_foot(fx, fy, zones_px, orange_px, prev_side)
-        if persist_sides and verdict["side"] is not None:
-            tracker[track_id] = verdict["side"]
+        prev_zone = tracker.get(track_id) if persist_zone else None
+        verdict = classify_foot(fx, fy, zones_px, orange_px, prev_zone)
+        if persist_zone:
+            tracker[track_id] = verdict["zone"]
         draw_person(frame, xyxy, (fx, fy), verdict)
         reports.append({
             "id": track_id,
@@ -336,7 +332,8 @@ def main():
 
     print(f"[zone] config {args.config}")
     print(f"[zone] coord_space={zcfg.get('coord_space')} editor_size={zcfg.get('editor_size')}")
-    print("[zone] template polygons from the dashboard editor — redraw on the real camera before trusting alerts")
+    print("[zone] nested Yellow ⊃ Red ⊃ Orange — yellow=monitor, red=intrusion, orange=deep-pool")
+    print("[zone] redraw these polygons on the real Tapo still before trusting alerts")
     print(f"[zone] loading {args.model}")
     model = YOLO(args.model)
 
@@ -359,14 +356,14 @@ def main():
     try:
         for result in results:
             n_frames += 1
-            frame, reports = process_result(result, zcfg, tracker, kpt_conf, persist_sides=use_track)
+            frame, reports = process_result(result, zcfg, tracker, kpt_conf, persist_zone=use_track)
             n_people += len(reports)
             label = result.path or kind
             if not reports:
                 print(f"  {label}: 0 person(s)")
             for r in reports:
                 hits = ",".join(r["hits"]) if r["hits"] else "-"
-                if r["severity"] != "clear":
+                if r["severity"] in ALERT_SEVERITIES:
                     n_alert += 1
                 print(
                     f"  {label}: person {r['id']} {r['status']} "
