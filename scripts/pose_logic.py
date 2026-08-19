@@ -1,10 +1,12 @@
 import math
 import json
+from pathlib import Path
 
-# 1. Load the settings from config.json
-# Make sure your terminal is running from the root folder (Poolseye-Capstone)
+# Load DROWNING_LOGIC from scripts/config.json (same file as zone check).
+# Zone/intrusion logic is NOT used here.
 try:
-    with open('config.json', 'r') as f:
+    _cfg_path = Path(__file__).resolve().parent / "config.json"
+    with open(_cfg_path, "r", encoding="utf-8") as f:
         config = json.load(f)
         
     ANGLE_LIMIT = config['DROWNING_LOGIC']['angle_threshold']

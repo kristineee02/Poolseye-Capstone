@@ -1,4 +1,16 @@
 {
+    "CAMERA": {
+        "rtsp_url": "rtsp://PoolsEye:PoolsEyeCapstone@192.168.1.14:554/stream1"
+    },
+    "POSE": {
+        "model": "yolo11n-pose.pt",
+        "confidence_threshold": 0.25,
+        "keypoint_confidence": 0.3
+    },
+    "TRACKING": {
+        "alert_cooldown_sec": 3.0,
+        "lost_track_sec": 2.0
+    },
     "DROWNING_LOGIC": {
         "angle_threshold": 20.0,
         "movement_threshold": 5.0,
@@ -8,8 +20,6 @@
     "ZONES": {
         "coord_space": "editor",
         "editor_size": [1000, 512],
-        "confidence_threshold": 0.25,
-        "keypoint_confidence": 0.3,
         "orange_proximity": 0.02,
         "yellow": {
             "enabled": true,
