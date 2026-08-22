@@ -1,11 +1,16 @@
 {
     "CAMERA": {
-        "rtsp_url": "rtsp://PoolsEye:PoolsEyeCapstone@192.168.1.14:554/stream1"
+        "rtsp_url": "rtsp://PoolsEye:PoolsEyeCapstone@192.168.1.11:554/stream1"
     },
     "POSE": {
         "model": "yolo11n-pose.pt",
         "confidence_threshold": 0.25,
-        "keypoint_confidence": 0.3
+        "keypoint_confidence": 0.3,
+        "imgsz": 416,
+        "infer_every_n": 3,
+        "max_width": 960,
+        "jpeg_quality": 65,
+        "rtsp_flush": 2
     },
     "TRACKING": {
         "alert_cooldown_sec": 3.0,
@@ -18,7 +23,7 @@
         "danger_time_threshold": 10
     },
     "ZONES": {
-        "coord_space": "editor",
+        "coord_space": "pixel",
         "editor_size": [1000, 512],
         "orange_proximity": 0.02,
         "yellow": {

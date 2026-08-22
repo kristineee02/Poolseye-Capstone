@@ -34,7 +34,11 @@ export default function CameraPanel({ compact = false }) {
       </div>
 
       <div className="camera-stage">
-        <CameraFeedIllustration />
+      <img
+          src="http://localhost:8000/stream"
+          alt="Main Pool CCTV"
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
       </div>
 
       <div className="camera-footbar">

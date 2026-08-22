@@ -1,6 +1,6 @@
 import cv2
 
-rtsp_url = "rtsp://PoolsEye:PoolsEyeCapstone@192.168.1.14:554/stream1"
+rtsp_url = "rtsp://PoolsEye:PoolsEyeCapstone@192.168.1.11:554/stream1"
 
 print("Attempting to connect to Tapo C320WS stream...")
 cap = cv2.VideoCapture(rtsp_url)

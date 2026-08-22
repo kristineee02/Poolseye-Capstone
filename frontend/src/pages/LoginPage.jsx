@@ -1,23 +1,22 @@
 import { useState } from 'react'
 import Logo from '../components/ui/Logo'
 import { Icon } from '../components/ui/Icon'
-import { DEMO_ADMIN } from '../auth/demoAuth'
 import { useAuth } from '../auth/AuthContext'
 import './LoginPage.css'
 
 export default function LoginPage() {
   const { signIn } = useAuth()
-  const [email, setEmail] = useState(DEMO_ADMIN.email)
+  const [email, setEmail] = useState('piapendergat275@gmail.com')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
     setLoading(true)
-    const result = signIn(email, password)
+    const result = await signIn(email, password)
     setLoading(false)
     if (!result.ok) setError(result.error)
   }
@@ -76,9 +75,7 @@ export default function LoginPage() {
         </form>
 
         <p className="login-hint">
-          Demo: <span className="login-hint-link">{DEMO_ADMIN.email}</span>
-          {' / '}
-          {DEMO_ADMIN.password}
+          Backend admin: <span className="login-hint-link">piapendergat275@gmail.com</span>
         </p>
       </div>
     </div>
