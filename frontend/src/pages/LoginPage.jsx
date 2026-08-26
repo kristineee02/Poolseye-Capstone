@@ -6,7 +6,7 @@ import './LoginPage.css'
 
 export default function LoginPage() {
   const { signIn } = useAuth()
-  const [email, setEmail] = useState('piapendergat275@gmail.com')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
@@ -73,10 +73,6 @@ export default function LoginPage() {
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
-
-        <p className="login-hint">
-          Backend admin: <span className="login-hint-link">piapendergat275@gmail.com</span>
-        </p>
       </div>
     </div>
   )

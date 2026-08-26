@@ -1,21 +1,13 @@
-"""
-PoolsEye - live CCTV with zones + pose + alerts for the web dashboard.
 
-Tapo RTSP → YOLO pose → nested Yellow⊃Red⊃Orange → annotated MJPEG
-→ CameraPanel at http://localhost:8000/stream
-
-Speed tips (POSE in config.json):
-  imgsz, infer_every_n, max_width, jpeg_quality, rtsp_flush
-
-Usage (from Capstone root):
-    .venv\\Scripts\\python.exe scripts\\live_server.py
-"""
 
 from __future__ import annotations
 
 import sys
 import threading
 import time
+import uuid
+from collections import deque
+from datetime import datetime
 from pathlib import Path
 
 import cv2
@@ -46,7 +38,88 @@ app = Flask(__name__)
 _lock = threading.Lock()
 _latest_jpeg: bytes | None = None
 _latest_reports: list = []
+_event_log: deque = deque(maxlen=100)
 _running = True
+
+# Crossing text from zone_check → dashboard event shape
+EVENT_CATALOG = {
+    "RED BOUNDARY CROSSED": {
+        "type": "alarm",
+        "code": "INT",
+        "title": "Red Zone Intrusion",
+        "severity": "HIGH",
+        "category": "intrusion",
+    },
+    "DEEP POOL ENTRY": {
+        "type": "alarm",
+        "code": "DP",
+        "title": "Deep-Pool Entry",
+        "severity": "HIGH",
+        "category": "deep-water",
+    },
+    "ENTERED POOL AREA": {
+        "type": "info",
+        "code": "YL",
+        "title": "Entered Monitored Area",
+        "severity": "LOW",
+        "category": "yellow",
+    },
+    "LEFT DEEP POOL": {
+        "type": "info",
+        "code": "DP",
+        "title": "Left Deep Pool",
+        "severity": "LOW",
+        "category": "deep-water",
+    },
+    "LEFT RED ZONE": {
+        "type": "info",
+        "code": "INT",
+        "title": "Left Red Zone",
+        "severity": "LOW",
+        "category": "intrusion",
+    },
+    "LEFT POOL AREA": {
+        "type": "safe",
+        "code": "CLR",
+        "title": "Left Pool Area",
+        "severity": "LOW",
+        "category": "clear",
+    },
+}
+
+
+def push_event(person_id: int, zone: str, event_name: str, is_alert: bool):
+    """Append a dashboard-ready event when a zone crossing fires."""
+    meta = EVENT_CATALOG.get(event_name, {
+        "type": "warn" if is_alert else "info",
+        "code": "EVT",
+        "title": event_name,
+        "severity": "MEDIUM" if is_alert else "LOW",
+        "category": "zone",
+    })
+    now = datetime.now()
+    entry = {
+        "id": f"evt-{uuid.uuid4().hex[:10]}",
+        "type": meta["type"],
+        "code": meta["code"],
+        "title": meta["title"],
+        "meta": f"{ZONE_LABEL.get(zone, zone)} · Person #{person_id} · CAM-01",
+        "time": now.strftime("%I:%M:%S %p").lstrip("0"),
+        "date": "Today",
+        "status": "pending" if is_alert else "resolved",
+        "severity": meta["severity"],
+        "category": meta["category"],
+        "camera": "CAM-01",
+        "person_id": person_id,
+        "zone": zone,
+        "zone_label": ZONE_LABEL.get(zone, zone),
+        "event": event_name,
+        "is_alert": bool(is_alert),
+        "ts": now.timestamp(),
+    }
+    with _lock:
+        _event_log.appendleft(entry)
+    return entry
 
 
 def resize_max_width(frame, max_width: int):
@@ -225,6 +298,12 @@ def capture_loop(rtsp_url: str, cfg: dict):
 
             for r in reports:
                 if r.get("event"):
+                    push_event(
+                        r["id"],
+                        r["zone"],
+                        r["event"],
+                        bool(r.get("is_alert")),
+                    )
                     print(
                         f"  Person #{r['id']} | Zone: {ZONE_LABEL.get(r['zone'], r['zone'])} "
                         f"| Event: {r['event']}"
@@ -246,6 +325,14 @@ def mjpeg_generator():
             b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
         )
         time.sleep(0.03)
+
+
+@app.after_request
+def add_cors(resp):
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return resp
 
 
 @app.get("/")
@@ -271,14 +358,21 @@ def health():
     with _lock:
         ready = _latest_jpeg is not None
         n = len(_latest_reports)
-    return jsonify({"ok": True, "has_frame": ready, "people": n})
+        n_events = len(_event_log)
+    return jsonify({"ok": True, "has_frame": ready, "people": n, "events": n_events})
 
 
 @app.get("/events")
 def events():
+    """Event log (newest first) + current people snapshot for Live Monitoring."""
     with _lock:
+        log = list(_event_log)
         reports = list(_latest_reports)
+        has_frame = _latest_jpeg is not None
     return jsonify({
+        "ok": True,
+        "stream_online": has_frame,
+        "events": log,
         "people": [
             {
                 "id": r["id"],
@@ -290,7 +384,7 @@ def events():
                 "foot_source": r.get("source"),
             }
             for r in reports
-        ]
+        ],
     })
 
 

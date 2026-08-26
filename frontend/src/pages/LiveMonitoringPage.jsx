@@ -1,7 +1,7 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import AlertBar from '../components/layout/AlertBar'
 import CameraPanel from '../components/camera/CameraPanel'
-import EventLogPanel from '../components/history/EventLogPanel'
+import LiveEventLogPanel from '../components/history/LiveEventLogPanel'
 import { useToast, ToastContainer } from '../components/ui/Toast'
 import { cameras } from '../data/cameras'
 import './LiveMonitoringPage.css'
@@ -13,13 +13,23 @@ const POOL_CAMERA = cameras[0]
 export default function LiveMonitoringPage() {
   const { toasts, addToast, removeToast } = useToast()
 
+  const handleNewAlert = useCallback(
+    (evt) => {
+      const tone = evt.type === 'alarm' ? 'error' : evt.type === 'warn' ? 'warning' : 'info'
+      addToast(`${evt.title} — ${evt.meta}`, tone)
+    },
+    [addToast],
+  )
+
   useEffect(() => {
+    // Soft reminder if stream server is not up yet (non-blocking)
     const timeout = setTimeout(() => {
-      addToast('⚠️ Motion detected — Main Pool (CAM-01)', 'warning')
-    }, 5000)
+      fetch('http://localhost:8000/health', { cache: 'no-store' }).catch(() => {
+        addToast('CCTV event feed offline — start scripts/live_server.py', 'warning')
+      })
+    }, 2500)
     return () => clearTimeout(timeout)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [addToast])
 
   return (
     <div className="page">
@@ -30,21 +40,24 @@ export default function LiveMonitoringPage() {
         <div>
           <h1>Live monitoring</h1>
           <div className="sub">
-            Main Pool · 1 CCTV online · YOLOv8-Nano @ ONNX Runtime
+            Main Pool · live CCTV 
           </div>
         </div>
         <div className="pagehead-right">
-          <button className="chip-btn"><Icon.Refresh /> Refresh</button>
-          <button className="chip-btn"><Icon.Download /> Export log</button>
+          <button
+            className="chip-btn"
+            type="button"
+            onClick={() => window.open('http://localhost:8000/events', '_blank')}
+          >
+            <Icon.Refresh /> Events API
+          </button>
         </div>
       </div>
 
       <div className="live-camera-header">
         <div>
           <span className="live-cam-name">{POOL_CAMERA.name}</span>
-          <span className="live-cam-meta">
-            Main Pool · single CCTV feed
-          </span>
+
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {POOL_CAMERA.status === 'online' && <span className="live-pill">● LIVE</span>}
@@ -53,7 +66,7 @@ export default function LiveMonitoringPage() {
 
       <CameraPanel />
 
-      <EventLogPanel />
+      <LiveEventLogPanel onNewAlert={handleNewAlert} />
     </div>
   )
 }
