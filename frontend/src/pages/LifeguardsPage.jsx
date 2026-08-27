@@ -3,6 +3,7 @@ import { Icon } from '../components/ui/Icon'
 import { FormModal, ConfirmModal } from '../components/ui/Modal'
 import { StatusBadge } from '../components/ui/Badge'
 import { EmptyState } from '../components/ui/EmptyState'
+import Pagination from '../components/ui/Pagination'
 import { useToast, ToastContainer } from '../components/ui/Toast'
 import { lifeguards as initialLifeguards } from '../data/lifeguards'
 import './LifeguardsPage.css'
@@ -150,12 +151,6 @@ export default function LifeguardsPage() {
     setAlertMsg('')
     addToast(`Alert dispatched to ${recipients} lifeguard${recipients !== 1 ? 's' : ''}`, 'success')
   }
-
-  const pageNumbers = useMemo(() => {
-    const pages = []
-    for (let i = 1; i <= totalPages; i += 1) pages.push(i)
-    return pages
-  }, [totalPages])
 
   return (
     <div className="page lg-page">
@@ -335,40 +330,17 @@ export default function LifeguardsPage() {
             ))}
           </div>
         )}
-      </div>
 
-      {filtered.length > 0 && totalPages > 1 ? (
-            <div className="lg-pagination" aria-label="Pagination">
-              <button
-                type="button"
-                className="lg-page-btn"
-                disabled={currentPage <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                aria-label="Previous page"
-              >
-                <Icon.ChevronLeft />
-              </button>
-              {pageNumbers.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  className={`lg-page-btn ${n === currentPage ? 'active' : ''}`}
-                  onClick={() => setPage(n)}
-                >
-                  {n}
-                </button>
-              ))}
-              <button
-                type="button"
-                className="lg-page-btn"
-                disabled={currentPage >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                aria-label="Next page"
-              >
-                <Icon.ChevronRight />
-              </button>
-            </div>
-      ) : null}
+        {filtered.length > 0 ? (
+          <Pagination
+            className="ui-pagination--inset"
+            page={currentPage}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            summary={`Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filtered.length)} of ${filtered.length}`}
+          />
+        ) : null}
+      </div>
 
       <FormModal
         isOpen={showAddModal}

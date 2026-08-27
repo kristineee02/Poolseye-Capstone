@@ -1,0 +1,86 @@
+/* Shared pagination — Event history + Lifeguard accounts */
+
+.ui-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 4px 4px;
+  flex-wrap: wrap;
+}
+
+.ui-pagination-summary {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.ui-page-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.ui-page-btn {
+  min-width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.ui-page-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.ui-page-nav {
+  min-width: 32px;
+  padding: 0;
+}
+
+.ui-page-btn:hover:not(:disabled):not(.active) {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  background: var(--bg-inset);
+}
+
+.ui-page-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.ui-page-btn.active:hover:not(:disabled) {
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
+  color: #fff;
+}
+
+.ui-page-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ui-pagination--center {
+  justify-content: center;
+}
+
+.ui-pagination--center .ui-page-btns {
+  margin-left: 0;
+}
+
+.ui-pagination--inset {
+  padding: 13px 18px;
+  border-top: 1px solid var(--border-subtle);
+}

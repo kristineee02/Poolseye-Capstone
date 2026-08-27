@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Icon } from '../components/ui/Icon'
+import Pagination from '../components/ui/Pagination'
 import SnapshotThumb from '../components/history/SnapshotThumb'
 import SnapshotModal from '../components/history/SnapshotModal'
 import { events } from '../data/events'
@@ -9,12 +10,14 @@ const TYPE_LABEL = { alarm: 'Alarm', safe: 'Safe', warn: 'Warning', info: 'Info'
 const TYPE_TAG = { alarm: 'tag-alarm', safe: 'tag-safe', warn: 'tag-info', info: 'tag-info' }
 const STATUS_TAG = { resolved: 'tag-safe', pending: 'tag-warn', dismissed: 'tag-info' }
 const STATUS_LABEL = { resolved: 'ACK', pending: 'NEW', dismissed: 'Dismissed' }
+const PAGE_SIZE = 4
 
 export default function HistoryPage() {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [reviewing, setReviewing] = useState(null)
+  const [page, setPage] = useState(1)
 
   const filtered = useMemo(() => {
     return events.filter((e) => {
@@ -24,6 +27,16 @@ export default function HistoryPage() {
       return true
     })
   }, [search, typeFilter, statusFilter])
+
+  useEffect(() => {
+    setPage(1)
+  }, [search, typeFilter, statusFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const start = filtered.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
+  const end = Math.min(currentPage * PAGE_SIZE, filtered.length)
+  const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
   return (
     <div className="page">
@@ -81,7 +94,7 @@ export default function HistoryPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((e) => (
+            {pageItems.map((e) => (
               <tr key={e.id}>
                 <td className="thumb-cell">
                   <SnapshotThumb type={e.type} />
@@ -105,16 +118,15 @@ export default function HistoryPage() {
           </tbody>
         </table>
 
-        <div className="pagination">
-          <span>Showing {filtered.length} of {events.length} events</span>
-          <div className="page-btns">
-            <div className="page-btn active">1</div>
-            <div className="page-btn">2</div>
-            <div className="page-btn">3</div>
-            <div className="page-btn">…</div>
-            <div className="page-btn">24</div>
-          </div>
-        </div>
+        {filtered.length > 0 ? (
+          <Pagination
+            className="ui-pagination--inset"
+            page={currentPage}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            summary={`Showing ${start}–${end} of ${filtered.length} events`}
+          />
+        ) : null}
       </div>
 
       <SnapshotModal event={reviewing} onClose={() => setReviewing(null)} />

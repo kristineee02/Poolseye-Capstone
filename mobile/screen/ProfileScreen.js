@@ -17,7 +17,7 @@ import ChangePasswordScreen from './ChangePasswordScreen';
 import EditProfileScreen from './EditProfileScreen';
 import CameraIcon from '../components/CameraIcon';
 
-const editProfileIcon = require('../assets/icons/edit-profile.png');
+const editProfileIcon = require('../assets/icons/camera.png');
 const changePasswordIcon = require('../assets/icons/change-password.png');
 
 function getInitials(name, fallback = 'LG') {

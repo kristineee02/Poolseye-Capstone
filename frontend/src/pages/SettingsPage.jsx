@@ -278,7 +278,7 @@ export default function SettingsPage() {
                   onClick={pickPhoto}
                   aria-label="Upload profile picture"
                 >
-                  <Icon.Camera />
+                  <img src="/icons/camera.png" alt="" className="settings-camera-icon" />
                 </button>
               ) : null}
               <input

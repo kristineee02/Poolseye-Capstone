@@ -120,9 +120,11 @@
   background: var(--accent-deep);
 }
 
-.settings-camera-badge svg {
+.settings-camera-icon {
   width: 14px;
   height: 14px;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
 }
 
 .settings-file-input {

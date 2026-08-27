@@ -313,58 +313,6 @@
   height: 14px;
 }
 
-.lg-pagination {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 0 4px;
-}
-
-.lg-page-btn {
-  min-width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-panel);
-  color: var(--text-secondary);
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 8px;
-}
-
-.lg-page-btn svg {
-  width: 16px;
-  height: 16px;
-}
-
-.lg-page-btn:hover:not(:disabled) {
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-  background: var(--bg-inset);
-}
-
-.lg-page-btn.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.lg-page-btn.active:hover:not(:disabled) {
-  background: var(--accent-deep);
-  border-color: var(--accent-deep);
-  color: #fff;
-}
-
-.lg-page-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
 .check-group {
   display: flex;
   flex-wrap: wrap;
