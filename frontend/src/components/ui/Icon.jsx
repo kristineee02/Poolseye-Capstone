@@ -214,6 +214,20 @@ export const Icon = {
       <line x1="12" y1="2" x2="12" y2="12" />
     </svg>
   ),
+  Pause: (p) => (
+    <svg {...base} {...p}>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="10" y1="8" x2="10" y2="16" />
+      <line x1="14" y1="8" x2="14" y2="16" />
+    </svg>
+  ),
+  Archive: (p) => (
+    <svg {...base} {...p}>
+      <polyline points="21 8 21 21 3 21 3 8" />
+      <rect x="1" y="3" width="22" height="5" />
+      <line x1="10" y1="12" x2="14" y2="12" />
+    </svg>
+  ),
   Motion: (p) => (
     <svg {...base} {...p}>
       <circle cx="12" cy="12" r="3" />

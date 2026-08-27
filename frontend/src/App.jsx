@@ -9,6 +9,7 @@ import GeofenceEditorPage from './pages/GeofenceEditorPage'
 import LifeguardsPage from './pages/LifeguardsPage'
 import HistoryPage from './pages/HistoryPage'
 import AnalyticsPage from './pages/AnalyticsPage'
+import SettingsPage from './pages/SettingsPage'
 import { useAuth } from './auth/AuthContext'
 
 const PAGES = {
@@ -17,6 +18,7 @@ const PAGES = {
   lifeguards: LifeguardsPage,
   history: HistoryPage,
   analytics: AnalyticsPage,
+  settings: SettingsPage,
 }
 
 export default function App() {

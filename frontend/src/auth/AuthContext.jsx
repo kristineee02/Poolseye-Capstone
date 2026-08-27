@@ -1,9 +1,22 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 
 const STORAGE_KEY = 'poolseye-admin-session'
+const PROFILE_EXTRA_KEY = 'poolseye-admin-profile-extra'
 const API_BASE = 'http://localhost:4000'
 
 const AuthContext = createContext(null)
+
+function mergeStoredPhoto(nextUser) {
+  if (!nextUser?.email) return nextUser
+  try {
+    const raw = localStorage.getItem(PROFILE_EXTRA_KEY)
+    const all = raw ? JSON.parse(raw) : {}
+    const photoUri = all[nextUser.email]?.photoUri || null
+    return { ...nextUser, photoUri: nextUser.photoUri || photoUri }
+  } catch {
+    return nextUser
+  }
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -39,7 +52,7 @@ export function AuthProvider({ children }) {
         return res.json()
       })
       .then((data) => {
-        setUser(data.user)
+        setUser(mergeStoredPhoto(data.user))
       })
       .catch(() => {
         localStorage.removeItem(STORAGE_KEY)
@@ -64,7 +77,7 @@ export function AuthProvider({ children }) {
       }
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ token: data.token }))
-      setUser(data.user)
+      setUser(mergeStoredPhoto(data.user))
       return { ok: true }
     } catch {
       return { ok: false, error: 'Cannot reach backend server on port 4000' }
@@ -76,8 +89,30 @@ export function AuthProvider({ children }) {
     localStorage.removeItem(STORAGE_KEY)
   }
 
+  const updateProfile = ({ name, photoUri } = {}) => {
+    if (!user) return { ok: false, error: 'You must be signed in.' }
+    const nextName = typeof name === 'string' ? name.trim() : user.name
+    if (!nextName) return { ok: false, error: 'Name is required.' }
+
+    const parts = nextName.split(/\s+/).filter(Boolean)
+    const initials =
+      parts.length === 0
+        ? 'AD'
+        : parts.length === 1
+          ? parts[0].slice(0, 2).toUpperCase()
+          : `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+
+    setUser({
+      ...user,
+      name: nextName,
+      initials,
+      photoUri: photoUri === undefined ? user.photoUri || null : photoUri,
+    })
+    return { ok: true }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, ready, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, ready, signIn, signOut, updateProfile }}>
       {children}
     </AuthContext.Provider>
   )

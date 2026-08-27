@@ -88,6 +88,18 @@
   color: #94A3B8;
 }
 
+/* Remove Chrome/Edge autofill blue highlight */
+.login-field input:-webkit-autofill,
+.login-field input:-webkit-autofill:hover,
+.login-field input:-webkit-autofill:focus,
+.login-field input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #FFFFFF inset !important;
+  box-shadow: 0 0 0 1000px #FFFFFF inset !important;
+  -webkit-text-fill-color: #0F172A !important;
+  caret-color: #0F172A;
+  transition: background-color 99999s ease-in-out 0s;
+}
+
 .login-password-toggle {
   display: flex;
   align-items: center;

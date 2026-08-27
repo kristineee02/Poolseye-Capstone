@@ -38,7 +38,14 @@ export default function NavRail({ activePage, onNavigate, onRequestSignOut }) {
       </div>
 
       <div className="navrail-footer">
-        <button type="button" className="navitem" title="Settings" aria-label="Settings">
+        <button
+          type="button"
+          className={`navitem ${activePage === 'settings' ? 'active' : ''}`}
+          title="Settings"
+          aria-label="Settings"
+          aria-current={activePage === 'settings' ? 'page' : undefined}
+          onClick={() => onNavigate('settings')}
+        >
           <Icon.Settings />
         </button>
         <button

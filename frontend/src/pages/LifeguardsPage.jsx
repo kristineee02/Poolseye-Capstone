@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Icon } from '../components/ui/Icon'
 import { FormModal, ConfirmModal } from '../components/ui/Modal'
 import { StatusBadge } from '../components/ui/Badge'
@@ -9,6 +9,7 @@ import './LifeguardsPage.css'
 
 const ROLES = ['Primary Lifeguard', 'Backup Lifeguard', 'Lifeguard', 'On-Duty Supervisor']
 const ZONES = ['Main Pool', 'North Pool', 'Kiddie Pool', 'Entrance']
+const PAGE_SIZE = 4
 
 const emptyForm = {
   name: '',
@@ -24,23 +25,42 @@ export default function LifeguardsPage() {
   const [guards, setGuards] = useState(initialLifeguards)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [showArchiveModal, setShowArchiveModal] = useState(false)
   const [showAlertModal, setShowAlertModal] = useState(false)
   const [selected, setSelected] = useState(null)
   const [formData, setFormData] = useState(emptyForm)
   const [alertMsg, setAlertMsg] = useState('')
   const [alertPriority, setAlertPriority] = useState('high')
   const [search, setSearch] = useState('')
+  const [rosterView, setRosterView] = useState('active')
+  const [page, setPage] = useState(1)
   const { toasts, addToast, removeToast } = useToast()
 
-  const filtered = guards.filter(
-    (g) =>
-      g.name.toLowerCase().includes(search.toLowerCase()) ||
-      g.role.toLowerCase().includes(search.toLowerCase()) ||
-      g.email.toLowerCase().includes(search.toLowerCase())
-  )
+  const rosterGuards = useMemo(() => {
+    if (rosterView === 'archived') {
+      return guards.filter((g) => g.status === 'archived')
+    }
+    return guards.filter((g) => g.status !== 'archived')
+  }, [guards, rosterView])
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return rosterGuards
+    return rosterGuards.filter(
+      (g) =>
+        g.name.toLowerCase().includes(q) ||
+        g.role.toLowerCase().includes(q) ||
+        g.email.toLowerCase().includes(q) ||
+        g.assignedZones.join(' ').toLowerCase().includes(q)
+    )
+  }, [rosterGuards, search])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
   const activeCount = guards.filter((g) => g.status === 'active').length
+  const archivedCount = guards.filter((g) => g.status === 'archived').length
 
   const toggleZone = (zone) => {
     setFormData((f) => ({
@@ -49,6 +69,20 @@ export default function LifeguardsPage() {
         ? f.assignedZones.filter((z) => z !== zone)
         : [...f.assignedZones, zone],
     }))
+  }
+
+  const openEdit = (guard) => {
+    setSelected(guard)
+    setFormData({
+      name: guard.name,
+      email: guard.email,
+      phone: guard.phone,
+      role: guard.role,
+      assignedZones: [...guard.assignedZones],
+      certifications: [...guard.certifications],
+      status: guard.status === 'archived' ? 'inactive' : guard.status,
+    })
+    setShowEditModal(true)
   }
 
   const handleAdd = () => {
@@ -92,18 +126,18 @@ export default function LifeguardsPage() {
     addToast(`${formData.name}'s account updated`, 'success')
   }
 
-  const handleDelete = () => {
-    setGuards(guards.filter((g) => g.id !== selected.id))
-    addToast(`${selected.name}'s account removed`, 'info')
+  const handleDeactivate = () => {
+    setGuards(guards.map((g) =>
+      g.id === selected.id ? { ...g, status: 'archived' } : g
+    ))
+    addToast(`${selected.name} deactivated and moved to Archived`, 'info')
   }
 
-  const handleToggleStatus = (guard) => {
-    const newStatus = guard.status === 'active' ? 'inactive' : 'active'
-    setGuards(guards.map((g) => (g.id === guard.id ? { ...g, status: newStatus } : g)))
-    addToast(
-      `${guard.name} ${newStatus === 'active' ? 'activated' : 'deactivated'}`,
-      newStatus === 'active' ? 'success' : 'info'
-    )
+  const handleRestore = (guard) => {
+    setGuards(guards.map((g) =>
+      g.id === guard.id ? { ...g, status: 'active' } : g
+    ))
+    addToast(`${guard.name} activated`, 'success')
   }
 
   const handleSendAlert = () => {
@@ -117,154 +151,225 @@ export default function LifeguardsPage() {
     addToast(`Alert dispatched to ${recipients} lifeguard${recipients !== 1 ? 's' : ''}`, 'success')
   }
 
+  const pageNumbers = useMemo(() => {
+    const pages = []
+    for (let i = 1; i <= totalPages; i += 1) pages.push(i)
+    return pages
+  }, [totalPages])
+
   return (
-    <div className="page">
+    <div className="page lg-page">
       <ToastContainer toasts={toasts} removeToast={removeToast} />
 
       <div className="pagehead">
         <div>
           <h1>Lifeguard accounts</h1>
-          <div className="sub">{activeCount} active · {guards.length} total accounts</div>
+          <div className="sub">Managing accounts</div>
         </div>
         <div className="pagehead-right">
-          <button className="btn-secondary" onClick={() => setShowAlertModal(true)}>
+          <button type="button" className="btn-secondary" onClick={() => setShowAlertModal(true)}>
             <Icon.Send />
             Broadcast alert
           </button>
-          <button className="btn-primary" onClick={() => { setFormData(emptyForm); setShowAddModal(true) }}>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => {
+              setFormData(emptyForm)
+              setShowAddModal(true)
+            }}
+          >
             <Icon.Plus />
             Add lifeguard
           </button>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="lg-stat-strip">
-        {[
-          { label: 'Total accounts', value: guards.length, icon: Icon.Users },
-          { label: 'Active', value: guards.filter((g) => g.status === 'active').length, icon: Icon.Shield, accent: true },
-          { label: 'Inactive', value: guards.filter((g) => g.status === 'inactive').length, icon: Icon.Power },
-          { label: 'App connected', value: guards.filter((g) => g.mobileAppStatus === 'connected').length, icon: Icon.Phone },
-        ].map(({ label, value, icon: SIcon, accent }) => (
-          <div key={label} className={`lg-stat-card ${accent && value > 0 ? 'accent' : ''}`}>
-            <SIcon />
-            <div>
-              <div className="stat-value">{value}</div>
-              <div className="stat-label">{label}</div>
-            </div>
-          </div>
-        ))}
+      <div className="lg-toolbar">
+        <div className="lg-search-bar">
+          <Icon.Search />
+          <input
+            type="text"
+            placeholder="Search by name, role, email, or location…"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              setPage(1)
+            }}
+          />
+        </div>
+        <button
+          type="button"
+          className={`lg-view-icon ${rosterView === 'archived' ? 'active' : ''}`}
+          onClick={() => {
+            setRosterView((v) => (v === 'archived' ? 'active' : 'archived'))
+            setPage(1)
+          }}
+          title={rosterView === 'archived' ? 'Show active roster' : `Archived${archivedCount > 0 ? ` (${archivedCount})` : ''}`}
+          aria-label={rosterView === 'archived' ? 'Show active roster' : 'Show archived accounts'}
+          aria-pressed={rosterView === 'archived'}
+        >
+          <Icon.Archive />
+        </button>
       </div>
 
-      {/* Search + List */}
-      <div className="panel">
-        <div className="panel-head">
-          <h3>Lifeguard roster</h3>
-          <div className="search-box">
-            <Icon.Search />
-            <input
-              type="text"
-              placeholder="Search by name, role, email…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+      <div className="panel lg-roster-panel">
+        {filtered.length === 0 ? (
+          <div className="lg-empty-panel">
+            <EmptyState
+              icon={Icon.Users}
+              title={
+                search
+                  ? 'No lifeguards match your search'
+                  : rosterView === 'archived'
+                    ? 'No archived accounts'
+                    : 'No lifeguard accounts yet'
+              }
+              description={
+                search
+                  ? 'Try a different search term.'
+                  : rosterView === 'archived'
+                    ? 'Archived lifeguards will appear here.'
+                    : 'Create your first lifeguard account.'
+              }
+              action={
+                !search && rosterView !== 'archived' ? (
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => {
+                      setFormData(emptyForm)
+                      setShowAddModal(true)
+                    }}
+                  >
+                    <Icon.Plus /> Add lifeguard
+                  </button>
+                ) : null
+              }
             />
           </div>
-        </div>
-
-        {filtered.length === 0 ? (
-          <EmptyState
-            icon={Icon.Users}
-            title={search ? 'No lifeguards match your search' : 'No lifeguard accounts yet'}
-            description={search ? 'Try a different search term.' : 'Create your first lifeguard account.'}
-            action={!search && (
-              <button className="btn-primary" onClick={() => { setFormData(emptyForm); setShowAddModal(true) }}>
-                <Icon.Plus /> Add lifeguard
-              </button>
-            )}
-          />
         ) : (
-          <div className="lg-list">
-            {filtered.map((guard) => (
-              <div key={guard.id} className={`lg-row ${guard.status === 'inactive' ? 'inactive' : ''}`}>
+          <div className="lg-card-list">
+            {pageItems.map((guard) => (
+              <article
+                key={guard.id}
+                className={`lg-card ${guard.status === 'inactive' ? 'is-inactive' : ''}`}
+              >
                 <div className="lg-avatar">{guard.initials}</div>
+
                 <div className="lg-info">
-                  <div className="lg-name">
-                    {guard.name}
-                    <StatusBadge status={guard.status} />
-                    {guard.mobileAppStatus === 'connected' && (
+                  <div className="lg-name-row">
+                    <span className="lg-name-text">{guard.name}</span>
+                    <StatusBadge status={guard.status === 'archived' ? 'inactive' : guard.status} />
+                    {guard.mobileAppStatus === 'connected' && guard.status !== 'archived' ? (
                       <span className="app-connected-pill">
                         <Icon.Phone /> App
                       </span>
-                    )}
+                    ) : null}
                   </div>
                   <div className="lg-role">{guard.role}</div>
                   <div className="lg-meta">
                     <span><Icon.Mail /> {guard.email}</span>
                     <span><Icon.Phone /> {guard.phone}</span>
-                    {guard.assignedZones.length > 0 && (
+                    {guard.assignedZones.length > 0 ? (
                       <span><Icon.Fence /> {guard.assignedZones.join(', ')}</span>
-                    )}
+                    ) : null}
                   </div>
-                  {guard.certifications.length > 0 && (
+                  {guard.certifications.length > 0 ? (
                     <div className="lg-certs">
                       {guard.certifications.map((c) => (
                         <span key={c} className="cert-pill">{c}</span>
                       ))}
                     </div>
-                  )}
+                  ) : null}
                 </div>
+
                 <div className="lg-stats">
                   <div className="lg-stat">
                     <span className="lg-stat-val">{guard.acknowledgedAlerts}</span>
                     <span className="lg-stat-lbl">Acknowledged</span>
                   </div>
                   <div className="lg-stat">
-                    <span className={`lg-stat-val ${guard.missedAlerts > 0 ? 'alarm' : ''}`}>{guard.missedAlerts}</span>
+                    <span className={`lg-stat-val ${guard.missedAlerts > 0 ? 'alarm' : ''}`}>
+                      {guard.missedAlerts}
+                    </span>
                     <span className="lg-stat-lbl">Missed</span>
                   </div>
                 </div>
+
                 <div className="lg-actions">
-                  <button
-                    className="btn-icon-secondary"
-                    title="Edit account"
-                    onClick={() => {
-                      setSelected(guard)
-                      setFormData({
-                        name: guard.name,
-                        email: guard.email,
-                        phone: guard.phone,
-                        role: guard.role,
-                        assignedZones: [...guard.assignedZones],
-                        certifications: [...guard.certifications],
-                        status: guard.status,
-                      })
-                      setShowEditModal(true)
-                    }}
-                  >
-                    <Icon.Edit />
-                  </button>
-                  <button
-                    className="btn-icon-secondary"
-                    title={guard.status === 'active' ? 'Deactivate' : 'Activate'}
-                    onClick={() => handleToggleStatus(guard)}
-                  >
-                    <Icon.Power />
-                  </button>
-                  <button
-                    className="btn-icon-secondary"
-                    title="Remove account"
-                    onClick={() => { setSelected(guard); setShowDeleteModal(true) }}
-                  >
-                    <Icon.Trash />
-                  </button>
+                  {rosterView === 'archived' ? (
+                    <button
+                      type="button"
+                      className="btn-icon-secondary"
+                      title="Activate account"
+                      onClick={() => handleRestore(guard)}
+                    >
+                      <Icon.Power />
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-icon-secondary"
+                        title="Edit account"
+                        onClick={() => openEdit(guard)}
+                      >
+                        <Icon.Edit />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-icon-secondary"
+                        title="Deactivate"
+                        onClick={() => {
+                          setSelected(guard)
+                          setShowArchiveModal(true)
+                        }}
+                      >
+                        <Icon.Power />
+                      </button>
+                    </>
+                  )}
                 </div>
-              </div>
+              </article>
             ))}
           </div>
         )}
       </div>
 
-      {/* Add Modal */}
+      {filtered.length > 0 && totalPages > 1 ? (
+            <div className="lg-pagination" aria-label="Pagination">
+              <button
+                type="button"
+                className="lg-page-btn"
+                disabled={currentPage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                aria-label="Previous page"
+              >
+                <Icon.ChevronLeft />
+              </button>
+              {pageNumbers.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className={`lg-page-btn ${n === currentPage ? 'active' : ''}`}
+                  onClick={() => setPage(n)}
+                >
+                  {n}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="lg-page-btn"
+                disabled={currentPage >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                aria-label="Next page"
+              >
+                <Icon.ChevronRight />
+              </button>
+            </div>
+      ) : null}
+
       <FormModal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
@@ -332,7 +437,6 @@ export default function LifeguardsPage() {
         </div>
       </FormModal>
 
-      {/* Edit Modal */}
       <FormModal
         isOpen={showEditModal}
         onClose={() => setShowEditModal(false)}
@@ -404,7 +508,6 @@ export default function LifeguardsPage() {
         </div>
       </FormModal>
 
-      {/* Broadcast Alert Modal */}
       <FormModal
         isOpen={showAlertModal}
         onClose={() => setShowAlertModal(false)}
@@ -421,9 +524,9 @@ export default function LifeguardsPage() {
         <div className="form-field">
           <label>Priority</label>
           <select value={alertPriority} onChange={(e) => setAlertPriority(e.target.value)}>
-            <option value="high">🔴 High — Drowning / Immediate danger</option>
-            <option value="medium">🟡 Medium — Unsupervised child</option>
-            <option value="low">🟢 Low — Informational</option>
+            <option value="high">High — Drowning / Immediate danger</option>
+            <option value="medium">Medium — Unsupervised child</option>
+            <option value="low">Low — Informational</option>
           </select>
         </div>
         <div className="form-field">
@@ -438,16 +541,14 @@ export default function LifeguardsPage() {
         </div>
       </FormModal>
 
-      {/* Delete Confirm */}
       <ConfirmModal
-        isOpen={showDeleteModal}
-        onClose={() => setShowDeleteModal(false)}
-        title="Remove Lifeguard Account"
-        message={`Permanently remove ${selected?.name}'s account? They will lose all access to the system.`}
-        onConfirm={handleDelete}
-        isDangerous
-        confirmText="Remove account"
-        cancelText="Keep account"
+        isOpen={showArchiveModal}
+        onClose={() => setShowArchiveModal(false)}
+        title="Deactivate Lifeguard Account"
+        message={`Deactivate ${selected?.name}'s account? They will be moved to Archived and lose access. You can activate them again anytime.`}
+        onConfirm={handleDeactivate}
+        confirmText="Deactivate"
+        cancelText="Cancel"
       />
     </div>
   )

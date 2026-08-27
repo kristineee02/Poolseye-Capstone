@@ -21,7 +21,11 @@ export default function Topbar({ onRequestSignOut }) {
           title={`${user.name} — sign out`}
           onClick={onRequestSignOut}
         >
-          {user.initials}
+          {user.photoUri ? (
+            <img src={user.photoUri} alt="" className="topbar-avatar-img" />
+          ) : (
+            user.initials
+          )}
         </button>
       </div>
     </header>
