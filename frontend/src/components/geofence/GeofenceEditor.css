@@ -109,28 +109,90 @@
 .mode-btn-row {
   display: flex;
   gap: 6px;
+  align-items: center;
 }
+
 .mode-btn {
   background: var(--bg-raised);
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
+  height: 32px;
+  padding: 0 11px;
   font-size: 11.5px;
-  font-weight: 500;
-  border-radius: var(--r-sm);
-  padding: 7px 11px;
+  font-weight: 600;
+  border-radius: 10px;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 5px;
+  white-space: nowrap;
+  line-height: 1;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
 }
+
 .mode-btn svg {
   width: 13px;
   height: 13px;
+  flex-shrink: 0;
 }
-.mode-btn.active {
+
+.mode-btn-move {
+  min-width: 58px;
+}
+
+.mode-btn-add {
+  min-width: 104px;
+}
+
+.mode-btn-remove {
+  min-width: 118px;
+}
+
+.mode-btn-move.active {
+  background: var(--bg-inset);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.mode-btn-add {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+
+.mode-btn-add svg {
+  color: #fff;
+}
+
+.mode-btn-add:hover {
+  filter: brightness(1.05);
+  box-shadow: var(--shadow-sm);
+}
+
+.mode-btn-add.active {
+  box-shadow: 0 0 0 2px var(--accent-tint);
+}
+
+.mode-btn-remove {
+  background: var(--bg-panel);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.mode-btn-remove svg {
+  color: #d6364a;
+}
+
+.mode-btn-remove:hover {
+  background: rgba(214, 54, 74, 0.04);
+  border-color: rgba(214, 54, 74, 0.45);
+}
+
+.mode-btn-remove.active {
+  border-color: #d6364a;
+  background: rgba(214, 54, 74, 0.08);
+  box-shadow: 0 0 0 2px rgba(214, 54, 74, 0.1);
 }
 
 /* ── Add component buttons ── */

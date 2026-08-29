@@ -112,21 +112,24 @@ export default function GeofenceEditorPage() {
             <div className="camera-head-right">
               <div className="mode-btn-row">
                 <button
-                  className={`mode-btn ${mode === 'move' ? 'active' : ''}`}
+                  type="button"
+                  className={`mode-btn mode-btn-move ${mode === 'move' ? 'active' : ''}`}
                   onClick={() => setMode('move')}
                   title="Drag existing points"
                 >
                   Move
                 </button>
                 <button
-                  className={`mode-btn ${mode === 'add' ? 'active' : ''}`}
+                  type="button"
+                  className={`mode-btn mode-btn-add ${mode === 'add' ? 'active' : ''}`}
                   onClick={() => setMode('add')}
                   title="Click the stage to add a point"
                 >
                   <Icon.Plus /> Add point
                 </button>
                 <button
-                  className={`mode-btn ${mode === 'delete' ? 'active' : ''}`}
+                  type="button"
+                  className={`mode-btn mode-btn-remove ${mode === 'delete' ? 'active' : ''}`}
                   onClick={() => setMode('delete')}
                   title="Click a point to remove it"
                 >
