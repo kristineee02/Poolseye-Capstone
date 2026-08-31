@@ -1,18 +1,31 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../components/ui/Icon'
 import { FormModal, ConfirmModal } from '../components/ui/Modal'
 import { StatusBadge } from '../components/ui/Badge'
 import { EmptyState } from '../components/ui/EmptyState'
 import Pagination from '../components/ui/Pagination'
 import { useToast, ToastContainer } from '../components/ui/Toast'
-import { lifeguards as initialLifeguards } from '../data/lifeguards'
+import {
+  fetchLifeguards,
+  createLifeguard,
+  updateLifeguard,
+  archiveLifeguard,
+  restoreLifeguard,
+  sendVerificationCode,
+  confirmVerificationCode,
+  isEmailVerified,
+  clearEmailVerification,
+  sendWelcomeEmail,
+  isValidEmail,
+} from '../api/lifeguards'
 import './LifeguardsPage.css'
 
 const ROLES = ['Primary Lifeguard', 'Backup Lifeguard', 'Lifeguard', 'On-Duty Supervisor']
 const ZONES = ['Main Pool', 'North Pool', 'Kiddie Pool', 'Entrance']
 const PAGE_SIZE = 4
+const MAX_PHOTO_BYTES = 2 * 1024 * 1024
 
-const emptyForm = {
+const emptyAddForm = {
   name: '',
   email: '',
   phone: '',
@@ -22,20 +35,108 @@ const emptyForm = {
   status: 'active',
 }
 
+function FormAvatarPicker({ name, photoUri, onPick, inputRef, onPhotoSelected }) {
+  const initials = useMemo(() => {
+    const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+    if (!parts.length) return 'LG'
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+  }, [name])
+
+  return (
+    <div className="lg-form-photo">
+      <div className="lg-form-avatar-wrap">
+        <button type="button" className="lg-form-avatar" onClick={onPick} aria-label="Upload profile picture">
+          {photoUri ? (
+            <img src={photoUri} alt="" className="lg-form-avatar-img" />
+          ) : (
+            <span aria-hidden="true">{initials}</span>
+          )}
+        </button>
+        <button
+          type="button"
+          className="lg-form-camera-badge"
+          onClick={onPick}
+          aria-label="Upload profile picture"
+        >
+          <img src="/icons/camera.png" alt="" className="lg-form-camera-icon" />
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="lg-file-input"
+          onChange={onPhotoSelected}
+        />
+      </div>
+      <p className="lg-form-photo-hint">Profile picture (optional)</p>
+    </div>
+  )
+}
+
+function PasswordInput({ label, value, onChange, placeholder, visible, onToggle }) {
+  return (
+    <div className="form-field">
+      <label>{label}</label>
+      <div className="lg-password-wrap">
+        <input
+          type={visible ? 'text' : 'password'}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          autoComplete="new-password"
+        />
+        <button
+          type="button"
+          className="lg-password-toggle"
+          onClick={onToggle}
+          aria-label={visible ? 'Hide password' : 'Show password'}
+        >
+          {visible ? <Icon.EyeOff /> : <Icon.Eye />}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function LifeguardsPage() {
-  const [guards, setGuards] = useState(initialLifeguards)
+  const [guards, setGuards] = useState(() => fetchLifeguards())
   const [showAddModal, setShowAddModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showArchiveModal, setShowArchiveModal] = useState(false)
   const [showAlertModal, setShowAlertModal] = useState(false)
   const [selected, setSelected] = useState(null)
-  const [formData, setFormData] = useState(emptyForm)
+  const [formData, setFormData] = useState(emptyAddForm)
+  const [tempPassword, setTempPassword] = useState('')
+  const [confirmTempPassword, setConfirmTempPassword] = useState('')
+  const [showTempPassword, setShowTempPassword] = useState(false)
+  const [showConfirmTempPassword, setShowConfirmTempPassword] = useState(false)
+  const [addPhotoUri, setAddPhotoUri] = useState(null)
+  const [editPhotoUri, setEditPhotoUri] = useState(null)
+  const [verificationCode, setVerificationCode] = useState('')
+  const [verifiedEmail, setVerifiedEmail] = useState('')
+  const [codeSent, setCodeSent] = useState(false)
+  const [sendingCode, setSendingCode] = useState(false)
+  const [verifyingCode, setVerifyingCode] = useState(false)
+  const addPhotoInputRef = useRef(null)
+  const editPhotoInputRef = useRef(null)
   const [alertMsg, setAlertMsg] = useState('')
   const [alertPriority, setAlertPriority] = useState('high')
   const [search, setSearch] = useState('')
   const [rosterView, setRosterView] = useState('active')
   const [page, setPage] = useState(1)
   const { toasts, addToast, removeToast } = useToast()
+
+  useEffect(() => {
+    setGuards(fetchLifeguards())
+  }, [])
+
+  const emailVerified = useMemo(() => {
+    const email = formData.email.trim().toLowerCase()
+    return Boolean(email && verifiedEmail === email && isEmailVerified(email))
+  }, [formData.email, verifiedEmail])
+
+  const canSendCode = isValidEmail(formData.email) && !sendingCode && !emailVerified
 
   const rosterGuards = useMemo(() => {
     if (rosterView === 'archived') {
@@ -72,6 +173,121 @@ export default function LifeguardsPage() {
     }))
   }
 
+  const resetAddForm = () => {
+    const pendingEmail = formData.email.trim().toLowerCase()
+    if (pendingEmail && !emailVerified) {
+      clearEmailVerification(pendingEmail)
+    }
+    setFormData(emptyAddForm)
+    setTempPassword('')
+    setConfirmTempPassword('')
+    setShowTempPassword(false)
+    setShowConfirmTempPassword(false)
+    setAddPhotoUri(null)
+    setVerificationCode('')
+    setVerifiedEmail('')
+    setCodeSent(false)
+    setSendingCode(false)
+    setVerifyingCode(false)
+  }
+
+  const onAddEmailChange = (value) => {
+    const nextEmail = value.trim().toLowerCase()
+    const currentVerified = verifiedEmail.trim().toLowerCase()
+    if (currentVerified && nextEmail !== currentVerified) {
+      clearEmailVerification(currentVerified)
+      setVerifiedEmail('')
+      setCodeSent(false)
+      setVerificationCode('')
+    }
+    setFormData((f) => ({ ...f, email: value }))
+  }
+
+  const handleSendVerificationCode = async () => {
+    if (!canSendCode) return
+    setSendingCode(true)
+    try {
+      const result = sendVerificationCode(formData.email)
+      if (!result.ok) {
+        addToast(result.error, 'warning')
+        return
+      }
+      setCodeSent(true)
+      setVerificationCode('')
+      addToast(result.message, 'success')
+      if (result.demoCode) {
+        addToast(`Demo mode: verification code is ${result.demoCode}`, 'info')
+      }
+    } finally {
+      setSendingCode(false)
+    }
+  }
+
+  const handleVerifyEmail = async () => {
+    if (emailVerified || verifyingCode) return
+    setVerifyingCode(true)
+    try {
+      const result = confirmVerificationCode(formData.email, verificationCode)
+      if (!result.ok) {
+        addToast(result.error, 'warning')
+        return
+      }
+      const normalized = formData.email.trim().toLowerCase()
+      setVerifiedEmail(normalized)
+      addToast(result.message, 'success')
+    } finally {
+      setVerifyingCode(false)
+    }
+  }
+
+  const pickAddPhoto = () => addPhotoInputRef.current?.click()
+  const pickEditPhoto = () => editPhotoInputRef.current?.click()
+
+  const onAddPhotoSelected = (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      addToast('Please choose an image file.', 'warning')
+      return
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      addToast('Image must be 2MB or smaller.', 'warning')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      setAddPhotoUri(typeof reader.result === 'string' ? reader.result : null)
+    }
+    reader.onerror = () => addToast('Could not read that image.', 'error')
+    reader.readAsDataURL(file)
+  }
+
+  const onEditPhotoSelected = (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      addToast('Please choose an image file.', 'warning')
+      return
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      addToast('Image must be 2MB or smaller.', 'warning')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      setEditPhotoUri(typeof reader.result === 'string' ? reader.result : null)
+    }
+    reader.onerror = () => addToast('Could not read that image.', 'error')
+    reader.readAsDataURL(file)
+  }
+
+  const openAddModal = () => {
+    resetAddForm()
+    setShowAddModal(true)
+  }
+
   const openEdit = (guard) => {
     setSelected(guard)
     setFormData({
@@ -83,61 +299,89 @@ export default function LifeguardsPage() {
       certifications: [...guard.certifications],
       status: guard.status === 'archived' ? 'inactive' : guard.status,
     })
+    setEditPhotoUri(guard.photoUri || null)
     setShowEditModal(true)
   }
 
   const handleAdd = () => {
-    if (!formData.name.trim() || !formData.email.trim()) {
-      addToast('Name and email are required.', 'warning')
+    if (!emailVerified) {
+      addToast('Verify the email address before creating an account.', 'warning')
       return
     }
-    const newGuard = {
-      id: `lg-${Date.now()}`,
-      initials: formData.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase(),
-      ...formData,
-      certifications: ['Lifeguard'],
-      createdAt: new Date().toISOString(),
-      mobileAppStatus: 'disconnected',
-      channels: [{ label: 'App push', primary: true }],
-      acknowledgedAlerts: 0,
-      missedAlerts: 0,
-      lastAlertAcknowledgedAt: null,
-      onDutySince: null,
+
+    if (tempPassword !== confirmTempPassword) {
+      addToast('Temporary passwords do not match.', 'warning')
+      return
     }
-    setGuards([...guards, newGuard])
+
+    const result = createLifeguard({
+      name: formData.name,
+      email: formData.email,
+      phone: formData.phone,
+      role: formData.role,
+      assignedZones: formData.assignedZones,
+      tempPassword,
+      photoUri: addPhotoUri,
+    })
+
+    if (!result.ok) {
+      addToast(result.error, 'warning')
+      return
+    }
+
+    const welcome = sendWelcomeEmail({
+      email: result.guard.email,
+      name: result.guard.name,
+      tempPassword,
+    })
+
+    setGuards(fetchLifeguards())
     setShowAddModal(false)
-    addToast(`Account for ${formData.name} created`, 'success')
+    resetAddForm()
+    addToast(
+      `Account for ${result.guard.name} created.${welcome.ok ? ' Welcome email sent with login details.' : ''}`,
+      'success'
+    )
   }
 
   const handleUpdate = () => {
-    if (!formData.name.trim() || !formData.email.trim()) {
-      addToast('Name and email are required.', 'warning')
+    const result = updateLifeguard(selected.id, {
+      name: formData.name,
+      email: formData.email,
+      phone: formData.phone,
+      role: formData.role,
+      assignedZones: formData.assignedZones,
+      status: formData.status,
+      photoUri: editPhotoUri,
+    })
+
+    if (!result.ok) {
+      addToast(result.error, 'warning')
       return
     }
-    setGuards(guards.map((g) =>
-      g.id === selected.id
-        ? {
-            ...g,
-            ...formData,
-            initials: formData.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase(),
-          }
-        : g
-    ))
+
+    setGuards(fetchLifeguards())
     setShowEditModal(false)
     addToast(`${formData.name}'s account updated`, 'success')
   }
 
   const handleDeactivate = () => {
-    setGuards(guards.map((g) =>
-      g.id === selected.id ? { ...g, status: 'archived' } : g
-    ))
+    const result = archiveLifeguard(selected.id)
+    if (!result.ok) {
+      addToast(result.error, 'warning')
+      return
+    }
+    setGuards(fetchLifeguards())
     addToast(`${selected.name} deactivated and moved to Archived`, 'info')
   }
 
   const handleRestore = (guard) => {
-    setGuards(guards.map((g) =>
-      g.id === guard.id ? { ...g, status: 'active' } : g
-    ))
+    const result = restoreLifeguard(guard.id)
+    if (!result.ok) {
+      addToast(result.error, 'warning')
+      return
+    }
+    setGuards(fetchLifeguards())
     addToast(`${guard.name} activated`, 'success')
   }
 
@@ -169,10 +413,7 @@ export default function LifeguardsPage() {
           <button
             type="button"
             className="btn-primary"
-            onClick={() => {
-              setFormData(emptyForm)
-              setShowAddModal(true)
-            }}
+            onClick={openAddModal}
           >
             <Icon.Plus />
             Add lifeguard
@@ -232,10 +473,7 @@ export default function LifeguardsPage() {
                   <button
                     type="button"
                     className="btn-primary"
-                    onClick={() => {
-                      setFormData(emptyForm)
-                      setShowAddModal(true)
-                    }}
+                    onClick={openAddModal}
                   >
                     <Icon.Plus /> Add lifeguard
                   </button>
@@ -250,7 +488,13 @@ export default function LifeguardsPage() {
                 key={guard.id}
                 className={`lg-card ${guard.status === 'inactive' ? 'is-inactive' : ''}`}
               >
-                <div className="lg-avatar">{guard.initials}</div>
+                <div className="lg-avatar">
+                  {guard.photoUri ? (
+                    <img src={guard.photoUri} alt="" className="lg-avatar-img" />
+                  ) : (
+                    guard.initials
+                  )}
+                </div>
 
                 <div className="lg-info">
                   <div className="lg-name-row">
@@ -344,11 +588,22 @@ export default function LifeguardsPage() {
 
       <FormModal
         isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        onClose={() => {
+          setShowAddModal(false)
+          resetAddForm()
+        }}
         title="Add Lifeguard Account"
         onSubmit={handleAdd}
         submitText="Create account"
+        submitDisabled={!emailVerified}
       >
+        <FormAvatarPicker
+          name={formData.name}
+          photoUri={addPhotoUri}
+          onPick={pickAddPhoto}
+          inputRef={addPhotoInputRef}
+          onPhotoSelected={onAddPhotoSelected}
+        />
         <div className="form-row-2">
           <div className="form-field">
             <label>Full Name *</label>
@@ -369,18 +624,61 @@ export default function LifeguardsPage() {
         <div className="form-row-2">
           <div className="form-field">
             <label>Email Address *</label>
-            <input
-              type="email"
-              placeholder="<email>"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            />
+            <div className="lg-email-verify-row">
+              <input
+                type="email"
+                placeholder="lifeguard@example.com"
+                value={formData.email}
+                onChange={(e) => onAddEmailChange(e.target.value)}
+                disabled={emailVerified}
+                autoComplete="email"
+              />
+              {!emailVerified ? (
+                <button
+                  type="button"
+                  className="btn-primary lg-email-verify-send"
+                  onClick={handleSendVerificationCode}
+                  disabled={!canSendCode}
+                >
+                  {sendingCode ? 'Sending…' : codeSent ? 'Resend' : 'Send code'}
+                </button>
+              ) : (
+                <span className="lg-email-verified-badge">
+                  <Icon.Check /> Verified
+                </span>
+              )}
+            </div>
+            {codeSent && !emailVerified ? (
+              <div className="lg-email-code-row">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  placeholder="6-digit code"
+                  value={verificationCode}
+                  onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  autoComplete="one-time-code"
+                />
+                <button
+                  type="button"
+                  className="btn-secondary lg-email-verify-confirm"
+                  onClick={handleVerifyEmail}
+                  disabled={verificationCode.length !== 6 || verifyingCode}
+                >
+                  {verifyingCode ? 'Verifying…' : 'Verify'}
+                </button>
+              </div>
+            ) : null}
+            {!emailVerified ? (
+              <p className="lg-form-hint">Send a code to verify this email before creating the account.</p>
+            ) : null}
           </div>
           <div className="form-field">
             <label>Phone</label>
             <input
               type="tel"
-              placeholder="<phone>"
+              placeholder="Optional contact number"
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
             />
@@ -388,17 +686,25 @@ export default function LifeguardsPage() {
         </div>
         <div className="form-field">
           <label>Assigned Zones</label>
-          <div className="check-group">
-            {ZONES.map((z) => (
-              <label key={z} className="check-pill">
-                <input
-                  type="checkbox"
-                  checked={formData.assignedZones.includes(z)}
-                  onChange={() => toggleZone(z)}
-                />
-                {z}
-              </label>
-            ))}
+          <p className="lg-form-hint lg-zone-hint">Select one or more pool areas for this lifeguard.</p>
+          <div className="lg-zone-grid" role="group" aria-label="Assigned zones">
+            {ZONES.map((z) => {
+              const selected = formData.assignedZones.includes(z)
+              return (
+                <label key={z} className={`lg-zone-card${selected ? ' selected' : ''}`}>
+                  <input
+                    type="checkbox"
+                    className="lg-zone-input"
+                    checked={selected}
+                    onChange={() => toggleZone(z)}
+                  />
+                  <span className="lg-zone-check" aria-hidden="true">
+                    {selected ? <Icon.Check /> : null}
+                  </span>
+                  <span className="lg-zone-label">{z}</span>
+                </label>
+              )
+            })}
           </div>
         </div>
         <div className="form-field">
@@ -407,6 +713,25 @@ export default function LifeguardsPage() {
             <Icon.Shield /> Lifeguard
           </div>
         </div>
+        <PasswordInput
+          label="Temporary password *"
+          value={tempPassword}
+          onChange={setTempPassword}
+          placeholder="Admin-issued first-login password"
+          visible={showTempPassword}
+          onToggle={() => setShowTempPassword((v) => !v)}
+        />
+        <PasswordInput
+          label="Confirm temporary password *"
+          value={confirmTempPassword}
+          onChange={setConfirmTempPassword}
+          placeholder="Re-enter temporary password"
+          visible={showConfirmTempPassword}
+          onToggle={() => setShowConfirmTempPassword((v) => !v)}
+        />
+        <p className="lg-form-hint">
+          Share this with the lifeguard for first mobile login. They will be asked to change it.
+        </p>
       </FormModal>
 
       <FormModal
@@ -416,6 +741,13 @@ export default function LifeguardsPage() {
         onSubmit={handleUpdate}
         submitText="Save changes"
       >
+        <FormAvatarPicker
+          name={formData.name}
+          photoUri={editPhotoUri}
+          onPick={pickEditPhoto}
+          inputRef={editPhotoInputRef}
+          onPhotoSelected={onEditPhotoSelected}
+        />
         <div className="form-row-2">
           <div className="form-field">
             <label>Full Name *</label>
@@ -459,17 +791,25 @@ export default function LifeguardsPage() {
         </div>
         <div className="form-field">
           <label>Assigned Zones</label>
-          <div className="check-group">
-            {ZONES.map((z) => (
-              <label key={z} className="check-pill">
-                <input
-                  type="checkbox"
-                  checked={formData.assignedZones.includes(z)}
-                  onChange={() => toggleZone(z)}
-                />
-                {z}
-              </label>
-            ))}
+          <p className="lg-form-hint lg-zone-hint">Select one or more pool areas for this lifeguard.</p>
+          <div className="lg-zone-grid" role="group" aria-label="Assigned zones">
+            {ZONES.map((z) => {
+              const selected = formData.assignedZones.includes(z)
+              return (
+                <label key={z} className={`lg-zone-card${selected ? ' selected' : ''}`}>
+                  <input
+                    type="checkbox"
+                    className="lg-zone-input"
+                    checked={selected}
+                    onChange={() => toggleZone(z)}
+                  />
+                  <span className="lg-zone-check" aria-hidden="true">
+                    {selected ? <Icon.Check /> : null}
+                  </span>
+                  <span className="lg-zone-label">{z}</span>
+                </label>
+              )
+            })}
           </div>
         </div>
         <div className="form-field">

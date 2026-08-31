@@ -130,22 +130,14 @@ export default function SettingsPage() {
     const hasUpper = /[A-Z]/.test(newPassword)
     const hasNumber = /[0-9]/.test(newPassword)
     const hasSpecial = /[^A-Za-z0-9]/.test(newPassword)
-    const guessedBits = [
-      ...(name || '').toLowerCase().split(/\s+/).filter((p) => p.length >= 3),
-      (user?.email || '').split('@')[0]?.toLowerCase(),
-    ].filter(Boolean)
-    const avoidsGuessed =
-      newPassword.length > 0 &&
-      !guessedBits.some((bit) => newPassword.toLowerCase().includes(bit))
 
     return [
       { key: 'length', label: 'At least 8 characters', met: hasLength },
       { key: 'case', label: 'Contains uppercase and lowercase letters', met: hasLower && hasUpper },
       { key: 'number', label: 'Contains at least one number', met: hasNumber },
       { key: 'special', label: 'Contains a special character', met: hasSpecial },
-      { key: 'guessed', label: 'Avoid using easily guessed information', met: avoidsGuessed },
     ]
-  }, [newPassword, name, user?.email])
+  }, [newPassword])
 
   const passwordStrength = useMemo(() => {
     if (!newPassword) return { level: 'empty', label: '', fill: 0 }
@@ -225,8 +217,7 @@ export default function SettingsPage() {
       addToast('Fill in all password fields.', 'warning')
       return
     }
-    const required = passwordChecks.filter((c) => c.key !== 'guessed')
-    if (required.some((r) => !r.met)) {
+    if (passwordChecks.some((r) => !r.met)) {
       addToast('New password does not meet the requirements.', 'warning')
       return
     }

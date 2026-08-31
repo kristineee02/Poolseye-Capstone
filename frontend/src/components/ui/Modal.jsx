@@ -43,9 +43,10 @@ export function ConfirmModal({ isOpen, onClose, title, message, onConfirm, isDan
   )
 }
 
-export function FormModal({ isOpen, onClose, title, onSubmit, submitText = 'Save', children }) {
+export function FormModal({ isOpen, onClose, title, onSubmit, submitText = 'Save', submitDisabled = false, children }) {
   const handleSubmit = (e) => {
     e.preventDefault()
+    if (submitDisabled) return
     onSubmit()
   }
 
@@ -57,7 +58,7 @@ export function FormModal({ isOpen, onClose, title, onSubmit, submitText = 'Save
           <button type="button" className="btn-secondary" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="btn-primary">
+          <button type="submit" className="btn-primary" disabled={submitDisabled}>
             {submitText}
           </button>
         </div>
