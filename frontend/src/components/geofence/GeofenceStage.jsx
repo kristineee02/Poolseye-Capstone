@@ -56,11 +56,16 @@ function ZoneShape({ zone, active }) {
 export default function GeofenceStage({ zones, activeZoneId, mode, onUpdateZonePoints }) {
   const svgRef = useRef(null)
   const [draggingIndex, setDraggingIndex] = useState(null)
+  const draggedRef = useRef(false)
 
   const activeZone = zones.find((z) => z.id === activeZoneId)
   const activeMeta = activeZone ? getZoneTypeMeta(activeZone.type) : null
 
   function handleStageClick(e) {
+    if (draggedRef.current) {
+      draggedRef.current = false
+      return
+    }
     if (mode !== 'add' || !activeZone) return
     const point = getStagePoint(svgRef.current, e.clientX, e.clientY)
     onUpdateZonePoints(activeZoneId, [...activeZone.points, point])
@@ -74,17 +79,24 @@ export default function GeofenceStage({ zones, activeZoneId, mode, onUpdateZoneP
       onUpdateZonePoints(activeZoneId, next)
       return
     }
+    draggedRef.current = false
     setDraggingIndex(index)
+    svgRef.current?.setPointerCapture?.(e.pointerId)
   }
 
   function handlePointerMove(e) {
     if (draggingIndex === null || !activeZone) return
+    draggedRef.current = true
     const point = getStagePoint(svgRef.current, e.clientX, e.clientY)
     const next = activeZone.points.map((p, i) => (i === draggingIndex ? point : p))
     onUpdateZonePoints(activeZoneId, next)
   }
 
-  function handlePointerUp() {
+  function handlePointerUp(e) {
+    const pointerId = e?.pointerId
+    if (pointerId != null && svgRef.current?.hasPointerCapture?.(pointerId)) {
+      svgRef.current.releasePointerCapture(pointerId)
+    }
     setDraggingIndex(null)
   }
 
@@ -201,6 +213,7 @@ export default function GeofenceStage({ zones, activeZoneId, mode, onUpdateZoneP
                 cx={p.x} cy={p.y} r="6.5"
                 fill="#fff" stroke={activeMeta.color} strokeWidth="2.5"
                 onPointerDown={(e) => handlePointPointerDown(i, e)}
+                onClick={(e) => e.stopPropagation()}
                 style={{ cursor: mode === 'delete' ? 'pointer' : 'grab' }}
               />
               <text

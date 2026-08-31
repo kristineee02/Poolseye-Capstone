@@ -376,6 +376,85 @@
   font-size: 12px;
 }
 
+.geofence-sync-error {
+  font-size: 11.5px;
+  color: var(--alarm);
+  max-width: 220px;
+  text-align: right;
+}
+
+.point-editor {
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.point-editor-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 1fr 32px;
+  gap: 8px;
+  align-items: center;
+}
+
+.point-editor-index {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.point-editor-xy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.point-editor-xy input {
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  background: var(--bg-panel);
+}
+
+.point-editor-xy input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
+.point-editor-remove {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.point-editor-remove:hover {
+  color: var(--alarm);
+  border-color: var(--alarm);
+}
+
+.point-editor-remove svg {
+  width: 13px;
+  height: 13px;
+}
+
 .field-row {
   margin-bottom: 14px;
 }

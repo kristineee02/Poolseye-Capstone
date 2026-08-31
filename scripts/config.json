@@ -23,7 +23,7 @@
         "danger_time_threshold": 10
     },
     "ZONES": {
-        "coord_space": "pixel",
+        "coord_space": "editor",
         "editor_size": [1000, 512],
         "orange_proximity": 0.02,
         "yellow": {

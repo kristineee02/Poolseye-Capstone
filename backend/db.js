@@ -34,10 +34,29 @@ function get(db, sql, params = []) {
   })
 }
 
+function all(db, sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) reject(err)
+      else resolve(rows)
+    })
+  })
+}
+
+function exec(db, sql) {
+  return new Promise((resolve, reject) => {
+    db.exec(sql, (err) => {
+      if (err) reject(err)
+      else resolve()
+    })
+  })
+}
+
 async function initDb() {
   const db = await openDb()
+  await run(db, 'PRAGMA foreign_keys = ON')
   const schema = fs.readFileSync(SCHEMA_PATH, 'utf8')
-  await run(db, schema)
+  await exec(db, schema)
 
   const adminEmail = 'piapendergat275@gmail.com'
   const existing = await get(db, 'SELECT id FROM users WHERE email = ?', [adminEmail])
@@ -57,4 +76,4 @@ async function initDb() {
   return db
 }
 
-module.exports = { initDb, get, run }
+module.exports = { initDb, get, run, all, exec }
