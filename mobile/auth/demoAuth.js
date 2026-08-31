@@ -14,6 +14,20 @@ export const DEMO_LIFEGUARD = {
 
 export const STORAGE_KEY = 'poolseye-lifeguard-session';
 export const CREDS_KEY = 'poolseye-lifeguard-creds';
+/** Dev/demo registry — mirrors web localStorage key until backend is ready */
+export const REGISTRY_KEY = 'poolseye-lifeguard-registry';
+
+export const INITIAL_REGISTRY_SEED = {
+  'jonas@poolseye.com': {
+    password: 'lifeguard123',
+    mustChangePassword: true,
+    name: 'Jonas Ramos',
+    initials: 'JR',
+    role: 'Primary Lifeguard',
+    lifeguardId: 'lg-001',
+    status: 'active',
+  },
+};
 
 const COMMON_PASSWORDS = new Set([
   'password',
@@ -24,6 +38,10 @@ const COMMON_PASSWORDS = new Set([
   'admin123',
   'poolseye',
 ]);
+
+export function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
 
 /**
  * Live checklist — core complexity rules only.
@@ -140,22 +158,94 @@ export function buildUser(account, { mustChangePassword = false } = {}) {
     name: account.name,
     initials: account.initials,
     role: account.role,
-    shiftStart: account.shiftStart,
-    shiftEnd: account.shiftEnd,
+    shiftStart: account.shiftStart || null,
+    shiftEnd: account.shiftEnd || null,
+    photoUri: account.photoUri || null,
     mustChangePassword: Boolean(mustChangePassword),
   };
 }
 
-export function checkLifeguardLogin(email, password, storedCreds = null) {
-  const normalized = email.trim().toLowerCase();
-  if (normalized !== DEMO_LIFEGUARD.email) return null;
+function accountFromRegistry(email, registryEntry) {
+  return {
+    email,
+    name: registryEntry.name,
+    initials: registryEntry.initials,
+    role: registryEntry.role || 'Lifeguard',
+    shiftStart: registryEntry.shiftStart || null,
+    shiftEnd: registryEntry.shiftEnd || null,
+    status: registryEntry.status || 'active',
+    photoUri: registryEntry.photoUri || null,
+  };
+}
 
-  const expectedPassword = storedCreds?.password || DEMO_LIFEGUARD.password;
-  if (password !== expectedPassword) return null;
+export function getRegistryEntry(email, registry = {}) {
+  return registry[normalizeEmail(email)] || null;
+}
 
-  const usingTempPassword = password === DEMO_LIFEGUARD.password;
-  const mustChangePassword =
-    usingTempPassword || storedCreds?.mustChangePassword === true;
+export function getTempPasswordForEmail(email, registry = {}) {
+  const normalized = normalizeEmail(email);
+  const entry = registry[normalized];
+  if (entry?.password) return entry.password;
+  if (normalized === DEMO_LIFEGUARD.email) return DEMO_LIFEGUARD.password;
+  return null;
+}
 
-  return buildUser(DEMO_LIFEGUARD, { mustChangePassword });
+export function mergeRegistrySeed(existing = {}) {
+  return { ...INITIAL_REGISTRY_SEED, ...existing };
+}
+
+/**
+ * @param {string} email
+ * @param {string} password
+ * @param {{ storedCreds?: object|null, registry?: Record<string, object> }} options
+ */
+export function checkLifeguardLogin(email, password, options = {}) {
+  const { storedCreds = null, registry = {} } = options;
+  const normalized = normalizeEmail(email);
+  if (!normalized || !password) return null;
+
+  const registryEntry = registry[normalized];
+
+  if (registryEntry?.status === 'archived') return null;
+
+  // Updated password saved on this device after first-login change
+  if (storedCreds?.email === normalized && storedCreds.password === password) {
+    if (registryEntry) {
+      return buildUser(accountFromRegistry(normalized, registryEntry), {
+        mustChangePassword: storedCreds.mustChangePassword === true,
+      });
+    }
+    if (normalized === DEMO_LIFEGUARD.email) {
+      return buildUser(DEMO_LIFEGUARD, {
+        mustChangePassword: storedCreds.mustChangePassword === true,
+      });
+    }
+    return null;
+  }
+
+  // Built-in demo account
+  if (normalized === DEMO_LIFEGUARD.email) {
+    const expectedPassword = registryEntry?.password || DEMO_LIFEGUARD.password;
+    if (password !== expectedPassword) return null;
+    const usingTempPassword = password === DEMO_LIFEGUARD.password;
+    const mustChangePassword =
+      usingTempPassword ||
+      registryEntry?.mustChangePassword === true ||
+      storedCreds?.mustChangePassword === true;
+    return buildUser(DEMO_LIFEGUARD, { mustChangePassword });
+  }
+
+  // Admin-created local registry accounts
+  if (!registryEntry) return null;
+  if (password !== registryEntry.password) return null;
+
+  const mustChangePassword = registryEntry.mustChangePassword !== false;
+  return buildUser(accountFromRegistry(normalized, registryEntry), { mustChangePassword });
+}
+
+export function findRegistryEmail(email, registry = {}) {
+  const normalized = normalizeEmail(email);
+  if (registry[normalized]) return normalized;
+  if (normalized === DEMO_LIFEGUARD.email) return normalized;
+  return null;
 }
