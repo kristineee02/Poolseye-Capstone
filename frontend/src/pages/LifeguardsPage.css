@@ -192,7 +192,7 @@
   font-size: 28px;
   font-weight: 700;
   color: #fff;
-  background: var(--brand-gradient-diag);
+  background: var(--accent);
   box-shadow: var(--shadow-sm);
   border: none;
   padding: 0;

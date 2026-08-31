@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../components/ui/Icon'
 import { FormModal, ConfirmModal } from '../components/ui/Modal'
+import { SelectDropdown } from '../components/ui/Dropdown'
 import { StatusBadge } from '../components/ui/Badge'
 import { EmptyState } from '../components/ui/EmptyState'
 import Pagination from '../components/ui/Pagination'
@@ -20,6 +21,12 @@ import { getPasswordRuleChecks, validatePassword } from '../utils/password'
 import './LifeguardsPage.css'
 
 const ROLES = ['Primary Lifeguard', 'Backup Lifeguard', 'Lifeguard', 'On-Duty Supervisor']
+const ROLE_OPTIONS = ROLES.map((role) => ({ value: role, label: role }))
+const ALERT_PRIORITY_OPTIONS = [
+  { value: 'high', label: 'High — Drowning / Immediate danger' },
+  { value: 'medium', label: 'Medium — Unsupervised child' },
+  { value: 'low', label: 'Low — Informational' },
+]
 const ZONES = ['Main Pool', 'North Pool', 'Kiddie Pool', 'Entrance']
 const PAGE_SIZE = 4
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024
@@ -708,9 +715,12 @@ export default function LifeguardsPage() {
         </div>
         <div className="form-field">
           <label>Role</label>
-          <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })}>
-            {ROLES.map((r) => <option key={r}>{r}</option>)}
-          </select>
+          <SelectDropdown
+            value={formData.role}
+            onChange={(role) => setFormData({ ...formData, role })}
+            options={ROLE_OPTIONS}
+            ariaLabel="Lifeguard role"
+          />
         </div>
         <div className="form-row-2">
           <div className="form-field">
@@ -866,9 +876,12 @@ export default function LifeguardsPage() {
         </div>
         <div className="form-field">
           <label>Role</label>
-          <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })}>
-            {ROLES.map((r) => <option key={r}>{r}</option>)}
-          </select>
+          <SelectDropdown
+            value={formData.role}
+            onChange={(role) => setFormData({ ...formData, role })}
+            options={ROLE_OPTIONS}
+            ariaLabel="Lifeguard role"
+          />
         </div>
         <div className="form-row-2">
           <div className="form-field">
@@ -935,11 +948,12 @@ export default function LifeguardsPage() {
         </div>
         <div className="form-field">
           <label>Priority</label>
-          <select value={alertPriority} onChange={(e) => setAlertPriority(e.target.value)}>
-            <option value="high">High — Drowning / Immediate danger</option>
-            <option value="medium">Medium — Unsupervised child</option>
-            <option value="low">Low — Informational</option>
-          </select>
+          <SelectDropdown
+            value={alertPriority}
+            onChange={setAlertPriority}
+            options={ALERT_PRIORITY_OPTIONS}
+            ariaLabel="Alert priority"
+          />
         </div>
         <div className="form-field">
           <label>Alert message *</label>

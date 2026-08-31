@@ -1,14 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../components/ui/Icon'
 import Toggle from '../components/ui/Toggle'
 import GeofenceStage from '../components/geofence/GeofenceStage'
 import { ZONE_TYPES, getZoneTypeMeta, initialZones } from '../data/geofence'
 import { useGeofence } from '../context/GeofenceContext'
 import { useToast, ToastContainer } from '../components/ui/Toast'
+import '../components/camera/CameraPanel.css'
 import '../components/geofence/GeofenceEditor.css'
 
 function makeZoneId() {
   return `zone-${Date.now()}`
+}
+
+const MAX_HISTORY = 50
+
+function clonePoints(points) {
+  return points.map((p) => ({ ...p }))
+}
+
+function pointsEqual(a, b) {
+  if (a.length !== b.length) return false
+  return a.every((p, i) => p.x === b[i].x && p.y === b[i].y)
 }
 
 const DEFAULT_NAMES = {
@@ -23,17 +35,75 @@ export default function GeofenceEditorPage() {
   const [activeZoneId, setActiveZoneId] = useState(zones[0]?.id ?? initialZones[0].id)
   const [mode, setMode] = useState('add')
   const [savedNotice, setSavedNotice] = useState(false)
+  const undoStackRef = useRef([])
+  const redoStackRef = useRef([])
+  const [historyTick, setHistoryTick] = useState(0)
+  const coordEditStartRef = useRef(null)
 
   const activeZone = zones.find((z) => z.id === activeZoneId)
   const activeMeta = activeZone ? getZoneTypeMeta(activeZone.type) : null
+  void historyTick
+  const canUndo = undoStackRef.current.length > 0
+  const canRedo = redoStackRef.current.length > 0
 
   useEffect(() => {
     if (activeZoneId && zones.some((z) => z.id === activeZoneId)) return
     setActiveZoneId(zones[0]?.id ?? null)
   }, [zones, activeZoneId])
 
-  function updateZonePoints(zoneId, points) {
-    setZones((prev) => prev.map((z) => (z.id === zoneId ? { ...z, points } : z)))
+  function bumpHistory() {
+    setHistoryTick((t) => t + 1)
+  }
+
+  function clearHistory() {
+    undoStackRef.current = []
+    redoStackRef.current = []
+    bumpHistory()
+  }
+
+  function applyZonePoints(zoneId, points) {
+    setZones((prev) => prev.map((z) => (z.id === zoneId ? { ...z, points: clonePoints(points) } : z)))
+  }
+
+  function recordHistory(zoneId, previousPoints) {
+    undoStackRef.current = [
+      ...undoStackRef.current.slice(-(MAX_HISTORY - 1)),
+      { zoneId, points: clonePoints(previousPoints) },
+    ]
+    redoStackRef.current = []
+    bumpHistory()
+  }
+
+  function commitZonePoints(zoneId, nextPoints, previousPoints) {
+    if (pointsEqual(previousPoints, nextPoints)) return
+    recordHistory(zoneId, previousPoints)
+    applyZonePoints(zoneId, nextPoints)
+  }
+
+  function undo() {
+    const entry = undoStackRef.current.pop()
+    if (!entry) return
+    const zone = zones.find((z) => z.id === entry.zoneId)
+    if (!zone) {
+      bumpHistory()
+      return
+    }
+    redoStackRef.current.push({ zoneId: entry.zoneId, points: clonePoints(zone.points) })
+    applyZonePoints(entry.zoneId, entry.points)
+    bumpHistory()
+  }
+
+  function redo() {
+    const entry = redoStackRef.current.pop()
+    if (!entry) return
+    const zone = zones.find((z) => z.id === entry.zoneId)
+    if (!zone) {
+      bumpHistory()
+      return
+    }
+    undoStackRef.current.push({ zoneId: entry.zoneId, points: clonePoints(zone.points) })
+    applyZonePoints(entry.zoneId, entry.points)
+    bumpHistory()
   }
 
   function updateActiveZone(patch) {
@@ -47,7 +117,32 @@ export default function GeofenceEditorPage() {
     const max = axis === 'x' ? 1000 : 512
     const clamped = Math.max(0, Math.min(max, Math.round(value)))
     const next = activeZone.points.map((p, i) => (i === index ? { ...p, [axis]: clamped } : p))
-    updateZonePoints(activeZoneId, next)
+    applyZonePoints(activeZoneId, next)
+  }
+
+  function startPointCoordEdit() {
+    if (activeZone) {
+      coordEditStartRef.current = clonePoints(activeZone.points)
+    }
+  }
+
+  function commitPointCoordEdit() {
+    if (!activeZone || !coordEditStartRef.current) return
+    const previous = coordEditStartRef.current
+    const current = activeZone.points
+    if (!pointsEqual(previous, current)) {
+      commitZonePoints(activeZoneId, current, previous)
+    }
+    coordEditStartRef.current = null
+  }
+
+  function removePoint(index) {
+    if (!activeZone) return
+    commitZonePoints(
+      activeZoneId,
+      activeZone.points.filter((_, idx) => idx !== index),
+      activeZone.points,
+    )
   }
 
   function addZone(type) {
@@ -73,20 +168,11 @@ export default function GeofenceEditorPage() {
     }
   }
 
-  function clearActiveZonePoints() {
-    if (!activeZone) return
-    updateZonePoints(activeZoneId, [])
-  }
-
-  function undoLastPoint() {
-    if (!activeZone || activeZone.points.length === 0) return
-    updateZonePoints(activeZoneId, activeZone.points.slice(0, -1))
-  }
-
   function discardChanges() {
     const restored = discard()
     setActiveZoneId(restored[0]?.id ?? null)
     setMode('add')
+    clearHistory()
   }
 
   async function saveZone() {
@@ -170,7 +256,8 @@ export default function GeofenceEditorPage() {
                 zones={zones}
                 activeZoneId={activeZoneId}
                 mode={mode}
-                onUpdateZonePoints={updateZonePoints}
+                onUpdateZonePoints={applyZonePoints}
+                onCommitZonePoints={commitZonePoints}
               />
             ) : (
               <div className="zone-list-empty">
@@ -192,11 +279,23 @@ export default function GeofenceEditorPage() {
               ))}
             </div>
             <div className="camera-controls">
-              <button className="ctrl-btn" title="Undo last point" onClick={undoLastPoint}>
+              <button
+                type="button"
+                className="ctrl-btn"
+                title="Undo"
+                onClick={undo}
+                disabled={!canUndo}
+              >
                 <Icon.Undo />
               </button>
-              <button className="ctrl-btn" title="Clear points" onClick={clearActiveZonePoints}>
-                <Icon.Trash />
+              <button
+                type="button"
+                className="ctrl-btn"
+                title="Redo"
+                onClick={redo}
+                disabled={!canRedo}
+              >
+                <Icon.Redo />
               </button>
             </div>
           </div>
@@ -356,6 +455,8 @@ export default function GeofenceEditorPage() {
                         min="0"
                         max="1000"
                         value={p.x}
+                        onFocus={startPointCoordEdit}
+                        onBlur={commitPointCoordEdit}
                         onChange={(e) => updatePointCoord(i, 'x', e.target.value)}
                       />
                     </label>
@@ -366,6 +467,8 @@ export default function GeofenceEditorPage() {
                         min="0"
                         max="512"
                         value={p.y}
+                        onFocus={startPointCoordEdit}
+                        onBlur={commitPointCoordEdit}
                         onChange={(e) => updatePointCoord(i, 'y', e.target.value)}
                       />
                     </label>
@@ -373,12 +476,7 @@ export default function GeofenceEditorPage() {
                       type="button"
                       className="point-editor-remove"
                       title="Remove point"
-                      onClick={() => {
-                        updateZonePoints(
-                          activeZoneId,
-                          activeZone.points.filter((_, idx) => idx !== i),
-                        )
-                      }}
+                      onClick={() => removePoint(i)}
                     >
                       <Icon.Trash />
                     </button>

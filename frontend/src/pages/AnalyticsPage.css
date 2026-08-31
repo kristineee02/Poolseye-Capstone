@@ -12,8 +12,9 @@
   background: none;
   border: none;
   padding: 7px 14px;
-  font-size: 13px;
-  font-weight: 500;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
   color: var(--text-secondary);
   border-radius: var(--r-sm);
   cursor: pointer;
@@ -22,11 +23,15 @@
 }
 
 .analytics-tab:hover { background: var(--bg-inset); color: var(--text-primary); }
-.analytics-tab.active { background: var(--accent); color: #fff; font-weight: 600; }
+.analytics-tab.active { background: var(--accent); color: #fff; }
 
-.export-group {
-  display: flex;
-  gap: 6px;
+.analytics-filters {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.analytics-filters .ui-dropdown-menu {
+  min-width: 196px;
 }
 
 .analytics-summary-grid {
@@ -192,5 +197,4 @@
 @media (max-width: 1000px) {
   .analytics-summary-grid { grid-template-columns: repeat(2, 1fr); }
   .analytics-tabs { flex-wrap: wrap; }
-  .export-group { flex-wrap: wrap; }
 }

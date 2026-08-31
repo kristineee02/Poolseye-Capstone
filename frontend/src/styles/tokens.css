@@ -18,6 +18,11 @@
   --brand-gradient: linear-gradient(90deg, #4DB8FF 0%, #1E6FFF 100%);
   --brand-gradient-diag: linear-gradient(135deg, #A7ECFF 0%, #4DB8FF 40%, #1E6FFF 100%);
 
+  /* overlays & buttons */
+  --overlay-bg: rgba(15, 23, 42, 0.42);
+  --btn-primary-bg: #1E6FFF;
+  --btn-primary-hover: #1557D6;
+
   /* surfaces */
   --bg-app: #F0F8FF;
   --bg-panel: #FFFFFF;
@@ -37,9 +42,9 @@
   --alarm-tint: #FCEAEE;
 
   /* shadows */
-  --shadow-sm: 0 1px 3px rgba(30, 111, 255, 0.06);
-  --shadow-md: 0 4px 14px rgba(30, 111, 255, 0.08);
-  --shadow-lg: 0 10px 28px rgba(30, 111, 255, 0.1);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 14px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12);
 
   /* radii */
   --r-sm: 10px;

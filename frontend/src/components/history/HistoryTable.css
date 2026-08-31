@@ -10,6 +10,9 @@
   width: auto;
   min-width: 150px;
 }
+.filter-bar .ui-dropdown {
+  flex: 0 1 auto;
+}
 .filter-search {
   flex: 1;
   min-width: 200px;

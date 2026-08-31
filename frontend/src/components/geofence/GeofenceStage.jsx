@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getZoneTypeMeta } from '../../data/geofence'
 
 const STAGE_W = 1000
@@ -53,13 +53,25 @@ function ZoneShape({ zone, active }) {
   )
 }
 
-export default function GeofenceStage({ zones, activeZoneId, mode, onUpdateZonePoints }) {
+export default function GeofenceStage({
+  zones,
+  activeZoneId,
+  mode,
+  onUpdateZonePoints,
+  onCommitZonePoints,
+}) {
   const svgRef = useRef(null)
   const [draggingIndex, setDraggingIndex] = useState(null)
   const draggedRef = useRef(false)
+  const dragStartPointsRef = useRef(null)
+  const livePointsRef = useRef([])
 
   const activeZone = zones.find((z) => z.id === activeZoneId)
   const activeMeta = activeZone ? getZoneTypeMeta(activeZone.type) : null
+
+  useEffect(() => {
+    if (activeZone) livePointsRef.current = activeZone.points
+  }, [activeZone?.points])
 
   function handleStageClick(e) {
     if (draggedRef.current) {
@@ -68,7 +80,8 @@ export default function GeofenceStage({ zones, activeZoneId, mode, onUpdateZoneP
     }
     if (mode !== 'add' || !activeZone) return
     const point = getStagePoint(svgRef.current, e.clientX, e.clientY)
-    onUpdateZonePoints(activeZoneId, [...activeZone.points, point])
+    const previous = activeZone.points
+    onCommitZonePoints(activeZoneId, [...previous, point], previous)
   }
 
   function handlePointPointerDown(index, e) {
@@ -76,10 +89,11 @@ export default function GeofenceStage({ zones, activeZoneId, mode, onUpdateZoneP
     if (mode === 'delete') {
       if (!activeZone) return
       const next = activeZone.points.filter((_, i) => i !== index)
-      onUpdateZonePoints(activeZoneId, next)
+      onCommitZonePoints(activeZoneId, next, activeZone.points)
       return
     }
     draggedRef.current = false
+    dragStartPointsRef.current = activeZone.points.map((p) => ({ ...p }))
     setDraggingIndex(index)
     svgRef.current?.setPointerCapture?.(e.pointerId)
   }
@@ -89,6 +103,7 @@ export default function GeofenceStage({ zones, activeZoneId, mode, onUpdateZoneP
     draggedRef.current = true
     const point = getStagePoint(svgRef.current, e.clientX, e.clientY)
     const next = activeZone.points.map((p, i) => (i === draggingIndex ? point : p))
+    livePointsRef.current = next
     onUpdateZonePoints(activeZoneId, next)
   }
 
@@ -97,6 +112,10 @@ export default function GeofenceStage({ zones, activeZoneId, mode, onUpdateZoneP
     if (pointerId != null && svgRef.current?.hasPointerCapture?.(pointerId)) {
       svgRef.current.releasePointerCapture(pointerId)
     }
+    if (dragStartPointsRef.current && draggedRef.current) {
+      onCommitZonePoints(activeZoneId, livePointsRef.current, dragStartPointsRef.current)
+    }
+    dragStartPointsRef.current = null
     setDraggingIndex(null)
   }
 

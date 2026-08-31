@@ -79,7 +79,7 @@
   font-size: 42px;
   font-weight: 700;
   color: #fff;
-  background: var(--brand-gradient-diag);
+  background: var(--accent);
   box-shadow: var(--shadow-md);
   border: none;
   padding: 0;

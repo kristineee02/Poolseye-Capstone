@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Icon } from '../components/ui/Icon'
+import { SelectDropdown } from '../components/ui/Dropdown'
 import Pagination from '../components/ui/Pagination'
 import SnapshotThumb from '../components/history/SnapshotThumb'
 import SnapshotModal from '../components/history/SnapshotModal'
@@ -12,6 +13,23 @@ const TYPE_TAG = { alarm: 'tag-alarm', safe: 'tag-safe', warn: 'tag-info', info:
 const STATUS_TAG = { resolved: 'tag-safe', pending: 'tag-warn', dismissed: 'tag-info' }
 const STATUS_LABEL = { resolved: 'ACK', pending: 'NEW', dismissed: 'Dismissed' }
 const PAGE_SIZE = 4
+
+const TYPE_FILTER_OPTIONS = [
+  { value: 'all', label: 'All alerts' },
+  { value: 'alarm', label: 'High severity' },
+  { value: 'warn', label: 'Warnings' },
+  { value: 'info', label: 'Deep-water / info' },
+]
+
+const STATUS_FILTER_OPTIONS = [
+  { value: 'all', label: 'All statuses' },
+  { value: 'pending', label: 'New' },
+  { value: 'resolved', label: 'Acknowledged' },
+]
+
+const DATE_FILTER_OPTIONS = [
+  { value: '7', label: 'Last 7 days' },
+]
 
 export default function HistoryPage() {
   const [search, setSearch] = useState('')
@@ -144,30 +162,38 @@ export default function HistoryPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <select
-            className="field-input"
+          <SelectDropdown
             value={cameraFilter}
-            onChange={(e) => setCameraFilter(e.target.value)}
-          >
-            <option value="all">All cameras</option>
-            {cameras.map((cam) => (
-              <option key={cam} value={cam}>{cam}</option>
-            ))}
-          </select>
-          <select className="field-input" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
-            <option value="all">All alerts</option>
-            <option value="alarm">High severity</option>
-            <option value="warn">Warnings</option>
-            <option value="info">Deep-water / info</option>
-          </select>
-          <select className="field-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="all">All statuses</option>
-            <option value="pending">New</option>
-            <option value="resolved">Acknowledged</option>
-          </select>
-          <select className="field-input" disabled defaultValue="7">
-            <option value="7">Last 7 days</option>
-          </select>
+            onChange={setCameraFilter}
+            options={[
+              { value: 'all', label: 'All cameras' },
+              ...cameras.map((cam) => ({ value: cam, label: cam })),
+            ]}
+            minWidth={140}
+            ariaLabel="Camera filter"
+          />
+          <SelectDropdown
+            value={typeFilter}
+            onChange={setTypeFilter}
+            options={TYPE_FILTER_OPTIONS}
+            minWidth={148}
+            ariaLabel="Alert type filter"
+          />
+          <SelectDropdown
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={STATUS_FILTER_OPTIONS}
+            minWidth={140}
+            ariaLabel="Status filter"
+          />
+          <SelectDropdown
+            value="7"
+            onChange={() => {}}
+            options={DATE_FILTER_OPTIONS}
+            minWidth={140}
+            disabled
+            ariaLabel="Date range"
+          />
         </div>
 
         <table className="history-table">

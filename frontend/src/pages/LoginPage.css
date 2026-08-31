@@ -139,18 +139,19 @@
   height: 52px;
   border: none;
   border-radius: 999px;
-  background: var(--brand-gradient);
+  background: var(--btn-primary-bg);
   color: #fff;
+  font-family: var(--font-ui);
   font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
   margin-top: 6px;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
 }
 
 .login-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(30, 111, 255, 0.28);
+  background: var(--btn-primary-hover);
+  box-shadow: var(--shadow-md);
 }
 
 .login-btn:disabled {

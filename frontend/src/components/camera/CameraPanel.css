@@ -167,9 +167,13 @@
   justify-content: center;
   cursor: pointer;
 }
-.ctrl-btn:hover {
+.ctrl-btn:hover:not(:disabled) {
   border-color: var(--border-strong);
   color: var(--text-primary);
+}
+.ctrl-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 .ctrl-btn svg {
   width: 15px;

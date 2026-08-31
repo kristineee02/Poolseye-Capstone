@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Icon } from '../components/ui/Icon'
+import { SelectDropdown, MenuDropdown, DropdownItem } from '../components/ui/Dropdown'
 import { useToast, ToastContainer } from '../components/ui/Toast'
 import WeeklyBarChart from '../components/analytics/WeeklyBarChart'
 import FalsePositiveLineChart from '../components/analytics/FalsePositiveLineChart'
@@ -19,12 +20,36 @@ const TABS = [
   { id: 'accuracy', label: 'Accuracy' },
 ]
 
+const DATE_OPTIONS = [
+  { value: '1d', label: 'Today' },
+  { value: '7d', label: 'Last 7 days' },
+  { value: '30d', label: 'Last 30 days' },
+  { value: '90d', label: 'Last 90 days' },
+  { value: '1y', label: 'This year' },
+]
+
+const EXPORT_OPTIONS = [
+  { id: 'xlsx', label: 'Excel (.xlsx)', format: 'xlsx', Icon: Icon.FileExcel },
+  { id: 'pdf', label: 'PDF (.pdf)', format: 'pdf', Icon: Icon.FilePdf },
+  { id: 'csv', label: 'CSV (.csv)', format: 'csv', Icon: Icon.FileCsv },
+]
+
 export default function AnalyticsPage() {
   const [activeTab, setActiveTab] = useState('overview')
   const [dateRange, setDateRange] = useState('7d')
   const [filterCamera, setFilterCamera] = useState('all')
   const [filterLifeguard, setFilterLifeguard] = useState('all')
   const { toasts, addToast, removeToast } = useToast()
+
+  const cameraOptions = [
+    { value: 'all', label: 'All cameras' },
+    ...cameras.map((c) => ({ value: c.id, label: c.name })),
+  ]
+
+  const lifeguardOptions = [
+    { value: 'all', label: 'All lifeguards' },
+    ...lifeguards.map((lg) => ({ value: lg.id, label: lg.name })),
+  ]
 
   const handleExport = (format) => {
     addToast(`Exporting report as ${format.toUpperCase()}…`, 'info')
@@ -42,33 +67,50 @@ export default function AnalyticsPage() {
           <h1>Analytics &amp; reports</h1>
           <div className="sub">Detection trends, response times, and system performance</div>
         </div>
-        <div className="pagehead-right">
-          <select className="field-input" style={{ width: 'auto' }} value={dateRange} onChange={(e) => setDateRange(e.target.value)}>
-            <option value="1d">Today</option>
-            <option value="7d">Last 7 days</option>
-            <option value="30d">Last 30 days</option>
-            <option value="90d">Last 90 days</option>
-            <option value="1y">This year</option>
-          </select>
-          <select className="field-input" style={{ width: 'auto' }} value={filterCamera} onChange={(e) => setFilterCamera(e.target.value)}>
-            <option value="all">All cameras</option>
-            {cameras.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select className="field-input" style={{ width: 'auto' }} value={filterLifeguard} onChange={(e) => setFilterLifeguard(e.target.value)}>
-            <option value="all">All lifeguards</option>
-            {lifeguards.map((lg) => <option key={lg.id} value={lg.id}>{lg.name}</option>)}
-          </select>
-          <div className="export-group">
-            <button className="chip-btn" onClick={() => handleExport('xlsx')}>
-              <Icon.Download /> Excel
-            </button>
-            <button className="chip-btn" onClick={() => handleExport('pdf')}>
-              <Icon.Download /> PDF
-            </button>
-            <button className="chip-btn" onClick={() => handleExport('csv')}>
-              <Icon.Download /> CSV
-            </button>
-          </div>
+        <div className="pagehead-right analytics-filters">
+          <SelectDropdown
+            value={dateRange}
+            onChange={setDateRange}
+            options={DATE_OPTIONS}
+            minWidth={140}
+            ariaLabel="Date range"
+          />
+          <SelectDropdown
+            value={filterCamera}
+            onChange={setFilterCamera}
+            options={cameraOptions}
+            minWidth={140}
+            ariaLabel="Camera filter"
+          />
+          <SelectDropdown
+            value={filterLifeguard}
+            onChange={setFilterLifeguard}
+            options={lifeguardOptions}
+            minWidth={148}
+            ariaLabel="Lifeguard filter"
+          />
+          <MenuDropdown
+            align="right"
+            minWidth={108}
+            ariaLabel="Export report"
+            trigger={(
+              <>
+                <span className="ui-dropdown-trigger-leading"><Icon.Download /></span>
+                <span className="ui-dropdown-trigger-label">Export</span>
+                <Icon.ChevronDown className="ui-dropdown-chevron" />
+              </>
+            )}
+          >
+            {EXPORT_OPTIONS.map((option) => (
+              <DropdownItem
+                key={option.id}
+                icon={option.Icon}
+                onClick={() => handleExport(option.format)}
+              >
+                {option.label}
+              </DropdownItem>
+            ))}
+          </MenuDropdown>
         </div>
       </div>
 
