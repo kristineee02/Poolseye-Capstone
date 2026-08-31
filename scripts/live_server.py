@@ -12,7 +12,7 @@ from collections import deque
 from datetime import datetime
 from pathlib import Path
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import cv2
 from flask import Flask, Response, jsonify
@@ -37,6 +37,7 @@ from zone_check import (  # noqa: E402
 
 CONFIG_PATH = SCRIPTS_DIR / "config.json"
 GEOFENCE_API = os.environ.get("GEOFENCE_API", "http://127.0.0.1:4000/api/geofence/live")
+EVENTS_INGEST_API = os.environ.get("EVENTS_INGEST_API", "http://127.0.0.1:4000/api/events/ingest")
 
 app = Flask(__name__)
 
@@ -95,6 +96,20 @@ EVENT_CATALOG = {
 }
 
 
+def sync_event_to_backend(entry: dict):
+    """Persist live detection events to the Express backend for Event history."""
+    try:
+        payload = json.dumps(entry).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        secret = os.environ.get("EVENTS_INGEST_SECRET")
+        if secret:
+            headers["X-Events-Secret"] = secret
+        req = Request(EVENTS_INGEST_API, data=payload, headers=headers, method="POST")
+        urlopen(req, timeout=2)
+    except (URLError, TimeoutError, OSError):
+        pass
+
+
 def push_event(person_id: int, zone: str, event_name: str, is_alert: bool):
     """Append a dashboard-ready event when a zone crossing fires."""
     meta = EVENT_CATALOG.get(event_name, {
@@ -126,6 +141,7 @@ def push_event(person_id: int, zone: str, event_name: str, is_alert: bool):
     }
     with _lock:
         _event_log.appendleft(entry)
+    sync_event_to_backend(entry)
     return entry
 
 

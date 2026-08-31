@@ -8,7 +8,7 @@ import {
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, radius, shadow, touch } from '../theme/tokens';
-import { DEMO_LIFEGUARD, getPasswordRuleChecks } from '../auth/demoAuth';
+import { getPasswordRuleChecks } from '../auth/demoAuth';
 import { useAuth } from '../context/AuthContext';
 
 function BackArrow({ color = colors.accent, size = 22 }) {
@@ -132,7 +132,7 @@ export default function ChangePasswordScreen({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const email = resetEmail || user?.email || DEMO_LIFEGUARD.email;
+  const email = resetEmail || user?.email || '';
   const showCurrentField = !forced && !resetMode;
   const showBack = Boolean(onCancel) && !forced;
   // Inside Profile tab AppShell already handles safe area — keep header tight under "Profile"

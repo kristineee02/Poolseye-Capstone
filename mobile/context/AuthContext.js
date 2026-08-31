@@ -1,41 +1,29 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  checkLifeguardLogin,
-  validateNewPassword,
-  buildUser,
-  DEMO_LIFEGUARD,
-  STORAGE_KEY,
-  CREDS_KEY,
-} from '../auth/demoAuth';
+import { validateNewPassword } from '../auth/demoAuth';
+import { apiFetch, TOKEN_KEY, USER_KEY } from '../api/client';
 
 const AuthContext = createContext(null);
-
-async function readCreds() {
-  try {
-    const raw = await AsyncStorage.getItem(CREDS_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-async function writeCreds(creds) {
-  await AsyncStorage.setItem(CREDS_KEY, JSON.stringify(creds));
-}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
+  const [token, setToken] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw && !cancelled) {
-          const saved = JSON.parse(raw);
-          if (saved?.email) setUser(saved);
+        const storedToken = await AsyncStorage.getItem(TOKEN_KEY);
+        if (!storedToken) return;
+
+        const result = await apiFetch('/api/mobile/auth/me', { token: storedToken });
+        if (!cancelled && result.ok && result.user) {
+          setToken(storedToken);
+          setUser(result.user);
+          await AsyncStorage.setItem(USER_KEY, JSON.stringify(result.user));
+        } else if (!cancelled) {
+          await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
         }
       } catch {
         // ignore corrupt session
@@ -48,144 +36,104 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const persistUser = async (nextUser) => {
+  const persistSession = async (nextToken, nextUser) => {
+    setToken(nextToken);
     setUser(nextUser);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser));
+    await AsyncStorage.setItem(TOKEN_KEY, nextToken);
+    await AsyncStorage.setItem(USER_KEY, JSON.stringify(nextUser));
   };
 
   const signIn = async (email, password) => {
-    const storedCreds = await readCreds();
-    const account = checkLifeguardLogin(email, password, storedCreds);
-    if (!account) return { ok: false, error: 'Invalid email or password' };
-
-    let prev = null;
-    try {
-      const raw = await AsyncStorage.getItem(STORAGE_KEY);
-      prev = raw ? JSON.parse(raw) : null;
-    } catch {
-      prev = null;
-    }
-
-    const sameUser = prev?.email === account.email;
-    await persistUser({
-      ...account,
-      name: sameUser && prev?.name ? prev.name : account.name,
-      initials: sameUser && prev?.initials ? prev.initials : account.initials,
-      photoUri: sameUser ? prev?.photoUri || null : null,
+    const result = await apiFetch('/api/mobile/auth/login', {
+      method: 'POST',
+      body: { email, password },
     });
-    return { ok: true, mustChangePassword: account.mustChangePassword };
+    if (!result.ok) return { ok: false, error: result.error };
+
+    await persistSession(result.token, result.user);
+    return {
+      ok: true,
+      mustChangePassword: Boolean(result.user?.mustChangePassword),
+    };
   };
 
   const changePassword = async ({ currentPassword, newPassword, skipCurrentCheck = false }) => {
-    if (!user?.email) {
+    if (!user?.email || !token) {
       return { ok: false, error: 'You must be signed in to change your password.' };
     }
     if (!newPassword) {
       return { ok: false, error: 'Please enter a new password.' };
     }
 
-    const allowSkip = skipCurrentCheck || user.mustChangePassword;
-    if (!allowSkip) {
-      const storedCreds = await readCreds();
-      const expectedPassword = storedCreds?.password || DEMO_LIFEGUARD.password;
-      if (currentPassword !== expectedPassword) {
-        return { ok: false, error: 'Current password is incorrect.' };
-      }
-    }
-
-    const check = validateNewPassword(newPassword, {
-      email: user.email,
-      tempPassword: DEMO_LIFEGUARD.password,
-    });
+    const check = validateNewPassword(newPassword, { email: user.email });
     if (!check.ok) return check;
 
-    await writeCreds({
-      email: user.email,
-      password: newPassword,
-      mustChangePassword: false,
-      updatedAt: new Date().toISOString(),
+    const result = await apiFetch('/api/mobile/auth/change-password', {
+      method: 'POST',
+      token,
+      body: {
+        currentPassword,
+        newPassword,
+        skipCurrentCheck: skipCurrentCheck || user.mustChangePassword,
+      },
     });
+    if (!result.ok) return { ok: false, error: result.error };
 
-    const nextUser = {
-      ...buildUser(DEMO_LIFEGUARD, { mustChangePassword: false }),
-      name: user.name || DEMO_LIFEGUARD.name,
-      initials: user.initials || DEMO_LIFEGUARD.initials,
-      photoUri: user.photoUri || null,
-    };
-    await persistUser(nextUser);
+    await persistSession(token, result.user);
     return { ok: true };
   };
 
   const updateProfile = async ({ name, photoUri } = {}) => {
-    if (!user) return { ok: false, error: 'You must be signed in.' };
+    if (!user || !token) return { ok: false, error: 'You must be signed in.' };
 
     const nextName = typeof name === 'string' ? name.trim() : user.name;
     if (!nextName) return { ok: false, error: 'Name is required.' };
 
-    const parts = nextName.split(/\s+/).filter(Boolean);
-    const initials =
-      parts.length === 0
-        ? 'LG'
-        : parts.length === 1
-          ? parts[0].slice(0, 2).toUpperCase()
-          : `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+    const result = await apiFetch('/api/mobile/auth/profile', {
+      method: 'PATCH',
+      token,
+      body: {
+        name: nextName,
+        photoUri: photoUri === undefined ? user.photoUri || null : photoUri,
+      },
+    });
+    if (!result.ok) return { ok: false, error: result.error };
 
-    const nextUser = {
-      ...user,
-      name: nextName,
-      initials,
-      photoUri: photoUri === undefined ? user.photoUri || null : photoUri,
-    };
-    await persistUser(nextUser);
+    await persistSession(token, result.user);
     return { ok: true };
   };
 
-  const updateAvatar = async (photoUri) => {
-    return updateProfile({ photoUri });
-  };
+  const updateAvatar = async (photoUri) => updateProfile({ photoUri });
 
   const verifyResetEmail = async (email) => {
-    const normalized = String(email || '').trim().toLowerCase();
-    if (!normalized) {
-      return { ok: false, error: 'Enter your account email.' };
-    }
-    if (normalized !== DEMO_LIFEGUARD.email) {
-      return { ok: false, error: 'No lifeguard account found for that email.' };
-    }
-    return { ok: true, email: normalized };
+    const result = await apiFetch('/api/mobile/auth/forgot-password/verify-email', {
+      method: 'POST',
+      body: { email },
+    });
+    if (!result.ok) return { ok: false, error: result.error };
+    return { ok: true, email: result.email, demoCode: result.demoCode };
   };
 
-  const resetPassword = async ({ email, newPassword }) => {
-    const normalized = String(email || '').trim().toLowerCase();
-    if (normalized !== DEMO_LIFEGUARD.email) {
-      return { ok: false, error: 'No lifeguard account found for that email.' };
-    }
-    if (!newPassword) {
-      return { ok: false, error: 'Please enter a new password.' };
-    }
-
-    const check = validateNewPassword(newPassword, {
-      email: normalized,
-      tempPassword: DEMO_LIFEGUARD.password,
-    });
+  const resetPassword = async ({ email, newPassword, code }) => {
+    const check = validateNewPassword(newPassword, { email });
     if (!check.ok) return check;
 
-    await writeCreds({
-      email: normalized,
-      password: newPassword,
-      mustChangePassword: false,
-      updatedAt: new Date().toISOString(),
+    const result = await apiFetch('/api/mobile/auth/forgot-password/reset', {
+      method: 'POST',
+      body: { email, newPassword, code },
     });
+    if (!result.ok) return { ok: false, error: result.error };
 
-    // Clear any locked session so they sign in fresh with the new password
     setUser(null);
-    await AsyncStorage.removeItem(STORAGE_KEY);
+    setToken(null);
+    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
     return { ok: true };
   };
 
   const signOut = async () => {
     setUser(null);
-    await AsyncStorage.removeItem(STORAGE_KEY);
+    setToken(null);
+    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
   };
 
   return (
@@ -200,7 +148,6 @@ export function AuthProvider({ children }) {
         updateAvatar,
         verifyResetEmail,
         resetPassword,
-        tempPasswordHint: DEMO_LIFEGUARD.password,
       }}
     >
       {children}

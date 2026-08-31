@@ -1,5 +1,20 @@
 /** Client-side password rules (admin temp passwords + settings). */
 
+export function getPasswordRuleChecks(password) {
+  const value = String(password || '')
+  return [
+    { id: 'length', label: 'At least 8 characters', met: value.length >= 8 },
+    { id: 'upper', label: 'One uppercase letter (A–Z)', met: /[A-Z]/.test(value) },
+    { id: 'lower', label: 'One lowercase letter (a–z)', met: /[a-z]/.test(value) },
+    { id: 'number', label: 'One number (0–9)', met: /[0-9]/.test(value) },
+    {
+      id: 'special',
+      label: 'One special character (!@#$%…)',
+      met: /[^A-Za-z0-9]/.test(value),
+    },
+  ]
+}
+
 export function getPasswordChecks(password) {
   const value = String(password || '')
   const hasLength = value.length >= 8
@@ -17,7 +32,7 @@ export function getPasswordChecks(password) {
 }
 
 export function validatePassword(password) {
-  const checks = getPasswordChecks(password)
+  const checks = getPasswordRuleChecks(password)
   if (checks.some((c) => !c.met)) {
     return { ok: false, error: 'Password does not meet the requirements.' }
   }

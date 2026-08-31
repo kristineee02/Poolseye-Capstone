@@ -6,9 +6,23 @@ Admin web dashboard + lifeguard mobile app.
 
 ```
 Poolseye-Capstone/
+  backend/      Express + SQLite API (auth, lifeguards, geofence)
   frontend/     React + Vite admin console (browser)
   mobile/       Expo lifeguard app (Android / iOS)
 ```
+
+## Backend
+
+```bash
+cd backend
+npm install
+cp .env.example .env    # set JWT_SECRET and optional SMTP
+npm run dev             # http://localhost:4000
+```
+
+Default admin (seeded on first run): see `backend/db.js`.
+
+Demo lifeguard for mobile testing: `jonas@poolseye.com` / `lifeguard123` (must change password on first login).
 
 ## Web (frontend)
 
@@ -18,16 +32,43 @@ npm install
 npm run dev      # http://localhost:5173
 ```
 
+Sign in as admin, then use **Lifeguard accounts** to create mobile login credentials.
+
 ## Mobile (Expo SDK 54)
 
 ```bash
 cd mobile
 npm install
 npx expo install --fix
+```
+
+Set your PC's LAN IP so the phone can reach the backend:
+
+```bash
+# PowerShell — replace with your IP from ipconfig
+$env:EXPO_PUBLIC_API_URL="http://192.168.1.3:4000"
 npm start
 ```
 
-Scan the QR code in **Expo Go (SDK 54)** on your phone, or press `a` for Android emulator.
+Scan the QR code in **Expo Go (SDK 54)** on your phone (same Wi‑Fi as your PC).
+
+## Email API setup (Brevo)
+
+By default, emails are **demo mode** (logged to the backend console). To send real verification and welcome emails via **Brevo REST API**:
+
+1. Sign up at [brevo.com](https://www.brevo.com)
+2. **Settings → SMTP & API → API Keys** — create an API key (starts with `xkeysib-`)
+3. **Settings → Senders & IPs → Senders** — add and verify your sender email
+4. In `backend/.env`:
+
+```
+BREVO_API_KEY=xkeysib-your-api-key-here
+BREVO_SENDER=PoolsEye <noreply@yourdomain.com>
+```
+
+5. Restart the backend: `cd backend && npm run dev`
+
+Leave `BREVO_API_KEY` empty for demo mode — codes appear in the backend terminal and in a dashboard toast.
 
 ## From project root
 

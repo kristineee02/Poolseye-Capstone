@@ -2,7 +2,7 @@ import { Modal } from '../ui/Modal'
 import CameraFeedIllustration from '../camera/CameraFeedIllustration'
 import './SnapshotModal.css'
 
-export default function SnapshotModal({ event, onClose }) {
+export default function SnapshotModal({ event, onClose, onAcknowledge }) {
   if (!event) return null
 
   return (
@@ -29,6 +29,13 @@ export default function SnapshotModal({ event, onClose }) {
             <span className="v">{event.status}</span>
           </div>
         </div>
+        {onAcknowledge ? (
+          <div className="snapshot-modal-actions">
+            <button type="button" className="btn-primary" onClick={onAcknowledge}>
+              Acknowledge event
+            </button>
+          </div>
+        ) : null}
       </div>
     </Modal>
   )

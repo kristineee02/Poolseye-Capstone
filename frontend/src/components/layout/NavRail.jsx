@@ -10,6 +10,23 @@ const NAV_ITEMS = [
   { id: 'analytics',  label: 'Analytics & reports', icon: Icon.Chart  },
 ]
 
+function NavItemButton({ label, active, onClick, children, className = '' }) {
+  return (
+    <div className="navitem-wrap">
+      <button
+        type="button"
+        className={`navitem ${active ? 'active' : ''} ${className}`.trim()}
+        aria-label={label}
+        aria-current={active ? 'page' : undefined}
+        onClick={onClick}
+      >
+        {children}
+      </button>
+      <span className="navitem-tooltip">{label}</span>
+    </div>
+  )
+}
+
 export default function NavRail({ activePage, onNavigate, onRequestSignOut }) {
   return (
     <nav className="navrail" aria-label="Main navigation">
@@ -22,41 +39,33 @@ export default function NavRail({ activePage, onNavigate, onRequestSignOut }) {
 
         <div className="navrail-items">
           {NAV_ITEMS.map(({ id, label, icon: ItemIcon }) => (
-            <button
+            <NavItemButton
               key={id}
-              type="button"
-              className={`navitem ${activePage === id ? 'active' : ''}`}
-              title={label}
-              aria-label={label}
-              aria-current={activePage === id ? 'page' : undefined}
+              label={label}
+              active={activePage === id}
               onClick={() => onNavigate(id)}
             >
               <ItemIcon />
-            </button>
+            </NavItemButton>
           ))}
         </div>
       </div>
 
       <div className="navrail-footer">
-        <button
-          type="button"
-          className={`navitem ${activePage === 'settings' ? 'active' : ''}`}
-          title="Settings"
-          aria-label="Settings"
-          aria-current={activePage === 'settings' ? 'page' : undefined}
+        <NavItemButton
+          label="Settings"
+          active={activePage === 'settings'}
           onClick={() => onNavigate('settings')}
         >
           <Icon.Settings />
-        </button>
-        <button
-          type="button"
-          className="navitem navitem-logout"
-          title="Sign out"
-          aria-label="Sign out"
+        </NavItemButton>
+        <NavItemButton
+          label="Sign out"
+          className="navitem-logout"
           onClick={onRequestSignOut}
         >
           <Icon.LogOut />
-        </button>
+        </NavItemButton>
       </div>
     </nav>
   )

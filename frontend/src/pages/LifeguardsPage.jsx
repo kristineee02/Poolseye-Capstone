@@ -13,11 +13,10 @@ import {
   restoreLifeguard,
   sendVerificationCode,
   confirmVerificationCode,
-  isEmailVerified,
-  clearEmailVerification,
   sendWelcomeEmail,
   isValidEmail,
 } from '../api/lifeguards'
+import { getPasswordRuleChecks, validatePassword } from '../utils/password'
 import './LifeguardsPage.css'
 
 const ROLES = ['Primary Lifeguard', 'Backup Lifeguard', 'Lifeguard', 'On-Duty Supervisor']
@@ -26,13 +25,39 @@ const PAGE_SIZE = 4
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024
 
 const emptyAddForm = {
-  name: '',
+  firstName: '',
+  middleName: '',
+  lastName: '',
   email: '',
   phone: '',
   role: 'Lifeguard',
   assignedZones: [],
-  certifications: ['Lifeguard'],
   status: 'active',
+}
+
+function buildFullName({ firstName, middleName, lastName } = {}) {
+  return [firstName, middleName, lastName]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(' ')
+}
+
+function splitFullName(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) {
+    return { firstName: '', middleName: '', lastName: '' }
+  }
+  if (parts.length === 1) {
+    return { firstName: parts[0], middleName: '', lastName: '' }
+  }
+  if (parts.length === 2) {
+    return { firstName: parts[0], middleName: '', lastName: parts[1] }
+  }
+  return {
+    firstName: parts[0],
+    middleName: parts.slice(1, -1).join(' '),
+    lastName: parts[parts.length - 1],
+  }
 }
 
 function FormAvatarPicker({ name, photoUri, onPick, inputRef, onPhotoSelected }) {
@@ -99,8 +124,29 @@ function PasswordInput({ label, value, onChange, placeholder, visible, onToggle 
   )
 }
 
+function PasswordRequirements({ rules }) {
+  return (
+    <div className="lg-password-rules">
+      <h4 className="lg-password-rules-title">Password requirements</h4>
+      <ul className="lg-password-rules-list">
+        {rules.map((rule, index) => (
+          <li
+            key={rule.id}
+            className={`lg-password-rule${rule.met ? ' met' : ''}${index < rules.length - 1 ? ' bordered' : ''}`}
+          >
+            <span className="lg-password-rule-check" aria-hidden="true">
+              {rule.met ? <Icon.Check /> : null}
+            </span>
+            <span>{rule.label}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 export default function LifeguardsPage() {
-  const [guards, setGuards] = useState(() => fetchLifeguards())
+  const [guards, setGuards] = useState([])
   const [showAddModal, setShowAddModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showArchiveModal, setShowArchiveModal] = useState(false)
@@ -128,15 +174,23 @@ export default function LifeguardsPage() {
   const { toasts, addToast, removeToast } = useToast()
 
   useEffect(() => {
-    setGuards(fetchLifeguards())
+    fetchLifeguards().then(setGuards)
   }, [])
 
   const emailVerified = useMemo(() => {
     const email = formData.email.trim().toLowerCase()
-    return Boolean(email && verifiedEmail === email && isEmailVerified(email))
+    return Boolean(email && verifiedEmail === email)
   }, [formData.email, verifiedEmail])
 
   const canSendCode = isValidEmail(formData.email) && !sendingCode && !emailVerified
+
+  const tempPasswordRules = useMemo(
+    () => getPasswordRuleChecks(tempPassword),
+    [tempPassword]
+  )
+
+  const passwordsMatch =
+    !confirmTempPassword || tempPassword === confirmTempPassword
 
   const rosterGuards = useMemo(() => {
     if (rosterView === 'archived') {
@@ -174,10 +228,6 @@ export default function LifeguardsPage() {
   }
 
   const resetAddForm = () => {
-    const pendingEmail = formData.email.trim().toLowerCase()
-    if (pendingEmail && !emailVerified) {
-      clearEmailVerification(pendingEmail)
-    }
     setFormData(emptyAddForm)
     setTempPassword('')
     setConfirmTempPassword('')
@@ -195,7 +245,6 @@ export default function LifeguardsPage() {
     const nextEmail = value.trim().toLowerCase()
     const currentVerified = verifiedEmail.trim().toLowerCase()
     if (currentVerified && nextEmail !== currentVerified) {
-      clearEmailVerification(currentVerified)
       setVerifiedEmail('')
       setCodeSent(false)
       setVerificationCode('')
@@ -207,7 +256,7 @@ export default function LifeguardsPage() {
     if (!canSendCode) return
     setSendingCode(true)
     try {
-      const result = sendVerificationCode(formData.email)
+      const result = await sendVerificationCode(formData.email)
       if (!result.ok) {
         addToast(result.error, 'warning')
         return
@@ -227,7 +276,7 @@ export default function LifeguardsPage() {
     if (emailVerified || verifyingCode) return
     setVerifyingCode(true)
     try {
-      const result = confirmVerificationCode(formData.email, verificationCode)
+      const result = await confirmVerificationCode(formData.email, verificationCode)
       if (!result.ok) {
         addToast(result.error, 'warning')
         return
@@ -291,21 +340,31 @@ export default function LifeguardsPage() {
   const openEdit = (guard) => {
     setSelected(guard)
     setFormData({
-      name: guard.name,
+      ...splitFullName(guard.name),
       email: guard.email,
       phone: guard.phone,
       role: guard.role,
       assignedZones: [...guard.assignedZones],
-      certifications: [...guard.certifications],
       status: guard.status === 'archived' ? 'inactive' : guard.status,
     })
     setEditPhotoUri(guard.photoUri || null)
     setShowEditModal(true)
   }
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!emailVerified) {
       addToast('Verify the email address before creating an account.', 'warning')
+      return
+    }
+
+    const firstName = formData.firstName.trim()
+    const lastName = formData.lastName.trim()
+    if (!firstName) {
+      addToast('First name is required.', 'warning')
+      return
+    }
+    if (!lastName) {
+      addToast('Last name is required.', 'warning')
       return
     }
 
@@ -314,8 +373,16 @@ export default function LifeguardsPage() {
       return
     }
 
-    const result = createLifeguard({
-      name: formData.name,
+    const passwordCheck = validatePassword(tempPassword)
+    if (!passwordCheck.ok) {
+      addToast(passwordCheck.error, 'warning')
+      return
+    }
+
+    const name = buildFullName(formData)
+
+    const result = await createLifeguard({
+      name,
       email: formData.email,
       phone: formData.phone,
       role: formData.role,
@@ -329,13 +396,13 @@ export default function LifeguardsPage() {
       return
     }
 
-    const welcome = sendWelcomeEmail({
+    const welcome = await sendWelcomeEmail({
       email: result.guard.email,
       name: result.guard.name,
       tempPassword,
     })
 
-    setGuards(fetchLifeguards())
+    setGuards(await fetchLifeguards())
     setShowAddModal(false)
     resetAddForm()
     addToast(
@@ -344,9 +411,22 @@ export default function LifeguardsPage() {
     )
   }
 
-  const handleUpdate = () => {
-    const result = updateLifeguard(selected.id, {
-      name: formData.name,
+  const handleUpdate = async () => {
+    const firstName = formData.firstName.trim()
+    const lastName = formData.lastName.trim()
+    if (!firstName) {
+      addToast('First name is required.', 'warning')
+      return
+    }
+    if (!lastName) {
+      addToast('Last name is required.', 'warning')
+      return
+    }
+
+    const name = buildFullName(formData)
+
+    const result = await updateLifeguard(selected.id, {
+      name,
       email: formData.email,
       phone: formData.phone,
       role: formData.role,
@@ -360,28 +440,28 @@ export default function LifeguardsPage() {
       return
     }
 
-    setGuards(fetchLifeguards())
+    setGuards(await fetchLifeguards())
     setShowEditModal(false)
-    addToast(`${formData.name}'s account updated`, 'success')
+    addToast(`${name}'s account updated`, 'success')
   }
 
-  const handleDeactivate = () => {
-    const result = archiveLifeguard(selected.id)
+  const handleDeactivate = async () => {
+    const result = await archiveLifeguard(selected.id)
     if (!result.ok) {
       addToast(result.error, 'warning')
       return
     }
-    setGuards(fetchLifeguards())
+    setGuards(await fetchLifeguards())
     addToast(`${selected.name} deactivated and moved to Archived`, 'info')
   }
 
-  const handleRestore = (guard) => {
-    const result = restoreLifeguard(guard.id)
+  const handleRestore = async (guard) => {
+    const result = await restoreLifeguard(guard.id)
     if (!result.ok) {
       addToast(result.error, 'warning')
       return
     }
-    setGuards(fetchLifeguards())
+    setGuards(await fetchLifeguards())
     addToast(`${guard.name} activated`, 'success')
   }
 
@@ -514,13 +594,6 @@ export default function LifeguardsPage() {
                       <span><Icon.Fence /> {guard.assignedZones.join(', ')}</span>
                     ) : null}
                   </div>
-                  {guard.certifications.length > 0 ? (
-                    <div className="lg-certs">
-                      {guard.certifications.map((c) => (
-                        <span key={c} className="cert-pill">{c}</span>
-                      ))}
-                    </div>
-                  ) : null}
                 </div>
 
                 <div className="lg-stats">
@@ -598,28 +671,46 @@ export default function LifeguardsPage() {
         submitDisabled={!emailVerified}
       >
         <FormAvatarPicker
-          name={formData.name}
+          name={buildFullName(formData)}
           photoUri={addPhotoUri}
           onPick={pickAddPhoto}
           inputRef={addPhotoInputRef}
           onPhotoSelected={onAddPhotoSelected}
         />
-        <div className="form-row-2">
+        <div className="form-row-3 lg-name-row">
           <div className="form-field">
-            <label>Full Name *</label>
+            <label>First name *</label>
             <input
               type="text"
-              placeholder="e.g., Jonas Ramos"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder="e.g., Jonas"
+              value={formData.firstName}
+              onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
             />
           </div>
           <div className="form-field">
-            <label>Role</label>
-            <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })}>
-              {ROLES.map((r) => <option key={r}>{r}</option>)}
-            </select>
+            <label>Middle name</label>
+            <input
+              type="text"
+              placeholder="Optional"
+              value={formData.middleName}
+              onChange={(e) => setFormData({ ...formData, middleName: e.target.value })}
+            />
           </div>
+          <div className="form-field">
+            <label>Last name *</label>
+            <input
+              type="text"
+              placeholder="e.g., Ramos"
+              value={formData.lastName}
+              onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+            />
+          </div>
+        </div>
+        <div className="form-field">
+          <label>Role</label>
+          <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })}>
+            {ROLES.map((r) => <option key={r}>{r}</option>)}
+          </select>
         </div>
         <div className="form-row-2">
           <div className="form-field">
@@ -707,12 +798,6 @@ export default function LifeguardsPage() {
             })}
           </div>
         </div>
-        <div className="form-field">
-          <label>Certification</label>
-          <div className="cert-fixed-pill">
-            <Icon.Shield /> Lifeguard
-          </div>
-        </div>
         <PasswordInput
           label="Temporary password *"
           value={tempPassword}
@@ -729,6 +814,10 @@ export default function LifeguardsPage() {
           visible={showConfirmTempPassword}
           onToggle={() => setShowConfirmTempPassword((v) => !v)}
         />
+        {!passwordsMatch ? (
+          <p className="lg-form-hint lg-password-mismatch">Passwords do not match.</p>
+        ) : null}
+        <PasswordRequirements rules={tempPasswordRules} />
         <p className="lg-form-hint">
           Share this with the lifeguard for first mobile login. They will be asked to change it.
         </p>
@@ -742,27 +831,44 @@ export default function LifeguardsPage() {
         submitText="Save changes"
       >
         <FormAvatarPicker
-          name={formData.name}
+          name={buildFullName(formData)}
           photoUri={editPhotoUri}
           onPick={pickEditPhoto}
           inputRef={editPhotoInputRef}
           onPhotoSelected={onEditPhotoSelected}
         />
-        <div className="form-row-2">
+        <div className="form-row-3 lg-name-row">
           <div className="form-field">
-            <label>Full Name *</label>
+            <label>First name *</label>
             <input
               type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              value={formData.firstName}
+              onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
             />
           </div>
           <div className="form-field">
-            <label>Role</label>
-            <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })}>
-              {ROLES.map((r) => <option key={r}>{r}</option>)}
-            </select>
+            <label>Middle name</label>
+            <input
+              type="text"
+              placeholder="Optional"
+              value={formData.middleName}
+              onChange={(e) => setFormData({ ...formData, middleName: e.target.value })}
+            />
           </div>
+          <div className="form-field">
+            <label>Last name *</label>
+            <input
+              type="text"
+              value={formData.lastName}
+              onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+            />
+          </div>
+        </div>
+        <div className="form-field">
+          <label>Role</label>
+          <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })}>
+            {ROLES.map((r) => <option key={r}>{r}</option>)}
+          </select>
         </div>
         <div className="form-row-2">
           <div className="form-field">
@@ -810,12 +916,6 @@ export default function LifeguardsPage() {
                 </label>
               )
             })}
-          </div>
-        </div>
-        <div className="form-field">
-          <label>Certification</label>
-          <div className="cert-fixed-pill">
-            <Icon.Shield /> Lifeguard
           </div>
         </div>
       </FormModal>

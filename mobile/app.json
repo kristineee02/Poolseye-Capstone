@@ -21,12 +21,12 @@
           "imageWidth": 300,
           "resizeMode": "contain"
         }
-      ],
-      "expo-status-bar"
+      ]
     ],
     "platforms": [
       "ios",
-      "android"
+      "android",
+      "web"
     ],
     "ios": {
       "supportsTablet": true

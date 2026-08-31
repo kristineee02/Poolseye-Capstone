@@ -5,17 +5,42 @@ const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
 const { initDb, get } = require('./db')
 const geofence = require('./geofence')
+const { registerLifeguardRoutes } = require('./lifeguards')
+const { registerMobileAuthRoutes } = require('./mobileAuth')
+const { registerEventRoutes, seedDemoEvents } = require('./events')
 
 const app = express()
 const PORT = process.env.PORT || 4000
+const HOST = process.env.HOST || '0.0.0.0'
+
+if (!process.env.JWT_SECRET) {
+  console.warn('Warning: JWT_SECRET is not set. Using insecure dev default.')
+  process.env.JWT_SECRET = 'poolseye-dev-secret-change-me'
+}
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true
+  if (origin.startsWith('http://localhost:')) return true
+  if (origin.startsWith('http://127.0.0.1:')) return true
+  if (/^http:\/\/192\.168\.\d+\.\d+(:\d+)?$/.test(origin)) return true
+  if (/^http:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/.test(origin)) return true
+  if (/^exp:\/\//.test(origin)) return true
+  return false
+}
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174'],
+  origin(origin, callback) {
+    if (isAllowedOrigin(origin)) {
+      callback(null, true)
+    } else {
+      callback(new Error('Not allowed by CORS'))
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }))
-app.use(express.json({ limit: '1mb' }))
+app.use(express.json({ limit: '2mb' }))
 
 function authRequired(req, res, next) {
   try {
@@ -23,6 +48,21 @@ function authRequired(req, res, next) {
     const token = header.startsWith('Bearer ') ? header.slice(7) : null
     if (!token) return res.status(401).json({ error: 'Unauthorized' })
     req.user = jwt.verify(token, process.env.JWT_SECRET)
+    next()
+  } catch {
+    res.status(401).json({ error: 'Unauthorized' })
+  }
+}
+
+function adminRequired(req, res, next) {
+  try {
+    const header = req.headers.authorization || ''
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null
+    if (!token) return res.status(401).json({ error: 'Unauthorized' })
+    req.user = jwt.verify(token, process.env.JWT_SECRET)
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access only' })
+    }
     next()
   } catch {
     res.status(401).json({ error: 'Unauthorized' })
@@ -57,13 +97,17 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' })
     }
 
+    if (user.role !== 'admin') {
+      return res.status(403).json({ error: 'Use the mobile app to sign in as a lifeguard.' })
+    }
+
     const ok = await bcrypt.compare(password, user.password_hash)
     if (!ok) {
       return res.status(401).json({ error: 'Invalid email or password' })
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
+      { id: user.id, email: user.email, role: user.role, aud: 'admin' },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     )
@@ -91,12 +135,18 @@ app.get('/api/auth/me', async (req, res) => {
     if (!token) return res.status(401).json({ error: 'Unauthorized' })
 
     const payload = jwt.verify(token, process.env.JWT_SECRET)
+    if (payload.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access only' })
+    }
+
     const user = await get(
       db,
       'SELECT id, email, name, role FROM users WHERE id = ?',
       [payload.id]
     )
-    if (!user) return res.status(401).json({ error: 'Unauthorized' })
+    if (!user || user.role !== 'admin') {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
 
     res.json({
       user: {
@@ -185,9 +235,16 @@ app.put('/api/geofence', authRequired, async (req, res) => {
 initDb()
   .then(async (database) => {
     db = database
+    registerLifeguardRoutes(app, db, adminRequired)
+    registerMobileAuthRoutes(app, db)
+    registerEventRoutes(app, db, adminRequired)
     await geofence.seedGeofence(db)
-    app.listen(PORT, () => {
-      console.log(`Backend running on http://localhost:${PORT}`)
+    await seedDemoEvents(db)
+    app.listen(PORT, HOST, () => {
+      console.log(`Backend running on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`)
+      if (HOST === '0.0.0.0') {
+        console.log('Mobile devices: use your PC LAN IP, e.g. http://192.168.x.x:' + PORT)
+      }
     })
   })
   .catch((err) => {
