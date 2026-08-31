@@ -10,7 +10,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, radius, shadow, touch } from '../theme/tokens';
-import { DEMO_LIFEGUARD } from '../auth/demoAuth';
 import { useAuth } from '../context/AuthContext';
 import ForgotPasswordScreen from './ForgotPasswordScreen';
 
@@ -89,7 +88,7 @@ function PasswordToggleIcon({ visible, color }) {
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const { signIn } = useAuth();
-  const [email, setEmail] = useState(DEMO_LIFEGUARD.email);
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');

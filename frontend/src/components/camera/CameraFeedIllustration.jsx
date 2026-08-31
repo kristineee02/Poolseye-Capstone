@@ -1,55 +1,5 @@
-import { initialZones, getZoneTypeMeta } from '../../data/geofence'
-
-function GeofenceOverlay({ zones }) {
-  return (
-    <g className="live-geofence-overlay">
-      {zones.map((zone) => {
-        const meta = getZoneTypeMeta(zone.type)
-        if (!zone.points?.length) return null
-
-        const pts = zone.points.map((p) => `${p.x},${p.y}`).join(' ')
-        const isPolygon = meta.geometry === 'polygon' && zone.points.length >= 3
-
-        return (
-          <g key={zone.id}>
-            {isPolygon ? (
-              <polygon
-                points={pts}
-                fill={meta.fill}
-                stroke={meta.color}
-                strokeWidth="2.5"
-                strokeLinejoin="round"
-                opacity="0.95"
-              />
-            ) : (
-              <polyline
-                points={pts}
-                fill="none"
-                stroke={meta.color}
-                strokeWidth="3.5"
-                strokeDasharray="10 6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity="0.95"
-              />
-            )}
-            {/* Zone label at first point */}
-            <text
-              x={zone.points[0].x + 6}
-              y={zone.points[0].y - 8}
-              fill={meta.color}
-              fontFamily="Roboto Mono, monospace"
-              fontSize="11"
-              fontWeight="700"
-            >
-              {meta.label.toUpperCase()} · {zone.name.toUpperCase()}
-            </text>
-          </g>
-        )
-      })}
-    </g>
-  )
-}
+import { initialZones } from '../../data/geofence'
+import GeofenceOverlay from '../geofence/GeofenceOverlay'
 
 export default function CameraFeedIllustration({ zones = initialZones }) {
   const PX = 160, PY = 76, PW = 680, PH = 360

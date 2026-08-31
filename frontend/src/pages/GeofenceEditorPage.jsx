@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Icon } from '../components/ui/Icon'
 import Toggle from '../components/ui/Toggle'
 import GeofenceStage from '../components/geofence/GeofenceStage'
-import { initialZones, ZONE_TYPES, getZoneTypeMeta } from '../data/geofence'
+import { ZONE_TYPES, getZoneTypeMeta, initialZones } from '../data/geofence'
+import { useGeofence } from '../context/GeofenceContext'
+import { useToast, ToastContainer } from '../components/ui/Toast'
 import '../components/geofence/GeofenceEditor.css'
 
 function makeZoneId() {
@@ -16,13 +18,19 @@ const DEFAULT_NAMES = {
 }
 
 export default function GeofenceEditorPage() {
-  const [zones, setZones] = useState(initialZones)
-  const [activeZoneId, setActiveZoneId] = useState(initialZones[0].id)
-  const [mode, setMode] = useState('add') // default to Add Point for drawing
+  const { zones, setZones, dirty, saving, save, discard, syncError } = useGeofence()
+  const { toasts, addToast, removeToast } = useToast()
+  const [activeZoneId, setActiveZoneId] = useState(zones[0]?.id ?? initialZones[0].id)
+  const [mode, setMode] = useState('add')
   const [savedNotice, setSavedNotice] = useState(false)
 
   const activeZone = zones.find((z) => z.id === activeZoneId)
   const activeMeta = activeZone ? getZoneTypeMeta(activeZone.type) : null
+
+  useEffect(() => {
+    if (activeZoneId && zones.some((z) => z.id === activeZoneId)) return
+    setActiveZoneId(zones[0]?.id ?? null)
+  }, [zones, activeZoneId])
 
   function updateZonePoints(zoneId, points) {
     setZones((prev) => prev.map((z) => (z.id === zoneId ? { ...z, points } : z)))
@@ -32,8 +40,17 @@ export default function GeofenceEditorPage() {
     setZones((prev) => prev.map((z) => (z.id === activeZoneId ? { ...z, ...patch } : z)))
   }
 
+  function updatePointCoord(index, axis, rawValue) {
+    if (!activeZone) return
+    const value = Number(rawValue)
+    if (!Number.isFinite(value)) return
+    const max = axis === 'x' ? 1000 : 512
+    const clamped = Math.max(0, Math.min(max, Math.round(value)))
+    const next = activeZone.points.map((p, i) => (i === index ? { ...p, [axis]: clamped } : p))
+    updateZonePoints(activeZoneId, next)
+  }
+
   function addZone(type) {
-    const meta = getZoneTypeMeta(type)
     const countOfType = zones.filter((z) => z.type === type).length
     const newZone = {
       id: makeZoneId(),
@@ -46,7 +63,6 @@ export default function GeofenceEditorPage() {
     setZones((prev) => [...prev, newZone])
     setActiveZoneId(newZone.id)
     setMode('add')
-    return meta
   }
 
   function removeZone(zoneId) {
@@ -68,32 +84,41 @@ export default function GeofenceEditorPage() {
   }
 
   function discardChanges() {
-    setZones(initialZones)
-    setActiveZoneId(initialZones[0].id)
+    const restored = discard()
+    setActiveZoneId(restored[0]?.id ?? null)
     setMode('add')
   }
 
-  function saveZone() {
-    setSavedNotice(true)
-    setTimeout(() => setSavedNotice(false), 2200)
+  async function saveZone() {
+    try {
+      await save(zones)
+      setSavedNotice(true)
+      addToast('Geofence coordinates saved to SQLite', 'success')
+      setTimeout(() => setSavedNotice(false), 2200)
+    } catch (err) {
+      addToast(err.message || 'Could not save geofence', 'error')
+    }
   }
 
   return (
     <div className="page geofence-page">
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
       <div className="pagehead geofence-pagehead">
         <div>
           <h1>Geofence editor</h1>
           <div className="sub">
             Manually draw nested zones: Yellow (largest) ⊃ Red (inside yellow) ⊃ Orange (inside red)
+            {dirty ? ' · unsaved live preview on CCTV' : ''}
           </div>
         </div>
         <div className="pagehead-right">
-          <button className="chip-btn" onClick={discardChanges}>
+          {syncError && <span className="geofence-sync-error">{syncError}</span>}
+          <button className="chip-btn" onClick={discardChanges} disabled={!dirty || saving}>
             Discard changes
           </button>
-          <button className="btn-primary" onClick={saveZone}>
+          <button className="btn-primary" onClick={saveZone} disabled={saving}>
             <Icon.Save />
-            {savedNotice ? 'Saved' : 'Save zones'}
+            {saving ? 'Saving…' : savedNotice ? 'Saved' : 'Save zones'}
           </button>
         </div>
       </div>
@@ -180,7 +205,6 @@ export default function GeofenceEditorPage() {
 
         <aside className="geofence-sidebar" aria-label="Geofence features panel">
           <div className="geofence-sidebar-scroll">
-          {/* Add drawing components */}
           <div className="panel">
             <div className="panel-head">
               <h3>Add drawing component</h3>
@@ -204,7 +228,6 @@ export default function GeofenceEditorPage() {
             </div>
           </div>
 
-          {/* Zone list */}
           <div className="panel">
             <div className="panel-head">
               <h3>Zones on this camera</h3>
@@ -313,6 +336,58 @@ export default function GeofenceEditorPage() {
             </div>
           )}
 
+          {activeZone && (
+            <div className="panel">
+              <div className="panel-head">
+                <h3>Boundary points</h3>
+                <span className="zcount mono">{activeZone.points.length} pts</span>
+              </div>
+              <div className="point-editor">
+                {activeZone.points.length === 0 && (
+                  <div className="zone-list-empty">Click the stage to place the first vertex.</div>
+                )}
+                {activeZone.points.map((p, i) => (
+                  <div className="point-editor-row" key={`${activeZone.id}-${i}`}>
+                    <span className="point-editor-index">{i + 1}</span>
+                    <label className="point-editor-xy">
+                      X
+                      <input
+                        type="number"
+                        min="0"
+                        max="1000"
+                        value={p.x}
+                        onChange={(e) => updatePointCoord(i, 'x', e.target.value)}
+                      />
+                    </label>
+                    <label className="point-editor-xy">
+                      Y
+                      <input
+                        type="number"
+                        min="0"
+                        max="512"
+                        value={p.y}
+                        onChange={(e) => updatePointCoord(i, 'y', e.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="point-editor-remove"
+                      title="Remove point"
+                      onClick={() => {
+                        updateZonePoints(
+                          activeZoneId,
+                          activeZone.points.filter((_, idx) => idx !== i),
+                        )
+                      }}
+                    >
+                      <Icon.Trash />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="panel">
             <div className="panel-head">
               <h3>How to draw</h3>
@@ -330,7 +405,10 @@ export default function GeofenceEditorPage() {
                   Polygons close automatically at <b>3+ points</b>. Keep red fully inside yellow, and orange fully inside red.
                 </li>
                 <li>
-                  Use <b>Move</b> to drag points, or <b>Remove point</b> to delete a vertex.
+                  Use <b>Move</b> to drag points, type X/Y values, or <b>Remove point</b> to delete a vertex.
+                </li>
+                <li>
+                  Layout changes stream to <b>Live monitoring</b> immediately. <b>Save zones</b> writes coordinates to SQLite.
                 </li>
               </ol>
             </div>

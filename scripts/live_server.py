@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import sys
 import threading
 import time
@@ -9,6 +11,8 @@ import uuid
 from collections import deque
 from datetime import datetime
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 import cv2
 from flask import Flask, Response, jsonify
@@ -32,14 +36,18 @@ from zone_check import (  # noqa: E402
 )
 
 CONFIG_PATH = SCRIPTS_DIR / "config.json"
+GEOFENCE_API = os.environ.get("GEOFENCE_API", "http://127.0.0.1:4000/api/geofence/live")
+EVENTS_INGEST_API = os.environ.get("EVENTS_INGEST_API", "http://127.0.0.1:4000/api/events/ingest")
 
 app = Flask(__name__)
 
 _lock = threading.Lock()
+_zcfg_lock = threading.Lock()
 _latest_jpeg: bytes | None = None
 _latest_reports: list = []
 _event_log: deque = deque(maxlen=100)
 _running = True
+_zcfg: dict | None = None
 
 # Crossing text from zone_check → dashboard event shape
 EVENT_CATALOG = {
@@ -88,6 +96,20 @@ EVENT_CATALOG = {
 }
 
 
+def sync_event_to_backend(entry: dict):
+    """Persist live detection events to the Express backend for Event history."""
+    try:
+        payload = json.dumps(entry).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        secret = os.environ.get("EVENTS_INGEST_SECRET")
+        if secret:
+            headers["X-Events-Secret"] = secret
+        req = Request(EVENTS_INGEST_API, data=payload, headers=headers, method="POST")
+        urlopen(req, timeout=2)
+    except (URLError, TimeoutError, OSError):
+        pass
+
+
 def push_event(person_id: int, zone: str, event_name: str, is_alert: bool):
     """Append a dashboard-ready event when a zone crossing fires."""
     meta = EVENT_CATALOG.get(event_name, {
@@ -119,6 +141,7 @@ def push_event(person_id: int, zone: str, event_name: str, is_alert: bool):
     }
     with _lock:
         _event_log.appendleft(entry)
+    sync_event_to_backend(entry)
     return entry
 
 
@@ -204,12 +227,52 @@ def redraw_cached(frame, zcfg, draw_cache, kpt_conf):
     return out
 
 
+def current_zcfg(fallback: dict) -> dict:
+    with _zcfg_lock:
+        return _zcfg if _zcfg is not None else fallback
+
+
+def merge_detection(detection: dict, fallback: dict) -> dict:
+    merged = dict(fallback)
+    merged.update(detection)
+    merged["coord_space"] = detection.get("coord_space", fallback.get("coord_space", "editor"))
+    merged["editor_size"] = detection.get("editor_size", fallback.get("editor_size", [1000, 512]))
+    merged["orange_proximity"] = detection.get(
+        "orange_proximity", fallback.get("orange_proximity", 0.02)
+    )
+    return merged
+
+
+def geofence_poll_loop(fallback: dict):
+    """Pull dashboard geofence coordinates so CCTV overlays track the editor."""
+    global _zcfg
+    last_revision = None
+    while _running:
+        try:
+            with urlopen(GEOFENCE_API, timeout=2) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            detection = data.get("detection")
+            revision = data.get("revision")
+            if isinstance(detection, dict) and revision != last_revision:
+                merged = merge_detection(detection, fallback)
+                with _zcfg_lock:
+                    _zcfg = merged
+                last_revision = revision
+                print(f"[stream] geofence rev={revision} synced from dashboard")
+        except (URLError, TimeoutError, ValueError, OSError, json.JSONDecodeError):
+            pass
+        time.sleep(0.4)
+
+
 def capture_loop(rtsp_url: str, cfg: dict):
-    global _latest_jpeg, _latest_reports, _running
+    global _latest_jpeg, _latest_reports, _running, _zcfg
 
     pose_cfg = cfg.get("POSE", {})
     track_cfg = cfg.get("TRACKING", {})
-    zcfg = cfg["ZONES"]
+    fallback_zcfg = cfg["ZONES"]
+    with _zcfg_lock:
+        if _zcfg is None:
+            _zcfg = fallback_zcfg
 
     model_name = pose_cfg.get("model") or "yolo11n-pose.pt"
     conf = float(pose_cfg.get("confidence_threshold", 0.25))
@@ -228,7 +291,7 @@ def capture_loop(rtsp_url: str, cfg: dict):
         lost_sec=float(track_cfg.get("lost_track_sec", 2.0)),
     )
 
-    for warn in validate_nesting(zcfg):
+    for warn in validate_nesting(current_zcfg(fallback_zcfg)):
         print(f"[stream] WARN {warn}")
 
     print(
@@ -273,6 +336,7 @@ def capture_loop(rtsp_url: str, cfg: dict):
             frame_i += 1
 
             try:
+                zcfg = current_zcfg(fallback_zcfg)
                 if frame_i % infer_every_n == 0 or not draw_cache:
                     annotated, reports, draw_cache = annotate_frame(
                         frame, model, zcfg, tracker, conf, kpt_conf, imgsz
@@ -283,7 +347,7 @@ def capture_loop(rtsp_url: str, cfg: dict):
                     reports = last_reports
             except Exception as exc:
                 print(f"[stream] annotate error: {exc}")
-                annotated = redraw_cached(frame, zcfg, [], kpt_conf)
+                annotated = redraw_cached(frame, current_zcfg(fallback_zcfg), [], kpt_conf)
                 reports = []
 
             ok, buf = cv2.imencode(
@@ -403,5 +467,7 @@ if __name__ == "__main__":
 
     t = threading.Thread(target=capture_loop, args=(rtsp, cfg), daemon=True)
     t.start()
+    threading.Thread(target=geofence_poll_loop, args=(cfg["ZONES"],), daemon=True).start()
+    print(f"[stream] watching geofence API {GEOFENCE_API}")
 
     app.run(host="0.0.0.0", port=8000, threaded=True, debug=False)

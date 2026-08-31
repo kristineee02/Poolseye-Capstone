@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Icon } from '../components/ui/Icon'
 import Pagination from '../components/ui/Pagination'
 import SnapshotThumb from '../components/history/SnapshotThumb'
 import SnapshotModal from '../components/history/SnapshotModal'
-import { events } from '../data/events'
+import { fetchEvents, fetchEventCameras, updateEventStatus } from '../api/events'
+import { useToast, ToastContainer } from '../components/ui/Toast'
 import '../components/history/HistoryTable.css'
 
 const TYPE_LABEL = { alarm: 'Alarm', safe: 'Safe', warn: 'Warning', info: 'Info' }
@@ -16,37 +17,118 @@ export default function HistoryPage() {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [cameraFilter, setCameraFilter] = useState('all')
+  const [cameras, setCameras] = useState([])
+  const [events, setEvents] = useState([])
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const [loading, setLoading] = useState(true)
   const [reviewing, setReviewing] = useState(null)
   const [page, setPage] = useState(1)
+  const { toasts, addToast, removeToast } = useToast()
 
-  const filtered = useMemo(() => {
-    return events.filter((e) => {
-      if (typeFilter !== 'all' && e.type !== typeFilter) return false
-      if (statusFilter !== 'all' && e.status !== statusFilter) return false
-      if (search && !e.title.toLowerCase().includes(search.toLowerCase())) return false
-      return true
+  useEffect(() => {
+    fetchEventCameras().then((result) => {
+      if (result.ok && Array.isArray(result.cameras)) {
+        setCameras(result.cameras)
+      }
     })
-  }, [search, typeFilter, statusFilter])
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+
+    fetchEvents({
+      search,
+      type: typeFilter,
+      status: statusFilter,
+      camera: cameraFilter,
+      page,
+      pageSize: PAGE_SIZE,
+    }).then((result) => {
+      if (cancelled) return
+      if (!result.ok) {
+        setEvents([])
+        setTotal(0)
+        setTotalPages(1)
+        addToast(result.error || 'Failed to load events', 'warning')
+        return
+      }
+      setEvents(result.events || [])
+      setTotal(result.total || 0)
+      setTotalPages(result.totalPages || 1)
+    }).finally(() => {
+      if (!cancelled) setLoading(false)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [search, typeFilter, statusFilter, cameraFilter, page])
 
   useEffect(() => {
     setPage(1)
-  }, [search, typeFilter, statusFilter])
+  }, [search, typeFilter, statusFilter, cameraFilter])
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
-  const start = filtered.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
-  const end = Math.min(currentPage * PAGE_SIZE, filtered.length)
-  const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const start = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
+  const end = Math.min(currentPage * PAGE_SIZE, total)
+
+  const handleAcknowledge = async (event) => {
+    const result = await updateEventStatus(event.id, 'resolved')
+    if (!result.ok) {
+      addToast(result.error || 'Failed to update event', 'warning')
+      return
+    }
+    setEvents((prev) =>
+      prev.map((e) => (e.id === event.id ? { ...e, status: 'resolved' } : e))
+    )
+    setReviewing((prev) =>
+      prev?.id === event.id ? { ...prev, status: 'resolved' } : prev
+    )
+    addToast('Event acknowledged', 'success')
+  }
+
+  const exportCsv = () => {
+    if (!events.length) {
+      addToast('No events to export on this page.', 'info')
+      return
+    }
+    const header = ['ID', 'Title', 'Type', 'Camera', 'Confidence', 'Date', 'Time', 'Status']
+    const rows = events.map((e) => [
+      e.id,
+      e.title,
+      e.type,
+      e.camera,
+      e.confidence ?? '',
+      e.date,
+      e.time,
+      e.status,
+    ])
+    const csv = [header, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'poolseye-events.csv'
+    link.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="page">
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
+
       <div className="pagehead">
         <div>
           <h1>Event history</h1>
           <div className="sub">Search and review every detection, with the frame captured at the time of the event</div>
         </div>
         <div className="pagehead-right">
-          <button className="chip-btn">
+          <button type="button" className="chip-btn" onClick={exportCsv}>
             <Icon.Download />
             Export CSV
           </button>
@@ -62,8 +144,15 @@ export default function HistoryPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <select className="field-input" disabled defaultValue="all">
+          <select
+            className="field-input"
+            value={cameraFilter}
+            onChange={(e) => setCameraFilter(e.target.value)}
+          >
             <option value="all">All cameras</option>
+            {cameras.map((cam) => (
+              <option key={cam} value={cam}>{cam}</option>
+            ))}
           </select>
           <select className="field-input" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
             <option value="all">All alerts</option>
@@ -94,7 +183,13 @@ export default function HistoryPage() {
             </tr>
           </thead>
           <tbody>
-            {pageItems.map((e) => (
+            {loading ? (
+              <tr>
+                <td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-tertiary)', padding: '28px 0' }}>
+                  Loading events…
+                </td>
+              </tr>
+            ) : events.map((e) => (
               <tr key={e.id}>
                 <td className="thumb-cell">
                   <SnapshotThumb type={e.type} />
@@ -105,10 +200,10 @@ export default function HistoryPage() {
                 <td className="mono">{e.confidence ?? '—'}</td>
                 <td className="mono">{e.date}, {e.time}</td>
                 <td><span className={`tag ${STATUS_TAG[e.status]}`}>{STATUS_LABEL[e.status] || e.status}</span></td>
-                <td><button className="row-link" onClick={() => setReviewing(e)}>Review →</button></td>
+                <td><button type="button" className="row-link" onClick={() => setReviewing(e)}>Review →</button></td>
               </tr>
             ))}
-            {filtered.length === 0 && (
+            {!loading && events.length === 0 && (
               <tr>
                 <td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-tertiary)', padding: '28px 0' }}>
                   No events match these filters.
@@ -118,18 +213,22 @@ export default function HistoryPage() {
           </tbody>
         </table>
 
-        {filtered.length > 0 ? (
+        {!loading && total > 0 ? (
           <Pagination
             className="ui-pagination--inset"
             page={currentPage}
             totalPages={totalPages}
             onPageChange={setPage}
-            summary={`Showing ${start}–${end} of ${filtered.length} events`}
+            summary={`Showing ${start}–${end} of ${total} events`}
           />
         ) : null}
       </div>
 
-      <SnapshotModal event={reviewing} onClose={() => setReviewing(null)} />
+      <SnapshotModal
+        event={reviewing}
+        onClose={() => setReviewing(null)}
+        onAcknowledge={reviewing?.status === 'pending' ? () => handleAcknowledge(reviewing) : undefined}
+      />
     </div>
   )
 }

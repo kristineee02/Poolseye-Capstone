@@ -31,6 +31,12 @@
   white-space: nowrap;
 }
 
+.lg-name-row.form-row-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+}
+
 .lg-toolbar {
   display: flex;
   align-items: center;
@@ -500,6 +506,75 @@
 .lg-password-toggle svg {
   width: 16px;
   height: 16px;
+}
+
+.lg-password-rules {
+  margin-top: 4px;
+  margin-bottom: 12px;
+  border-radius: 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.lg-password-rules-title {
+  margin: 0;
+  padding: 14px 16px 10px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.lg-password-rules-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lg-password-rule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+.lg-password-rule.bordered {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.lg-password-rule.met {
+  color: var(--safe, #1b9c6e);
+}
+
+.lg-password-rule-check {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.lg-password-rule.met .lg-password-rule-check {
+  background: var(--safe, #1b9c6e);
+  border-color: var(--safe, #1b9c6e);
+}
+
+.lg-password-rule-check svg {
+  width: 11px;
+  height: 11px;
+}
+
+.lg-password-mismatch {
+  color: var(--alarm, #d6364a);
+  margin-top: -4px;
+  margin-bottom: 8px;
 }
 
 .lg-form-hint {

@@ -1,15 +1,19 @@
 import { Icon } from '../ui/Icon'
 import CameraFeedIllustration from './CameraFeedIllustration'
+import GeofenceOverlay from '../geofence/GeofenceOverlay'
 import { telemetry } from '../../data/site'
 import { ZONE_TYPES } from '../../data/geofence'
+import { useGeofence } from '../../context/GeofenceContext'
 import './CameraPanel.css'
 
 export default function CameraPanel({ compact = false }) {
+  const { zones, dirty, updatedAt } = useGeofence()
+
   if (compact) {
     return (
       <div className="camera-panel camera-panel-compact">
         <div className="camera-stage" style={{ maxHeight: 120 }}>
-          <CameraFeedIllustration />
+          <CameraFeedIllustration zones={zones} />
         </div>
       </div>
     )
@@ -34,11 +38,23 @@ export default function CameraPanel({ compact = false }) {
       </div>
 
       <div className="camera-stage">
-      <img
+        <img
+          className="camera-stage-feed"
           src="http://localhost:8000/stream"
           alt="Main Pool CCTV"
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
+        <svg
+          className="camera-geofence-overlay"
+          viewBox="0 0 1000 512"
+          preserveAspectRatio="xMidYMid slice"
+          aria-hidden="true"
+        >
+          <GeofenceOverlay zones={zones} />
+        </svg>
+        <div className={`geofence-sync-chip ${dirty ? 'is-live' : ''}`}>
+          {dirty ? 'Geofence live preview' : 'Geofence synced'}
+          {updatedAt && !dirty ? ` · ${new Date(updatedAt).toLocaleTimeString()}` : ''}
+        </div>
       </div>
 
       <div className="camera-footbar">

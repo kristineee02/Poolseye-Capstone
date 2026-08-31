@@ -23,7 +23,11 @@
         }
       ]
     ],
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "ios": {
       "supportsTablet": true
     },

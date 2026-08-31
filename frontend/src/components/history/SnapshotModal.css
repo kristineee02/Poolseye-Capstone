@@ -38,3 +38,9 @@
   color: var(--text-primary);
   text-align: right;
 }
+
+.snapshot-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+}

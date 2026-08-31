@@ -54,6 +54,8 @@ button {
   background: var(--bg-app);
   display: flex;
   align-items: stretch;
+  overflow: visible;
+  z-index: 20;
 }
 
 .workspace {

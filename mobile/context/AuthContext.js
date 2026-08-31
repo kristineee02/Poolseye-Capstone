@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+<<<<<<< HEAD
 import {
   checkLifeguardLogin,
   validateNewPassword,
@@ -79,19 +80,40 @@ function resolveAccountForUser(user, registry) {
   return null;
 }
 
+=======
+import { validateNewPassword } from '../auth/demoAuth';
+import { apiFetch, TOKEN_KEY, USER_KEY } from '../api/client';
+
+const AuthContext = createContext(null);
+
+>>>>>>> 5acf0b12d5d490e517b3bd15184a5f84a2bbb31a
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
+  const [token, setToken] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+<<<<<<< HEAD
         await ensureRegistrySeeded();
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (raw && !cancelled) {
           const saved = JSON.parse(raw);
           if (saved?.email) setUser(saved);
+=======
+        const storedToken = await AsyncStorage.getItem(TOKEN_KEY);
+        if (!storedToken) return;
+
+        const result = await apiFetch('/api/mobile/auth/me', { token: storedToken });
+        if (!cancelled && result.ok && result.user) {
+          setToken(storedToken);
+          setUser(result.user);
+          await AsyncStorage.setItem(USER_KEY, JSON.stringify(result.user));
+        } else if (!cancelled) {
+          await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
+>>>>>>> 5acf0b12d5d490e517b3bd15184a5f84a2bbb31a
         }
       } catch {
         // ignore corrupt session
@@ -104,12 +126,15 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const persistUser = async (nextUser) => {
+  const persistSession = async (nextToken, nextUser) => {
+    setToken(nextToken);
     setUser(nextUser);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser));
+    await AsyncStorage.setItem(TOKEN_KEY, nextToken);
+    await AsyncStorage.setItem(USER_KEY, JSON.stringify(nextUser));
   };
 
   const signIn = async (email, password) => {
+<<<<<<< HEAD
     const [storedCreds, registry] = await Promise.all([readCreds(), readRegistry()]);
     const account = checkLifeguardLogin(email, password, { storedCreds, registry });
     if (!account) return { ok: false, error: 'Invalid email or password' };
@@ -128,18 +153,30 @@ export function AuthProvider({ children }) {
       name: sameUser && prev?.name ? prev.name : account.name,
       initials: sameUser && prev?.initials ? prev.initials : account.initials,
       photoUri: sameUser && prev?.photoUri ? prev.photoUri : account.photoUri || null,
+=======
+    const result = await apiFetch('/api/mobile/auth/login', {
+      method: 'POST',
+      body: { email, password },
+>>>>>>> 5acf0b12d5d490e517b3bd15184a5f84a2bbb31a
     });
-    return { ok: true, mustChangePassword: account.mustChangePassword };
+    if (!result.ok) return { ok: false, error: result.error };
+
+    await persistSession(result.token, result.user);
+    return {
+      ok: true,
+      mustChangePassword: Boolean(result.user?.mustChangePassword),
+    };
   };
 
   const changePassword = async ({ currentPassword, newPassword, skipCurrentCheck = false }) => {
-    if (!user?.email) {
+    if (!user?.email || !token) {
       return { ok: false, error: 'You must be signed in to change your password.' };
     }
     if (!newPassword) {
       return { ok: false, error: 'Please enter a new password.' };
     }
 
+<<<<<<< HEAD
     const registry = await readRegistry();
     const email = normalizeEmail(user.email);
     const tempPassword = getTempPasswordForEmail(email, registry);
@@ -159,15 +196,23 @@ export function AuthProvider({ children }) {
       email: user.email,
       tempPassword,
     });
+=======
+    const check = validateNewPassword(newPassword, { email: user.email });
+>>>>>>> 5acf0b12d5d490e517b3bd15184a5f84a2bbb31a
     if (!check.ok) return check;
 
-    await writeCreds({
-      email: user.email,
-      password: newPassword,
-      mustChangePassword: false,
-      updatedAt: new Date().toISOString(),
+    const result = await apiFetch('/api/mobile/auth/change-password', {
+      method: 'POST',
+      token,
+      body: {
+        currentPassword,
+        newPassword,
+        skipCurrentCheck: skipCurrentCheck || user.mustChangePassword,
+      },
     });
+    if (!result.ok) return { ok: false, error: result.error };
 
+<<<<<<< HEAD
     const account = resolveAccountForUser(user, registry);
     const nextUser = {
       ...buildUser(account || DEMO_LIFEGUARD, { mustChangePassword: false }),
@@ -176,38 +221,36 @@ export function AuthProvider({ children }) {
       photoUri: user.photoUri || null,
     };
     await persistUser(nextUser);
+=======
+    await persistSession(token, result.user);
+>>>>>>> 5acf0b12d5d490e517b3bd15184a5f84a2bbb31a
     return { ok: true };
   };
 
   const updateProfile = async ({ name, photoUri } = {}) => {
-    if (!user) return { ok: false, error: 'You must be signed in.' };
+    if (!user || !token) return { ok: false, error: 'You must be signed in.' };
 
     const nextName = typeof name === 'string' ? name.trim() : user.name;
     if (!nextName) return { ok: false, error: 'Name is required.' };
 
-    const parts = nextName.split(/\s+/).filter(Boolean);
-    const initials =
-      parts.length === 0
-        ? 'LG'
-        : parts.length === 1
-          ? parts[0].slice(0, 2).toUpperCase()
-          : `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+    const result = await apiFetch('/api/mobile/auth/profile', {
+      method: 'PATCH',
+      token,
+      body: {
+        name: nextName,
+        photoUri: photoUri === undefined ? user.photoUri || null : photoUri,
+      },
+    });
+    if (!result.ok) return { ok: false, error: result.error };
 
-    const nextUser = {
-      ...user,
-      name: nextName,
-      initials,
-      photoUri: photoUri === undefined ? user.photoUri || null : photoUri,
-    };
-    await persistUser(nextUser);
+    await persistSession(token, result.user);
     return { ok: true };
   };
 
-  const updateAvatar = async (photoUri) => {
-    return updateProfile({ photoUri });
-  };
+  const updateAvatar = async (photoUri) => updateProfile({ photoUri });
 
   const verifyResetEmail = async (email) => {
+<<<<<<< HEAD
     const normalized = normalizeEmail(email);
     if (!normalized) {
       return { ok: false, error: 'Enter your account email.' };
@@ -234,23 +277,36 @@ export function AuthProvider({ children }) {
       email: normalized,
       tempPassword,
     });
+=======
+    const result = await apiFetch('/api/mobile/auth/forgot-password/verify-email', {
+      method: 'POST',
+      body: { email },
+    });
+    if (!result.ok) return { ok: false, error: result.error };
+    return { ok: true, email: result.email, demoCode: result.demoCode };
+  };
+
+  const resetPassword = async ({ email, newPassword, code }) => {
+    const check = validateNewPassword(newPassword, { email });
+>>>>>>> 5acf0b12d5d490e517b3bd15184a5f84a2bbb31a
     if (!check.ok) return check;
 
-    await writeCreds({
-      email: normalized,
-      password: newPassword,
-      mustChangePassword: false,
-      updatedAt: new Date().toISOString(),
+    const result = await apiFetch('/api/mobile/auth/forgot-password/reset', {
+      method: 'POST',
+      body: { email, newPassword, code },
     });
+    if (!result.ok) return { ok: false, error: result.error };
 
     setUser(null);
-    await AsyncStorage.removeItem(STORAGE_KEY);
+    setToken(null);
+    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
     return { ok: true };
   };
 
   const signOut = async () => {
     setUser(null);
-    await AsyncStorage.removeItem(STORAGE_KEY);
+    setToken(null);
+    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
   };
 
   return (
@@ -265,7 +321,6 @@ export function AuthProvider({ children }) {
         updateAvatar,
         verifyResetEmail,
         resetPassword,
-        tempPasswordHint: DEMO_LIFEGUARD.password,
       }}
     >
       {children}
