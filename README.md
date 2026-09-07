@@ -77,3 +77,15 @@ npm run dev       # starts frontend
 npm run mobile    # starts Expo
 npm run install:all
 ```
+
+## Host online
+
+See **[DEPLOY.md](./DEPLOY.md)** for Render (API) + Vercel (web) setup.
+
+Runtime URLs are configured with:
+
+- `VITE_API_URL` — Express backend
+- `VITE_STREAM_URL` — CCTV stream server (`live_server.py`)
+- `FRONTEND_ORIGIN` — allowed browser origin(s) for CORS
+
+Local defaults remain `http://localhost:4000` and `http://localhost:8000` when those vars are unset.

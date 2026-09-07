@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import EventRow from './EventRow'
 import { Icon } from '../ui/Icon'
+import { STREAM_BASE } from '../../config'
 import './LiveEventLogPanel.css'
 
-const EVENTS_URL = 'http://localhost:8000/events'
+const EVENTS_URL = `${STREAM_BASE}/events`
 const POLL_MS = 1500
 const MAX_VISIBLE = 40
 

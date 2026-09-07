@@ -91,6 +91,54 @@
   object-fit: cover;
 }
 
+.camera-stage-offline {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+}
+
+.camera-stage-offline svg {
+  width: 28px;
+  height: 28px;
+  color: var(--warn);
+}
+
+.camera-stage-offline strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.camera-stage-offline p {
+  margin: 0;
+  max-width: 360px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.camera-stage-offline code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-primary);
+}
+
+.live-tag.is-offline {
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+}
+
+.live-tag.is-offline .dot {
+  background: var(--text-tertiary);
+  animation: none;
+}
+
 .camera-geofence-overlay {
   position: absolute;
   inset: 0;

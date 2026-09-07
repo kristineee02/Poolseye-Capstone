@@ -4,6 +4,7 @@ import CameraPanel from '../components/camera/CameraPanel'
 import LiveEventLogPanel from '../components/history/LiveEventLogPanel'
 import { useToast, ToastContainer } from '../components/ui/Toast'
 import { cameras } from '../data/cameras'
+import { STREAM_BASE } from '../config'
 import './LiveMonitoringPage.css'
 import { Icon } from '../components/ui/Icon'
 
@@ -24,7 +25,7 @@ export default function LiveMonitoringPage() {
   useEffect(() => {
     // Soft reminder if stream server is not up yet (non-blocking)
     const timeout = setTimeout(() => {
-      fetch('http://localhost:8000/health', { cache: 'no-store' }).catch(() => {
+      fetch(`${STREAM_BASE}/health`, { cache: 'no-store' }).catch(() => {
         addToast('CCTV event feed offline — start scripts/live_server.py', 'warning')
       })
     }, 2500)
@@ -40,14 +41,14 @@ export default function LiveMonitoringPage() {
         <div>
           <h1>Live monitoring</h1>
           <div className="sub">
-            Main Pool · live CCTV 
+            Main Pool · live CCTV
           </div>
         </div>
         <div className="pagehead-right">
           <button
             className="chip-btn"
             type="button"
-            onClick={() => window.open('http://localhost:8000/events', '_blank')}
+            onClick={() => window.open(`${STREAM_BASE}/events`, '_blank')}
           >
             <Icon.Refresh /> Events API
           </button>
@@ -57,7 +58,6 @@ export default function LiveMonitoringPage() {
       <div className="live-camera-header">
         <div>
           <span className="live-cam-name">{POOL_CAMERA.name}</span>
-
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {POOL_CAMERA.status === 'online' && <span className="live-pill">● LIVE</span>}

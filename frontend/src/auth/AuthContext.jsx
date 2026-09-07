@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useState } from 'react'
+import { API_BASE } from '../config'
 
 const STORAGE_KEY = 'poolseye-admin-session'
 const PROFILE_EXTRA_KEY = 'poolseye-admin-profile-extra'
-const API_BASE = 'http://localhost:4000'
 
 const AuthContext = createContext(null)
 
@@ -80,7 +80,7 @@ export function AuthProvider({ children }) {
       setUser(mergeStoredPhoto(data.user))
       return { ok: true }
     } catch {
-      return { ok: false, error: 'Cannot reach backend server on port 4000' }
+      return { ok: false, error: 'Cannot reach backend server' }
     }
   }
 

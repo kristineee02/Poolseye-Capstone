@@ -2,7 +2,8 @@
  * Lifeguard accounts — backed by Express API (admin-provisioned only).
  */
 
-const API_BASE = 'http://localhost:4000'
+import { API_BASE } from '../config'
+
 const ADMIN_SESSION_KEY = 'poolseye-admin-session'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -29,7 +30,7 @@ async function apiFetch(path, options = {}) {
   try {
     res = await fetch(`${API_BASE}${path}`, { ...options, headers })
   } catch {
-    return { ok: false, error: 'Cannot reach backend server on port 4000.' }
+    return { ok: false, error: 'Cannot reach backend server.' }
   }
 
   const data = await res.json().catch(() => ({}))

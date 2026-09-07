@@ -25,6 +25,14 @@ function isAllowedOrigin(origin) {
   if (/^http:\/\/192\.168\.\d+\.\d+(:\d+)?$/.test(origin)) return true
   if (/^http:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/.test(origin)) return true
   if (/^exp:\/\//.test(origin)) return true
+
+  // Production frontends (Vercel, Netlify, custom domain)
+  const allowed = (process.env.FRONTEND_ORIGIN || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (allowed.includes(origin)) return true
+
   return false
 }
 
