@@ -22,6 +22,10 @@ import './LifeguardsPage.css'
 
 const ROLES = ['Primary Lifeguard', 'Backup Lifeguard', 'Lifeguard', 'On-Duty Supervisor']
 const ROLE_OPTIONS = ROLES.map((role) => ({ value: role, label: role }))
+const STATUS_OPTIONS = [
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
+]
 const ALERT_PRIORITY_OPTIONS = [
   { value: 'high', label: 'High — Drowning / Immediate danger' },
   { value: 'medium', label: 'Medium — Unsupervised child' },
@@ -684,7 +688,7 @@ export default function LifeguardsPage() {
           inputRef={addPhotoInputRef}
           onPhotoSelected={onAddPhotoSelected}
         />
-        <div className="form-row-3 lg-name-row">
+        <div className="form-row-3 lg-name-fields">
           <div className="form-field">
             <label>First name *</label>
             <input
@@ -712,15 +716,6 @@ export default function LifeguardsPage() {
               onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
             />
           </div>
-        </div>
-        <div className="form-field">
-          <label>Role</label>
-          <SelectDropdown
-            value={formData.role}
-            onChange={(role) => setFormData({ ...formData, role })}
-            options={ROLE_OPTIONS}
-            ariaLabel="Lifeguard role"
-          />
         </div>
         <div className="form-row-2">
           <div className="form-field">
@@ -786,6 +781,15 @@ export default function LifeguardsPage() {
           </div>
         </div>
         <div className="form-field">
+          <label>Role</label>
+          <SelectDropdown
+            value={formData.role}
+            onChange={(role) => setFormData({ ...formData, role })}
+            options={ROLE_OPTIONS}
+            ariaLabel="Lifeguard role"
+          />
+        </div>
+        <div className="form-field">
           <label>Assigned Zones</label>
           <p className="lg-form-hint lg-zone-hint">Select one or more pool areas for this lifeguard.</p>
           <div className="lg-zone-grid" role="group" aria-label="Assigned zones">
@@ -847,7 +851,7 @@ export default function LifeguardsPage() {
           inputRef={editPhotoInputRef}
           onPhotoSelected={onEditPhotoSelected}
         />
-        <div className="form-row-3 lg-name-row">
+        <div className="form-row-3 lg-name-fields">
           <div className="form-field">
             <label>First name *</label>
             <input
@@ -874,15 +878,6 @@ export default function LifeguardsPage() {
             />
           </div>
         </div>
-        <div className="form-field">
-          <label>Role</label>
-          <SelectDropdown
-            value={formData.role}
-            onChange={(role) => setFormData({ ...formData, role })}
-            options={ROLE_OPTIONS}
-            ariaLabel="Lifeguard role"
-          />
-        </div>
         <div className="form-row-2">
           <div className="form-field">
             <label>Email Address *</label>
@@ -902,11 +897,22 @@ export default function LifeguardsPage() {
           </div>
         </div>
         <div className="form-field">
+          <label>Role</label>
+          <SelectDropdown
+            value={formData.role}
+            onChange={(role) => setFormData({ ...formData, role })}
+            options={ROLE_OPTIONS}
+            ariaLabel="Lifeguard role"
+          />
+        </div>
+        <div className="form-field">
           <label>Status</label>
-          <select value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value })}>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
+          <SelectDropdown
+            value={formData.status}
+            onChange={(status) => setFormData({ ...formData, status })}
+            options={STATUS_OPTIONS}
+            ariaLabel="Account status"
+          />
         </div>
         <div className="form-field">
           <label>Assigned Zones</label>
