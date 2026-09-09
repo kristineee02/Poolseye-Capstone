@@ -1,16 +1,20 @@
 // PoolsEye — Home dashboard
 // Header → Alarm card → Overview strip → Recent alerts
 
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, LayoutAnimation,
+  RefreshControl,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
-import { alerts as initialAlerts } from '../data';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 import ProfileHero from '../components/ProfileHero';
 import ConfirmModal from '../components/ConfirmModal';
+import { useAuth } from '../context/AuthContext';
+import { fetchMobileEvents, updateMobileEventStatus } from '../api/events';
+
+const POLL_MS = 4000;
 
 function getAlertMeta(alert) {
   const isAlarm = alert.type === 'alarm';
@@ -186,60 +190,98 @@ function RecentAlertsSection({ alerts, onViewAll, onOpenAlert }) {
   );
 }
 
-export default function AlertsScreen({ onViewAllAlerts }) {
+export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) {
   const { tabBarClearance } = useLayoutInsets();
-  const [activeAlerts, setActiveAlerts] = useState(initialAlerts);
-  const [acknowledged, setAcknowledged] = useState({});
-  const [openedIds, setOpenedIds] = useState({});
+  const { token } = useAuth();
+  const [activeAlerts, setActiveAlerts] = useState([]);
+  const [recentAlerts, setRecentAlerts] = useState([]);
+  const [ackCount, setAckCount] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState(null);
+  const [error, setError] = useState('');
 
-  const markOpened = (id) => {
-    setOpenedIds((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
+  const loadAlerts = useCallback(async () => {
+    if (!token) return;
+    const [pendingRes, recentRes] = await Promise.all([
+      fetchMobileEvents(token, { alertsOnly: true, status: 'pending', limit: 20 }),
+      fetchMobileEvents(token, { alertsOnly: true, status: 'all', limit: 8 }),
+    ]);
+
+    if (!pendingRes.ok) {
+      setError(pendingRes.error || 'Could not load alerts');
+      return;
+    }
+
+    setError('');
+    setActiveAlerts(pendingRes.events || []);
+    onPendingCountChange?.(pendingRes.pendingCount ?? pendingRes.events?.length ?? 0);
+
+    if (recentRes.ok) {
+      setRecentAlerts(recentRes.events || []);
+      const cleared = (recentRes.events || []).filter((e) => e.status === 'ack').length;
+      setAckCount(cleared);
+    }
+  }, [token, onPendingCountChange]);
+
+  useEffect(() => {
+    loadAlerts();
+    if (!token) return undefined;
+    const id = setInterval(loadAlerts, POLL_MS);
+    return () => clearInterval(id);
+  }, [loadAlerts, token]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadAlerts();
+    setRefreshing(false);
   };
 
-  const removeAlert = (id) => {
+  const handleAcknowledge = async (id) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
+    const result = await updateMobileEventStatus(token, id, 'resolved');
+    if (!result.ok) {
+      setError(result.error || 'Failed to acknowledge');
+      await loadAlerts();
+      return;
+    }
+    onPendingCountChange?.(result.pendingCount);
+    await loadAlerts();
   };
 
-  const handleAcknowledge = (id) => {
-    const time = new Date().toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-    markOpened(id);
-    setAcknowledged((prev) => ({ ...prev, [id]: time }));
-    removeAlert(id);
-  };
-
-  const handleDismiss = (id) => {
-    markOpened(id);
-    removeAlert(id);
+  const handleDismiss = async (id) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
+    const result = await updateMobileEventStatus(token, id, 'dismissed');
+    if (!result.ok) {
+      setError(result.error || 'Failed to dismiss');
+      await loadAlerts();
+      return;
+    }
+    onPendingCountChange?.(result.pendingCount);
+    await loadAlerts();
   };
 
   const openRecentAlert = (alert) => {
-    markOpened(alert.id);
     setSelectedAlert(alert);
   };
 
   const closeRecentAlert = () => setSelectedAlert(null);
 
   const latest = activeAlerts[0] || null;
-  const recent = activeAlerts.slice(0, 4);
+  const recent = (recentAlerts.length ? recentAlerts : activeAlerts).slice(0, 4);
 
   const stats = useMemo(() => {
     const alarms = activeAlerts.filter((a) => a.type === 'alarm').length;
     const warnings = activeAlerts.filter((a) => a.type === 'warn').length;
     const active = activeAlerts.length;
-    const cleared = Object.keys(acknowledged).length;
     return [
       { key: 'intrusion', label: 'Intrusion', value: String(active), color: active > 0 ? colors.alarm : colors.textPrimary },
       { key: 'alarms', label: 'Alarms', value: String(alarms), color: alarms > 0 ? colors.alarm : colors.textPrimary },
       { key: 'warnings', label: 'Warnings', value: String(warnings), color: warnings > 0 ? colors.warn : colors.textPrimary },
-      { key: 'ack', label: 'Acknowledge', value: String(cleared), color: colors.safe },
+      { key: 'ack', label: 'Acknowledge', value: String(ackCount), color: colors.safe },
     ];
-  }, [activeAlerts, acknowledged]);
+  }, [activeAlerts, ackCount]);
 
   return (
     <>
@@ -247,12 +289,17 @@ export default function AlertsScreen({ onViewAllAlerts }) {
         style={styles.scroll}
         contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance + spacing.md }]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
+        }
       >
         <ProfileHero online />
 
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
         <ActiveAlertCard
           alert={latest}
-          onOpen={markOpened}
+          onOpen={() => {}}
           onAcknowledge={handleAcknowledge}
           onDismiss={handleDismiss}
         />
@@ -304,6 +351,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
     gap: 18,
+  },
+
+  errorText: {
+    fontSize: typography.sm,
+    color: colors.alarm,
+    fontWeight: '600',
   },
 
   clearCard: {

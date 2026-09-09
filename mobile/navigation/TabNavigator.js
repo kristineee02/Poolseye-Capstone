@@ -32,7 +32,9 @@ function TabIcon({ name, color, hasBadge, badgeCount }) {
       />
       {hasBadge ? (
         <View style={iconStyles.badge}>
-          <Text style={iconStyles.badgeText}>{badgeCount}</Text>
+          <Text style={iconStyles.badgeText}>
+            {badgeCount > 9 ? '9+' : String(badgeCount)}
+          </Text>
         </View>
       ) : null}
     </View>
@@ -116,15 +118,19 @@ const TABS = [
   { key: 'profile', label: 'Profile', title: 'Profile',    subtitle: null },
 ];
 
-export default function TabNavigator({ alertBadgeCount = 2 }) {
+export default function TabNavigator() {
   const [active, setActive] = useState('home');
+  const [alertBadgeCount, setAlertBadgeCount] = useState(0);
   const { tabBarPaddingBottom, horizontalInset } = useLayoutInsets();
 
   const screens = {
     home: (
-      <AlertsScreen onViewAllAlerts={() => setActive('alerts')} />
+      <AlertsScreen
+        onViewAllAlerts={() => setActive('alerts')}
+        onPendingCountChange={setAlertBadgeCount}
+      />
     ),
-    alerts:  <LogScreen />,
+    alerts: <LogScreen onPendingCountChange={setAlertBadgeCount} />,
     profile: <ProfileScreen />,
   };
 

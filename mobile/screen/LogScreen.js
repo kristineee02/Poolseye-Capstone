@@ -1,13 +1,17 @@
 // PoolsEye — LogScreen (All Alerts)
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, Modal, Pressable,
+  RefreshControl,
 } from 'react-native';
 import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
-import { events } from '../data';
 import { Tag } from '../components/Primitives';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
+import { useAuth } from '../context/AuthContext';
+import { fetchMobileEvents } from '../api/events';
+
+const POLL_MS = 5000;
 
 const FILTERS = [
   { key: 'all', label: 'All' },
@@ -145,13 +149,46 @@ function AlertCard({ event }) {
   );
 }
 
-export default function LogScreen() {
+export default function LogScreen({ onPendingCountChange }) {
   const { tabBarClearance } = useLayoutInsets();
+  const { token } = useAuth();
   const [filter, setFilter] = useState('all');
+  const [events, setEvents] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+
+  const loadEvents = useCallback(async () => {
+    if (!token) return;
+    const result = await fetchMobileEvents(token, {
+      alertsOnly: true,
+      status: 'all',
+      limit: 80,
+    });
+    if (!result.ok) {
+      setError(result.error || 'Could not load alerts');
+      return;
+    }
+    setError('');
+    setEvents(result.events || []);
+    onPendingCountChange?.(result.pendingCount || 0);
+  }, [token, onPendingCountChange]);
+
+  useEffect(() => {
+    loadEvents();
+    if (!token) return undefined;
+    const id = setInterval(loadEvents, POLL_MS);
+    return () => clearInterval(id);
+  }, [loadEvents, token]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadEvents();
+    setRefreshing(false);
+  };
 
   const filtered = useMemo(
     () => events.filter((e) => matchesFilter(e, filter)),
-    [filter],
+    [events, filter],
   );
 
   return (
@@ -163,16 +200,27 @@ export default function LogScreen() {
         <FilterDropdown value={filter} onChange={setFilter} />
       </View>
 
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <AlertCard event={item} />}
         contentContainerStyle={[styles.listContent, { paddingBottom: tabBarClearance + spacing.sm }]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
+        }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>No alerts match this filter</Text>
-            <Text style={styles.emptySub}>Try another option in the filter dropdown.</Text>
+            <Text style={styles.emptyTitle}>
+              {error ? 'Alerts unavailable' : 'No alerts match this filter'}
+            </Text>
+            <Text style={styles.emptySub}>
+              {error
+                ? 'Pull to refresh once the backend and CCTV stream are running.'
+                : 'Try another option in the filter dropdown.'}
+            </Text>
           </View>
         }
       />
@@ -197,6 +245,12 @@ const styles = StyleSheet.create({
     fontSize: typography.sm,
     color: colors.textSecondary,
     fontWeight: '600',
+  },
+  errorText: {
+    fontSize: typography.sm,
+    color: colors.alarm,
+    fontWeight: '600',
+    marginBottom: 8,
   },
   filterBtn: {
     flexDirection: 'row',
