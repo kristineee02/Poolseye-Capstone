@@ -159,8 +159,10 @@ export default function TabNavigator({ alertBadgeCount = 2 }) {
       </View>
 
       <View
-        style={[styles.tabBarAnchor, { marginBottom: tabBarPaddingBottom }]}
-        pointerEvents="box-none"
+        style={[
+          styles.tabBarAnchor,
+          { marginBottom: tabBarPaddingBottom, pointerEvents: 'box-none' },
+        ]}
       >
         <View style={styles.tabBarPill}>
           {TABS.map((tab) => (

@@ -22,3 +22,4 @@ env/
 # Backend env
 backend/.env
 ai/.env
+mobile/.env
