@@ -275,7 +275,8 @@ class PersonTracker:
             prev = st.zone
 
         event, is_alert = crossing_event(prev, zone)
-        if event and st.last_alert_key == event and (now - st.last_event_time) < self.cooldown_sec:
+        # Suppress repeats of the same crossing (alerts and info) while in cooldown
+        if event and st.last_event == event and (now - st.last_event_time) < self.cooldown_sec:
             event, is_alert = None, False
 
         st.prev_zone = prev

@@ -10,7 +10,8 @@ import './CameraPanel.css'
 
 export default function CameraPanel({ compact = false }) {
   const { zones, dirty, updatedAt } = useGeofence()
-  const [streamOnline, setStreamOnline] = useState(true)
+  const [streamStatus, setStreamStatus] = useState('connecting')
+  const [streamSource, setStreamSource] = useState('rtsp')
   const streamSrc = `${STREAM_BASE}/stream`
 
   useEffect(() => {
@@ -21,10 +22,13 @@ export default function CameraPanel({ compact = false }) {
       fetch(`${STREAM_BASE}/health`, { cache: 'no-store' })
         .then((res) => (res.ok ? res.json() : Promise.reject()))
         .then((data) => {
-          if (!cancelled) setStreamOnline(Boolean(data?.has_frame ?? data?.ok))
+          if (cancelled) return
+          setStreamSource(data?.source || 'rtsp')
+          if (data?.has_frame) setStreamStatus('online')
+          else setStreamStatus('connecting')
         })
         .catch(() => {
-          if (!cancelled) setStreamOnline(false)
+          if (!cancelled) setStreamStatus('offline')
         })
     }
 
@@ -49,9 +53,9 @@ export default function CameraPanel({ compact = false }) {
   return (
     <div className="camera-panel">
       <div className="camera-head">
-        <div className={`live-tag${!streamOnline ? ' is-offline' : ''}`}>
+        <div className={`live-tag${streamStatus !== 'online' ? ' is-offline' : ''}`}>
           <span className="dot" />
-          {streamOnline ? 'LIVE' : 'OFFLINE'}
+          {streamStatus === 'online' ? 'LIVE' : streamStatus === 'connecting' ? 'CONNECTING' : 'OFFLINE'}
         </div>
         <div className="name">Main Pool — CCTV</div>
         <div className="id">CAM-01 · OV9281 · single feed</div>
@@ -65,21 +69,30 @@ export default function CameraPanel({ compact = false }) {
       </div>
 
       <div className="camera-stage">
-        {streamOnline ? (
+        {streamStatus === 'online' ? (
           <img
             className="camera-stage-feed"
             src={streamSrc}
             alt="Main Pool CCTV"
-            onError={() => setStreamOnline(false)}
-            onLoad={() => setStreamOnline(true)}
+            onError={() => setStreamStatus('offline')}
+            onLoad={() => setStreamStatus('online')}
           />
         ) : (
           <div className="camera-stage-offline" role="status">
             <Icon.AlertTriangle />
-            <strong>CCTV offline</strong>
+            <strong>{streamStatus === 'connecting' ? 'Connecting to camera' : 'CCTV offline'}</strong>
             <p>
-              Start <code>scripts/live_server.py</code> on the on-site PC, or set{' '}
-              <code>VITE_STREAM_URL</code> when hosting online.
+              {streamStatus === 'connecting' ? (
+                <>
+                  Stream server is up. Waiting for frames
+                  {streamSource === 'webcam' ? ' from the laptop webcam' : ' from the Tapo RTSP camera'}.
+                </>
+              ) : (
+                <>
+                  Start <code>scripts/live_server.py</code> on the on-site PC, or set{' '}
+                  <code>VITE_STREAM_URL</code> when hosting online.
+                </>
+              )}
             </p>
           </div>
         )}

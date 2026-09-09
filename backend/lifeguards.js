@@ -8,6 +8,8 @@ const {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const CODE_TTL_MS = 10 * 60 * 1000
+const DEFAULT_LIFEGUARD_ROLE = 'Lifeguard'
+const DEFAULT_ASSIGNED_ZONES = ['Main Pool']
 
 function initials(name) {
   return String(name || '')
@@ -44,16 +46,17 @@ function parseLifeguardId(id) {
 
 function rowToGuard(row) {
   if (!row) return null
+  const assignedZones = parseJson(row.assigned_zones, [])
   return {
     id: lifeguardId(row.id),
     initials: initials(row.name),
     name: row.name,
     email: row.email,
     phone: row.phone || '',
-    role: row.lifeguard_role || 'Lifeguard',
+    role: row.lifeguard_role || DEFAULT_LIFEGUARD_ROLE,
     status: row.status || 'active',
     certifications: parseJson(row.certifications, ['Lifeguard']),
-    assignedZones: parseJson(row.assigned_zones, []),
+    assignedZones: assignedZones.length ? assignedZones : [...DEFAULT_ASSIGNED_ZONES],
     onDutySince: row.on_duty_since || null,
     lastAlertAcknowledgedAt: row.last_alert_acknowledged_at || null,
     responseTime: row.response_time || null,
@@ -242,8 +245,8 @@ function registerLifeguardRoutes(app, db, adminRequired) {
       const name = String(req.body?.name || '').trim()
       const email = normalizeEmail(req.body?.email)
       const phone = String(req.body?.phone || '').trim()
-      const role = String(req.body?.role || 'Lifeguard').trim()
-      const assignedZones = Array.isArray(req.body?.assignedZones) ? req.body.assignedZones : []
+      const role = DEFAULT_LIFEGUARD_ROLE
+      const assignedZones = [...DEFAULT_ASSIGNED_ZONES]
       const tempPassword = String(req.body?.tempPassword || '')
       const photoUri = req.body?.photoUri || null
 
@@ -306,10 +309,8 @@ function registerLifeguardRoutes(app, db, adminRequired) {
       const name = String(req.body?.name ?? current.name).trim()
       const email = normalizeEmail(req.body?.email ?? current.email)
       const phone = String(req.body?.phone ?? current.phone ?? '').trim()
-      const role = String(req.body?.role ?? current.lifeguard_role ?? 'Lifeguard').trim()
-      const assignedZones = Array.isArray(req.body?.assignedZones)
-        ? req.body.assignedZones
-        : parseJson(current.assigned_zones, [])
+      const role = DEFAULT_LIFEGUARD_ROLE
+      const assignedZones = [...DEFAULT_ASSIGNED_ZONES]
       const photoUri = req.body?.photoUri !== undefined ? req.body.photoUri : current.photo_uri
       let status = req.body?.status ?? current.status
       if (status === 'inactive') status = 'archived'

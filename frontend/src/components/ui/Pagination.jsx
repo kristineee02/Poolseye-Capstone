@@ -2,6 +2,8 @@ import { useMemo } from 'react'
 import { Icon } from './Icon'
 import './Pagination.css'
 
+const VISIBLE_PAGES = 5
+
 export default function Pagination({
   page,
   totalPages,
@@ -13,10 +15,22 @@ export default function Pagination({
   const current = Math.min(Math.max(1, page), safeTotal)
 
   const pages = useMemo(() => {
+    if (safeTotal <= VISIBLE_PAGES) {
+      return Array.from({ length: safeTotal }, (_, i) => i + 1)
+    }
+
+    // Sliding window of 5 pages, kept near the current page
+    let start = Math.max(1, current - Math.floor(VISIBLE_PAGES / 2))
+    let end = start + VISIBLE_PAGES - 1
+    if (end > safeTotal) {
+      end = safeTotal
+      start = end - VISIBLE_PAGES + 1
+    }
+
     const list = []
-    for (let i = 1; i <= safeTotal; i += 1) list.push(i)
+    for (let i = start; i <= end; i += 1) list.push(i)
     return list
-  }, [safeTotal])
+  }, [current, safeTotal])
 
   if (safeTotal <= 1 && !summary) return null
 
@@ -47,11 +61,12 @@ export default function Pagination({
           ))}
           <button
             type="button"
-            className="ui-page-btn ui-page-nav"
+            className="ui-page-btn ui-page-next"
             disabled={current >= safeTotal}
             onClick={() => onPageChange(current + 1)}
             aria-label="Next page"
           >
+            Next
             <Icon.ChevronRight />
           </button>
         </div>

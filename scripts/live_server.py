@@ -38,6 +38,7 @@ from zone_check import (  # noqa: E402
 CONFIG_PATH = SCRIPTS_DIR / "config.json"
 GEOFENCE_API = os.environ.get("GEOFENCE_API", "http://127.0.0.1:4000/api/geofence/live")
 EVENTS_INGEST_API = os.environ.get("EVENTS_INGEST_API", "http://127.0.0.1:4000/api/events/ingest")
+DEFAULT_RTSP = "rtsp://PoolsEye:PoolsEyeCapstone@192.168.1.20:554/stream1"
 
 app = Flask(__name__)
 
@@ -48,6 +49,12 @@ _latest_reports: list = []
 _event_log: deque = deque(maxlen=100)
 _running = True
 _zcfg: dict | None = None
+_source_kind = "rtsp"
+# Dedupe: same person + event + zone logs once until something changes
+_last_logged_by_person: dict[int, tuple[str, str]] = {}
+# Cross-track flicker: same event+zone within this window is skipped
+_EVENT_DEDUPE_SEC = 8.0
+_last_logged_global: tuple[str, str, float] | None = None
 
 # Crossing text from zone_check → dashboard event shape
 EVENT_CATALOG = {
@@ -111,7 +118,28 @@ def sync_event_to_backend(entry: dict):
 
 
 def push_event(person_id: int, zone: str, event_name: str, is_alert: bool):
-    """Append a dashboard-ready event when a zone crossing fires."""
+    """Append a dashboard-ready event when a zone crossing fires (once per change)."""
+    global _last_logged_global
+    pid = int(person_id)
+    key = (str(event_name), str(zone))
+    now_ts = time.time()
+
+    with _lock:
+        if _last_logged_by_person.get(pid) == key:
+            return None
+        prev_global = _last_logged_global
+        if (
+            prev_global is not None
+            and prev_global[0] == key[0]
+            and prev_global[1] == key[1]
+            and (now_ts - prev_global[2]) < _EVENT_DEDUPE_SEC
+        ):
+            # Same sighting under a new YOLO track id — keep one log entry
+            _last_logged_by_person[pid] = key
+            return None
+        _last_logged_by_person[pid] = key
+        _last_logged_global = (key[0], key[1], now_ts)
+
     meta = EVENT_CATALOG.get(event_name, {
         "type": "warn" if is_alert else "info",
         "code": "EVT",
@@ -264,12 +292,51 @@ def geofence_poll_loop(fallback: dict):
         time.sleep(0.4)
 
 
-def capture_loop(rtsp_url: str, cfg: dict):
-    global _latest_jpeg, _latest_reports, _running, _zcfg
+def load_camera_settings(cfg: dict) -> dict:
+    cam = cfg.get("CAMERA") or {}
+    fallback = cam.get("fallback_webcam", True)
+    if isinstance(fallback, str):
+        fallback = fallback.strip().lower() not in {"0", "false", "no"}
+    source = str(cam.get("source") or "rtsp").strip().lower()
+    if source in {"0", "webcam", "laptop"}:
+        source = "webcam"
+    return {
+        "source": source,
+        "rtsp_url": cam.get("rtsp_url") or DEFAULT_RTSP,
+        "webcam_index": int(cam.get("webcam_index", 0)),
+        "fallback_webcam": bool(fallback),
+    }
+
+
+def resolve_capture_kind(settings: dict) -> str:
+    if settings["source"] == "webcam":
+        return "webcam"
+    return "rtsp"
+
+
+def open_capture(kind: str, settings: dict):
+    if kind == "webcam":
+        index = settings["webcam_index"]
+        print(f"[stream] opening webcam index {index}")
+        cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            cap.release()
+            cap = cv2.VideoCapture(index)
+        return cap
+
+    print("[stream] connecting to RTSP...")
+    # Same open path as test_tapo.py (default backend, not CAP_FFMPEG).
+    cap = cv2.VideoCapture(settings["rtsp_url"])
+    return cap
+
+
+def capture_loop(cfg: dict):
+    global _latest_jpeg, _latest_reports, _running, _zcfg, _source_kind
 
     pose_cfg = cfg.get("POSE", {})
     track_cfg = cfg.get("TRACKING", {})
     fallback_zcfg = cfg["ZONES"]
+    camera = load_camera_settings(cfg)
     with _zcfg_lock:
         if _zcfg is None:
             _zcfg = fallback_zcfg
@@ -305,24 +372,30 @@ def capture_loop(rtsp_url: str, cfg: dict):
     last_reports: list = []
 
     while _running:
-        print("[stream] connecting to RTSP...")
-        cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
-        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)
-        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000)
-        try:
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        except Exception:
-            pass
+        kind = resolve_capture_kind(camera)
+        _source_kind = kind
+        cap = open_capture(kind, camera)
+
+        if not cap.isOpened() and kind == "rtsp" and camera["fallback_webcam"]:
+            print("[stream] RTSP open failed — falling back to laptop webcam")
+            cap.release()
+            kind = "webcam"
+            _source_kind = kind
+            cap = open_capture(kind, camera)
 
         if not cap.isOpened():
-            print("[stream] open failed — check IP / RTSP / password. Retry in 5s...")
+            if kind == "webcam":
+                print("[stream] webcam open failed — check that a camera is connected. Retry in 5s...")
+            else:
+                print("[stream] open failed — check IP / RTSP / password. Retry in 5s...")
             time.sleep(5)
             continue
 
-        print("[stream] connected — annotating frames for dashboard")
+        print(f"[stream] connected ({kind}) — annotating frames for dashboard")
         fail = 0
+        flush = 0 if kind == "webcam" else rtsp_flush
         while _running:
-            ok, frame = read_fresh_frame(cap, rtsp_flush)
+            ok, frame = read_fresh_frame(cap, flush)
             if not ok or frame is None:
                 fail += 1
                 if fail > 30:
@@ -335,13 +408,18 @@ def capture_loop(rtsp_url: str, cfg: dict):
             frame = resize_max_width(frame, max_width)
             frame_i += 1
 
+            fresh_events = False
             try:
                 zcfg = current_zcfg(fallback_zcfg)
                 if frame_i % infer_every_n == 0 or not draw_cache:
                     annotated, reports, draw_cache = annotate_frame(
                         frame, model, zcfg, tracker, conf, kpt_conf, imgsz
                     )
-                    last_reports = reports
+                    # Strip events from cache so non-infer frames never re-log
+                    last_reports = [
+                        {**r, "event": None, "is_alert": False} for r in reports
+                    ]
+                    fresh_events = True
                 else:
                     annotated = redraw_cached(frame, zcfg, draw_cache, kpt_conf)
                     reports = last_reports
@@ -360,18 +438,21 @@ def capture_loop(rtsp_url: str, cfg: dict):
                 _latest_jpeg = buf.tobytes()
                 _latest_reports = reports
 
-            for r in reports:
-                if r.get("event"):
-                    push_event(
+            if fresh_events:
+                for r in reports:
+                    if not r.get("event"):
+                        continue
+                    logged = push_event(
                         r["id"],
                         r["zone"],
                         r["event"],
                         bool(r.get("is_alert")),
                     )
-                    print(
-                        f"  Person #{r['id']} | Zone: {ZONE_LABEL.get(r['zone'], r['zone'])} "
-                        f"| Event: {r['event']}"
-                    )
+                    if logged:
+                        print(
+                            f"  Person #{r['id']} | Zone: {ZONE_LABEL.get(r['zone'], r['zone'])} "
+                            f"| Event: {r['event']}"
+                        )
 
         cap.release()
         time.sleep(1)
@@ -423,7 +504,13 @@ def health():
         ready = _latest_jpeg is not None
         n = len(_latest_reports)
         n_events = len(_event_log)
-    return jsonify({"ok": True, "has_frame": ready, "people": n, "events": n_events})
+    return jsonify({
+        "ok": True,
+        "has_frame": ready,
+        "people": n,
+        "events": n_events,
+        "source": _source_kind,
+    })
 
 
 @app.get("/events")
@@ -452,20 +539,16 @@ def events():
     })
 
 
-def load_rtsp_url(cfg: dict) -> str:
-    url = cfg.get("CAMERA", {}).get("rtsp_url")
-    if url:
-        return url
-    return "rtsp://PoolsEye:PoolsEyeCapstone@192.168.1.11:554/stream1"
-
-
 if __name__ == "__main__":
     cfg = load_full_config(CONFIG_PATH)
-    rtsp = load_rtsp_url(cfg)
+    camera = load_camera_settings(cfg)
     print(f"[stream] config {CONFIG_PATH}")
-    print("[stream] RTSP host from config (password hidden)")
+    print(
+        f"[stream] camera source={camera['source']} "
+        f"fallback_webcam={camera['fallback_webcam']}"
+    )
 
-    t = threading.Thread(target=capture_loop, args=(rtsp, cfg), daemon=True)
+    t = threading.Thread(target=capture_loop, args=(cfg,), daemon=True)
     t.start()
     threading.Thread(target=geofence_poll_loop, args=(cfg["ZONES"],), daemon=True).start()
     print(f"[stream] watching geofence API {GEOFENCE_API}")

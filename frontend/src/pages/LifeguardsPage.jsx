@@ -20,8 +20,6 @@ import {
 import { getPasswordRuleChecks, validatePassword } from '../utils/password'
 import './LifeguardsPage.css'
 
-const ROLES = ['Primary Lifeguard', 'Backup Lifeguard', 'Lifeguard', 'On-Duty Supervisor']
-const ROLE_OPTIONS = ROLES.map((role) => ({ value: role, label: role }))
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
   { value: 'inactive', label: 'Inactive' },
@@ -31,7 +29,8 @@ const ALERT_PRIORITY_OPTIONS = [
   { value: 'medium', label: 'Medium — Unsupervised child' },
   { value: 'low', label: 'Low — Informational' },
 ]
-const ZONES = ['Main Pool', 'North Pool', 'Kiddie Pool', 'Entrance']
+const DEFAULT_ROLE = 'Lifeguard'
+const DEFAULT_ASSIGNED_ZONES = ['Main Pool']
 const PAGE_SIZE = 4
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024
 
@@ -41,8 +40,8 @@ const emptyAddForm = {
   lastName: '',
   email: '',
   phone: '',
-  role: 'Lifeguard',
-  assignedZones: [],
+  role: DEFAULT_ROLE,
+  assignedZones: [...DEFAULT_ASSIGNED_ZONES],
   status: 'active',
 }
 
@@ -69,6 +68,25 @@ function splitFullName(name) {
     middleName: parts.slice(1, -1).join(' '),
     lastName: parts[parts.length - 1],
   }
+}
+
+function ReadonlyAssignmentFields() {
+  return (
+    <div className="form-row-2">
+      <div className="form-field">
+        <label>Role</label>
+        <div className="lg-readonly-field" aria-readonly="true">
+          {DEFAULT_ROLE}
+        </div>
+      </div>
+      <div className="form-field">
+        <label>Assigned zone</label>
+        <div className="lg-readonly-field" aria-readonly="true">
+          {DEFAULT_ASSIGNED_ZONES[0]}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function FormAvatarPicker({ name, photoUri, onPick, inputRef, onPhotoSelected }) {
@@ -229,15 +247,6 @@ export default function LifeguardsPage() {
   const activeCount = guards.filter((g) => g.status === 'active').length
   const archivedCount = guards.filter((g) => g.status === 'archived').length
 
-  const toggleZone = (zone) => {
-    setFormData((f) => ({
-      ...f,
-      assignedZones: f.assignedZones.includes(zone)
-        ? f.assignedZones.filter((z) => z !== zone)
-        : [...f.assignedZones, zone],
-    }))
-  }
-
   const resetAddForm = () => {
     setFormData(emptyAddForm)
     setTempPassword('')
@@ -354,8 +363,8 @@ export default function LifeguardsPage() {
       ...splitFullName(guard.name),
       email: guard.email,
       phone: guard.phone,
-      role: guard.role,
-      assignedZones: [...guard.assignedZones],
+      role: DEFAULT_ROLE,
+      assignedZones: [...DEFAULT_ASSIGNED_ZONES],
       status: guard.status === 'archived' ? 'inactive' : guard.status,
     })
     setEditPhotoUri(guard.photoUri || null)
@@ -396,8 +405,8 @@ export default function LifeguardsPage() {
       name,
       email: formData.email,
       phone: formData.phone,
-      role: formData.role,
-      assignedZones: formData.assignedZones,
+      role: DEFAULT_ROLE,
+      assignedZones: [...DEFAULT_ASSIGNED_ZONES],
       tempPassword,
       photoUri: addPhotoUri,
     })
@@ -440,8 +449,8 @@ export default function LifeguardsPage() {
       name,
       email: formData.email,
       phone: formData.phone,
-      role: formData.role,
-      assignedZones: formData.assignedZones,
+      role: DEFAULT_ROLE,
+      assignedZones: [...DEFAULT_ASSIGNED_ZONES],
       status: formData.status,
       photoUri: editPhotoUri,
     })
@@ -780,38 +789,7 @@ export default function LifeguardsPage() {
             />
           </div>
         </div>
-        <div className="form-field">
-          <label>Role</label>
-          <SelectDropdown
-            value={formData.role}
-            onChange={(role) => setFormData({ ...formData, role })}
-            options={ROLE_OPTIONS}
-            ariaLabel="Lifeguard role"
-          />
-        </div>
-        <div className="form-field">
-          <label>Assigned Zones</label>
-          <p className="lg-form-hint lg-zone-hint">Select one or more pool areas for this lifeguard.</p>
-          <div className="lg-zone-grid" role="group" aria-label="Assigned zones">
-            {ZONES.map((z) => {
-              const selected = formData.assignedZones.includes(z)
-              return (
-                <label key={z} className={`lg-zone-card${selected ? ' selected' : ''}`}>
-                  <input
-                    type="checkbox"
-                    className="lg-zone-input"
-                    checked={selected}
-                    onChange={() => toggleZone(z)}
-                  />
-                  <span className="lg-zone-check" aria-hidden="true">
-                    {selected ? <Icon.Check /> : null}
-                  </span>
-                  <span className="lg-zone-label">{z}</span>
-                </label>
-              )
-            })}
-          </div>
-        </div>
+        <ReadonlyAssignmentFields />
         <PasswordInput
           label="Temporary password *"
           value={tempPassword}
@@ -896,15 +874,7 @@ export default function LifeguardsPage() {
             />
           </div>
         </div>
-        <div className="form-field">
-          <label>Role</label>
-          <SelectDropdown
-            value={formData.role}
-            onChange={(role) => setFormData({ ...formData, role })}
-            options={ROLE_OPTIONS}
-            ariaLabel="Lifeguard role"
-          />
-        </div>
+        <ReadonlyAssignmentFields />
         <div className="form-field">
           <label>Status</label>
           <SelectDropdown
@@ -913,29 +883,6 @@ export default function LifeguardsPage() {
             options={STATUS_OPTIONS}
             ariaLabel="Account status"
           />
-        </div>
-        <div className="form-field">
-          <label>Assigned Zones</label>
-          <p className="lg-form-hint lg-zone-hint">Select one or more pool areas for this lifeguard.</p>
-          <div className="lg-zone-grid" role="group" aria-label="Assigned zones">
-            {ZONES.map((z) => {
-              const selected = formData.assignedZones.includes(z)
-              return (
-                <label key={z} className={`lg-zone-card${selected ? ' selected' : ''}`}>
-                  <input
-                    type="checkbox"
-                    className="lg-zone-input"
-                    checked={selected}
-                    onChange={() => toggleZone(z)}
-                  />
-                  <span className="lg-zone-check" aria-hidden="true">
-                    {selected ? <Icon.Check /> : null}
-                  </span>
-                  <span className="lg-zone-label">{z}</span>
-                </label>
-              )
-            })}
-          </div>
         </div>
       </FormModal>
 
