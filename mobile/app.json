@@ -6,12 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon-v12.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#FFFFFF",
-      "imageWidth": 300
-    },
     "plugins": [
       [
         "expo-splash-screen",
@@ -36,9 +30,6 @@
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FFFFFF"
-      },
-      "navigationBar": {
         "backgroundColor": "#FFFFFF"
       }
     }
