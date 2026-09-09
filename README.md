@@ -34,7 +34,7 @@ npm run dev      # http://localhost:5173
 
 Sign in as admin, then use **Lifeguard accounts** to create mobile login credentials.
 
-## Mobile (Expo SDK 54)
+## Mobile (Expo SDK 57)
 
 ```bash
 cd mobile
@@ -42,15 +42,17 @@ npm install
 npx expo install --fix
 ```
 
-Set your PC's LAN IP so the phone can reach the backend:
+Set your PC's LAN IP so the phone can reach the backend (optional — Expo Go usually auto-detects):
 
 ```bash
-# PowerShell — replace with your IP from ipconfig
+# PowerShell — replace with your IP from ipconfig (only if auto-detect fails)
 $env:EXPO_PUBLIC_API_URL="http://192.168.1.3:4000"
 npm start
 ```
 
-Scan the QR code in **Expo Go (SDK 54)** on your phone (same Wi‑Fi as your PC).
+By default the app derives `http://<your-pc-lan-ip>:4000` from the Expo/Metro host, so a physical phone on the same Wi‑Fi works without setting the env var. Keep `backend` running (`npm run dev` on port 4000).
+
+Scan the QR code in **Expo Go (SDK 57)** on your phone (same Wi‑Fi as your PC).
 
 ## Email API setup (Brevo)
 
