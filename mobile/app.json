@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "PoolsEye",
-    "slug": "poolseye-capstone",
+    "slug": "poolseye",
     "version": "1.2.4",
     "orientation": "portrait",
     "icon": "./assets/icon-v12.png",
@@ -26,11 +26,18 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.poolseye.lifeguard",
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
       }
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "43954830-68f6-4eff-9380-fdb8ebb9bfc4"
+      }
+    },
+    "owner": "aaeriess-team"
   }
 }
