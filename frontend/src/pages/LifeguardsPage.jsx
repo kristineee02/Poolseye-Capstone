@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../components/ui/Icon'
-import { FormModal, ConfirmModal } from '../components/ui/Modal'
+import { FormModal, ConfirmModal, StatusModal, useStatusModal } from '../components/ui/Modal'
 import { SelectDropdown } from '../components/ui/Dropdown'
 import { StatusBadge } from '../components/ui/Badge'
 import { EmptyState } from '../components/ui/EmptyState'
 import Pagination from '../components/ui/Pagination'
-import { useToast, ToastContainer } from '../components/ui/Toast'
 import {
   fetchLifeguards,
   createLifeguard,
@@ -89,7 +88,7 @@ function ReadonlyAssignmentFields() {
   )
 }
 
-function FormAvatarPicker({ name, photoUri, onPick, inputRef, onPhotoSelected }) {
+function FormAvatarPicker({ name, photoUri, onPick, inputRef, onPhotoSelected, error }) {
   const initials = useMemo(() => {
     const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
     if (!parts.length) return 'LG'
@@ -124,11 +123,12 @@ function FormAvatarPicker({ name, photoUri, onPick, inputRef, onPhotoSelected })
         />
       </div>
       <p className="lg-form-photo-hint">Profile picture (optional)</p>
+      {error ? <p className="field-error">{error}</p> : null}
     </div>
   )
 }
 
-function PasswordInput({ label, value, onChange, placeholder, visible, onToggle }) {
+function PasswordInput({ label, value, onChange, placeholder, visible, onToggle, error }) {
   return (
     <div className="form-field">
       <label>{label}</label>
@@ -149,6 +149,7 @@ function PasswordInput({ label, value, onChange, placeholder, visible, onToggle 
           {visible ? <Icon.EyeOff /> : <Icon.Eye />}
         </button>
       </div>
+      {error ? <p className="field-error">{error}</p> : null}
     </div>
   )
 }
@@ -200,7 +201,11 @@ export default function LifeguardsPage() {
   const [search, setSearch] = useState('')
   const [rosterView, setRosterView] = useState('active')
   const [page, setPage] = useState(1)
-  const { toasts, addToast, removeToast } = useToast()
+  const { status, showStatus, closeStatus } = useStatusModal()
+  const [fieldErrors, setFieldErrors] = useState({})
+  const [photoError, setPhotoError] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [updating, setUpdating] = useState(false)
 
   useEffect(() => {
     fetchLifeguards().then(setGuards)
@@ -278,15 +283,18 @@ export default function LifeguardsPage() {
     try {
       const result = await sendVerificationCode(formData.email)
       if (!result.ok) {
-        addToast(result.error, 'warning')
+        showStatus({ tone: 'error', title: 'Code not sent', message: result.error || 'Could not send a verification code.' })
         return
       }
       setCodeSent(true)
       setVerificationCode('')
-      addToast(result.message, 'success')
-      if (result.demoCode) {
-        addToast(`Demo mode: verification code is ${result.demoCode}`, 'info')
-      }
+      showStatus({
+        tone: 'success',
+        title: 'Code sent',
+        message: result.demoCode
+          ? `A verification code was sent. Demo code: ${result.demoCode}`
+          : (result.message || 'A verification code was sent to this email.'),
+      })
     } finally {
       setSendingCode(false)
     }
@@ -298,12 +306,12 @@ export default function LifeguardsPage() {
     try {
       const result = await confirmVerificationCode(formData.email, verificationCode)
       if (!result.ok) {
-        addToast(result.error, 'warning')
+        showStatus({ tone: 'error', title: 'Verification failed', message: result.error || 'That code is not valid.' })
         return
       }
       const normalized = formData.email.trim().toLowerCase()
       setVerifiedEmail(normalized)
-      addToast(result.message, 'success')
+      showStatus({ tone: 'success', title: 'Email verified', message: result.message || 'This email is verified. You can create the account.' })
     } finally {
       setVerifyingCode(false)
     }
@@ -317,18 +325,19 @@ export default function LifeguardsPage() {
     e.target.value = ''
     if (!file) return
     if (!file.type.startsWith('image/')) {
-      addToast('Please choose an image file.', 'warning')
+      setPhotoError('Please choose an image file.')
       return
     }
     if (file.size > MAX_PHOTO_BYTES) {
-      addToast('Image must be 2MB or smaller.', 'warning')
+      setPhotoError('Image must be 2MB or smaller.')
       return
     }
+    setPhotoError('')
     const reader = new FileReader()
     reader.onload = () => {
       setAddPhotoUri(typeof reader.result === 'string' ? reader.result : null)
     }
-    reader.onerror = () => addToast('Could not read that image.', 'error')
+    reader.onerror = () => setPhotoError('Could not read that image.')
     reader.readAsDataURL(file)
   }
 
@@ -337,18 +346,19 @@ export default function LifeguardsPage() {
     e.target.value = ''
     if (!file) return
     if (!file.type.startsWith('image/')) {
-      addToast('Please choose an image file.', 'warning')
+      setPhotoError('Please choose an image file.')
       return
     }
     if (file.size > MAX_PHOTO_BYTES) {
-      addToast('Image must be 2MB or smaller.', 'warning')
+      setPhotoError('Image must be 2MB or smaller.')
       return
     }
+    setPhotoError('')
     const reader = new FileReader()
     reader.onload = () => {
       setEditPhotoUri(typeof reader.result === 'string' ? reader.result : null)
     }
-    reader.onerror = () => addToast('Could not read that image.', 'error')
+    reader.onerror = () => setPhotoError('Could not read that image.')
     reader.readAsDataURL(file)
   }
 
@@ -372,35 +382,19 @@ export default function LifeguardsPage() {
   }
 
   const handleAdd = async () => {
-    if (!emailVerified) {
-      addToast('Verify the email address before creating an account.', 'warning')
-      return
-    }
-
-    const firstName = formData.firstName.trim()
-    const lastName = formData.lastName.trim()
-    if (!firstName) {
-      addToast('First name is required.', 'warning')
-      return
-    }
-    if (!lastName) {
-      addToast('Last name is required.', 'warning')
-      return
-    }
-
-    if (tempPassword !== confirmTempPassword) {
-      addToast('Temporary passwords do not match.', 'warning')
-      return
-    }
-
+    const next = {}
+    if (!formData.firstName.trim()) next.firstName = 'First name is required.'
+    if (!formData.lastName.trim()) next.lastName = 'Last name is required.'
+    if (!emailVerified) next.email = 'Verify this email before creating the account.'
+    if (tempPassword !== confirmTempPassword) next.confirmPassword = 'Temporary passwords do not match.'
     const passwordCheck = validatePassword(tempPassword)
-    if (!passwordCheck.ok) {
-      addToast(passwordCheck.error, 'warning')
-      return
-    }
+    if (!passwordCheck.ok) next.password = 'Password does not meet the requirements.'
+    setFieldErrors(next)
+    if (Object.keys(next).length) return
 
     const name = buildFullName(formData)
 
+    setCreating(true)
     const result = await createLifeguard({
       name,
       email: formData.email,
@@ -412,7 +406,8 @@ export default function LifeguardsPage() {
     })
 
     if (!result.ok) {
-      addToast(result.error, 'warning')
+      setCreating(false)
+      showStatus({ tone: 'error', title: 'Account not created', message: result.error || 'Could not create this account.' })
       return
     }
 
@@ -422,29 +417,29 @@ export default function LifeguardsPage() {
       tempPassword,
     })
 
+    setCreating(false)
     setGuards(await fetchLifeguards())
     setShowAddModal(false)
     resetAddForm()
-    addToast(
-      `Account for ${result.guard.name} created.${welcome.ok ? ' Welcome email sent with login details.' : ''}`,
-      'success'
-    )
+    showStatus({
+      tone: 'success',
+      title: 'Account created',
+      message: `Account for ${result.guard.name} was created.${welcome.ok ? ' A welcome email was sent with the login details.' : ''}`,
+    })
   }
 
   const handleUpdate = async () => {
+    const next = {}
+    if (!formData.firstName.trim()) next.firstName = 'First name is required.'
+    if (!formData.lastName.trim()) next.lastName = 'Last name is required.'
+    setFieldErrors(next)
+    if (Object.keys(next).length) return
     const firstName = formData.firstName.trim()
     const lastName = formData.lastName.trim()
-    if (!firstName) {
-      addToast('First name is required.', 'warning')
-      return
-    }
-    if (!lastName) {
-      addToast('Last name is required.', 'warning')
-      return
-    }
 
     const name = buildFullName(formData)
 
+    setUpdating(true)
     const result = await updateLifeguard(selected.id, {
       name,
       email: formData.email,
@@ -456,49 +451,55 @@ export default function LifeguardsPage() {
     })
 
     if (!result.ok) {
-      addToast(result.error, 'warning')
+      setUpdating(false)
+      showStatus({ tone: 'error', title: 'Account not updated', message: result.error || 'Could not update this account.' })
       return
     }
 
+    setUpdating(false)
     setGuards(await fetchLifeguards())
     setShowEditModal(false)
-    addToast(`${name}'s account updated`, 'success')
+    showStatus({ tone: 'success', title: 'Account updated', message: `${name}'s account was updated.` })
   }
 
   const handleDeactivate = async () => {
     const result = await archiveLifeguard(selected.id)
     if (!result.ok) {
-      addToast(result.error, 'warning')
+      showStatus({ tone: 'error', title: 'Could not deactivate', message: result.error || 'Could not archive this account.' })
       return
     }
     setGuards(await fetchLifeguards())
-    addToast(`${selected.name} deactivated and moved to Archived`, 'info')
+    showStatus({ tone: 'success', title: 'Account archived', message: `${selected.name} was deactivated and moved to Archived.` })
   }
 
   const handleRestore = async (guard) => {
     const result = await restoreLifeguard(guard.id)
     if (!result.ok) {
-      addToast(result.error, 'warning')
+      showStatus({ tone: 'error', title: 'Could not activate', message: result.error || 'Could not restore this account.' })
       return
     }
     setGuards(await fetchLifeguards())
-    addToast(`${guard.name} activated`, 'success')
+    showStatus({ tone: 'success', title: 'Account activated', message: `${guard.name} is active again.` })
   }
 
   const handleSendAlert = () => {
     if (!alertMsg.trim()) {
-      addToast('Please enter an alert message.', 'warning')
+      setFieldErrors((current) => ({ ...current, alert: 'Enter an alert message.' }))
       return
     }
     const recipients = guards.filter((g) => g.status === 'active').length
     setShowAlertModal(false)
     setAlertMsg('')
-    addToast(`Alert dispatched to ${recipients} lifeguard${recipients !== 1 ? 's' : ''}`, 'success')
+    showStatus({
+      tone: 'success',
+      title: 'Alert sent',
+      message: `Alert dispatched to ${recipients} lifeguard${recipients !== 1 ? 's' : ''}.`,
+    })
   }
 
   return (
     <div className="page lg-page">
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
+      <StatusModal status={status} onClose={closeStatus} />
 
       <div className="pagehead">
         <div>
@@ -506,7 +507,7 @@ export default function LifeguardsPage() {
           <div className="sub">Managing accounts</div>
         </div>
         <div className="pagehead-right">
-          <button type="button" className="btn-secondary" onClick={() => setShowAlertModal(true)}>
+          <button type="button" className="btn-warning" onClick={() => setShowAlertModal(true)}>
             <Icon.Send />
             Broadcast alert
           </button>
@@ -688,7 +689,7 @@ export default function LifeguardsPage() {
         title="Add Lifeguard Account"
         onSubmit={handleAdd}
         submitText="Create account"
-        submitDisabled={!emailVerified}
+        submitting={creating}
       >
         <FormAvatarPicker
           name={buildFullName(formData)}
@@ -696,16 +697,22 @@ export default function LifeguardsPage() {
           onPick={pickAddPhoto}
           inputRef={addPhotoInputRef}
           onPhotoSelected={onAddPhotoSelected}
+          error={photoError}
         />
         <div className="form-row-3 lg-name-fields">
           <div className="form-field">
             <label>First name *</label>
             <input
               type="text"
+              className={fieldErrors.firstName ? 'is-invalid' : ''}
               placeholder="e.g., Jonas"
               value={formData.firstName}
-              onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, firstName: e.target.value })
+                setFieldErrors((current) => ({ ...current, firstName: '' }))
+              }}
             />
+            {fieldErrors.firstName ? <p className="field-error">{fieldErrors.firstName}</p> : null}
           </div>
           <div className="form-field">
             <label>Middle name</label>
@@ -720,10 +727,15 @@ export default function LifeguardsPage() {
             <label>Last name *</label>
             <input
               type="text"
+              className={fieldErrors.lastName ? 'is-invalid' : ''}
               placeholder="e.g., Ramos"
               value={formData.lastName}
-              onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, lastName: e.target.value })
+                setFieldErrors((current) => ({ ...current, lastName: '' }))
+              }}
             />
+            {fieldErrors.lastName ? <p className="field-error">{fieldErrors.lastName}</p> : null}
           </div>
         </div>
         <div className="form-row-2">
@@ -767,7 +779,7 @@ export default function LifeguardsPage() {
                 />
                 <button
                   type="button"
-                  className="btn-secondary lg-email-verify-confirm"
+                  className="btn-primary lg-email-verify-confirm"
                   onClick={handleVerifyEmail}
                   disabled={verificationCode.length !== 6 || verifyingCode}
                 >
@@ -775,6 +787,7 @@ export default function LifeguardsPage() {
                 </button>
               </div>
             ) : null}
+            {fieldErrors.email ? <p className="field-error">{fieldErrors.email}</p> : null}
             {!emailVerified ? (
               <p className="lg-form-hint">Send a code to verify this email before creating the account.</p>
             ) : null}
@@ -793,7 +806,11 @@ export default function LifeguardsPage() {
         <PasswordInput
           label="Temporary password *"
           value={tempPassword}
-          onChange={setTempPassword}
+          onChange={(value) => {
+            setTempPassword(value)
+            setFieldErrors((current) => ({ ...current, password: '' }))
+          }}
+          error={fieldErrors.password}
           placeholder="Admin-issued first-login password"
           visible={showTempPassword}
           onToggle={() => setShowTempPassword((v) => !v)}
@@ -801,7 +818,11 @@ export default function LifeguardsPage() {
         <PasswordInput
           label="Confirm temporary password *"
           value={confirmTempPassword}
-          onChange={setConfirmTempPassword}
+          onChange={(value) => {
+            setConfirmTempPassword(value)
+            setFieldErrors((current) => ({ ...current, confirmPassword: '' }))
+          }}
+          error={fieldErrors.confirmPassword}
           placeholder="Re-enter temporary password"
           visible={showConfirmTempPassword}
           onToggle={() => setShowConfirmTempPassword((v) => !v)}
@@ -821,10 +842,12 @@ export default function LifeguardsPage() {
         title={`Edit: ${selected?.name}`}
         onSubmit={handleUpdate}
         submitText="Save changes"
+        submitting={updating}
       >
         <FormAvatarPicker
           name={buildFullName(formData)}
           photoUri={editPhotoUri}
+          error={photoError}
           onPick={pickEditPhoto}
           inputRef={editPhotoInputRef}
           onPhotoSelected={onEditPhotoSelected}
@@ -834,9 +857,14 @@ export default function LifeguardsPage() {
             <label>First name *</label>
             <input
               type="text"
+              className={fieldErrors.firstName ? 'is-invalid' : ''}
               value={formData.firstName}
-              onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, firstName: e.target.value })
+                setFieldErrors((current) => ({ ...current, firstName: '' }))
+              }}
             />
+            {fieldErrors.firstName ? <p className="field-error">{fieldErrors.firstName}</p> : null}
           </div>
           <div className="form-field">
             <label>Middle name</label>
@@ -851,9 +879,14 @@ export default function LifeguardsPage() {
             <label>Last name *</label>
             <input
               type="text"
+              className={fieldErrors.lastName ? 'is-invalid' : ''}
               value={formData.lastName}
-              onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, lastName: e.target.value })
+                setFieldErrors((current) => ({ ...current, lastName: '' }))
+              }}
             />
+            {fieldErrors.lastName ? <p className="field-error">{fieldErrors.lastName}</p> : null}
           </div>
         </div>
         <div className="form-row-2">
@@ -911,12 +944,16 @@ export default function LifeguardsPage() {
         <div className="form-field">
           <label>Alert message *</label>
           <textarea
-            className="alert-textarea"
             rows={3}
             placeholder="e.g., Child unattended in main pool — Zone 1. Respond immediately."
+            className={`alert-textarea${fieldErrors.alert ? ' is-invalid' : ''}`}
             value={alertMsg}
-            onChange={(e) => setAlertMsg(e.target.value)}
+            onChange={(e) => {
+              setAlertMsg(e.target.value)
+              setFieldErrors((current) => ({ ...current, alert: '' }))
+            }}
           />
+          {fieldErrors.alert ? <p className="field-error">{fieldErrors.alert}</p> : null}
         </div>
       </FormModal>
 

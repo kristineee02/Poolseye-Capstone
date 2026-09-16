@@ -91,6 +91,10 @@
   object-fit: cover;
 }
 
+.camera-stage.is-offline {
+  background: #3A414C;
+}
+
 .camera-stage-offline {
   position: absolute;
   inset: 0;
@@ -98,35 +102,55 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 14px;
   padding: 24px;
   text-align: center;
-  background: var(--bg-inset);
-  color: var(--text-secondary);
+  background: #3A414C;
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .camera-stage-offline svg {
-  width: 28px;
-  height: 28px;
-  color: var(--warn);
+  width: 42px;
+  height: 42px;
+  color: rgba(255, 255, 255, 0.42);
 }
 
-.camera-stage-offline strong {
-  color: var(--text-primary);
-  font-size: 14px;
-}
-
-.camera-stage-offline p {
+.feed-unavailable-copy {
   margin: 0;
-  max-width: 360px;
-  font-size: 12.5px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
 }
 
-.camera-stage-offline code {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--text-primary);
+.feed-unavailable-copy strong {
+  color: #FFFFFF;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.feed-reconnect {
+  margin-top: 2px;
+  min-width: 112px;
+  height: 34px;
+  padding: 0 16px;
+  border-radius: var(--btn-radius);
+  border: none;
+  background: var(--btn-gradient);
+  color: #FFFFFF;
+  box-shadow: var(--btn-shadow);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.feed-reconnect:hover:not(:disabled) {
+  background: var(--btn-gradient-hover);
+}
+
+.feed-reconnect:disabled {
+  opacity: 0.65;
+  cursor: default;
 }
 
 .live-tag.is-offline {

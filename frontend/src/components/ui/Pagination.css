@@ -68,14 +68,15 @@
 }
 
 .ui-page-btn.active {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--btn-gradient);
+  border-color: transparent;
   color: #fff;
+  box-shadow: var(--btn-shadow);
 }
 
 .ui-page-btn.active:hover:not(:disabled) {
-  background: var(--accent-deep);
-  border-color: var(--accent-deep);
+  background: var(--btn-gradient-hover);
+  border-color: transparent;
   color: #fff;
 }
 

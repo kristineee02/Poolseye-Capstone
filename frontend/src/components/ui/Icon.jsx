@@ -40,6 +40,13 @@ export const Icon = {
       <rect x="1" y="5" width="15" height="14" rx="2" />
     </svg>
   ),
+  VideoOff: (p) => (
+    <svg {...base} {...p}>
+      <path d="M16 8.5 21 6v12l-5-2.5" />
+      <rect x="2" y="6" width="14" height="12" rx="2" />
+      <line x1="3" y1="4" x2="21" y2="20" />
+    </svg>
+  ),
   Bell: (p) => (
     <svg {...base} {...p}>
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />

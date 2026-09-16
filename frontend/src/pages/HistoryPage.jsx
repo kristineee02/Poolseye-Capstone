@@ -5,7 +5,7 @@ import Pagination from '../components/ui/Pagination'
 import SnapshotThumb from '../components/history/SnapshotThumb'
 import SnapshotModal from '../components/history/SnapshotModal'
 import { fetchEvents, fetchEventCameras, updateEventStatus } from '../api/events'
-import { useToast, ToastContainer } from '../components/ui/Toast'
+import { StatusModal, useStatusModal } from '../components/ui/Modal'
 import '../components/history/HistoryTable.css'
 
 const TYPE_LABEL = { alarm: 'Alarm', safe: 'Safe', warn: 'Warning', info: 'Info' }
@@ -43,7 +43,7 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true)
   const [reviewing, setReviewing] = useState(null)
   const [page, setPage] = useState(1)
-  const { toasts, addToast, removeToast } = useToast()
+  const { status, showStatus, closeStatus } = useStatusModal()
 
   useEffect(() => {
     fetchEventCameras().then((result) => {
@@ -70,7 +70,7 @@ export default function HistoryPage() {
         setEvents([])
         setTotal(0)
         setTotalPages(1)
-        addToast(result.error || 'Failed to load events', 'warning')
+        showStatus({ tone: 'error', title: 'Could not load events', message: result.error || 'Failed to load events.' })
         return
       }
       setEvents(result.events || [])
@@ -96,7 +96,7 @@ export default function HistoryPage() {
   const handleAcknowledge = async (event) => {
     const result = await updateEventStatus(event.id, 'resolved')
     if (!result.ok) {
-      addToast(result.error || 'Failed to update event', 'warning')
+      showStatus({ tone: 'error', title: 'Update failed', message: result.error || 'Failed to update this event.' })
       return
     }
     setEvents((prev) =>
@@ -105,12 +105,12 @@ export default function HistoryPage() {
     setReviewing((prev) =>
       prev?.id === event.id ? { ...prev, status: 'resolved' } : prev
     )
-    addToast('Event acknowledged', 'success')
+    showStatus({ tone: 'success', title: 'Event acknowledged', message: 'This event was marked as resolved.' })
   }
 
   const exportCsv = () => {
     if (!events.length) {
-      addToast('No events to export on this page.', 'info')
+      showStatus({ tone: 'error', title: 'Nothing to export', message: 'There are no events to export on this page.' })
       return
     }
     const header = ['ID', 'Title', 'Type', 'Camera', 'Confidence', 'Date', 'Time', 'Status']
@@ -138,7 +138,7 @@ export default function HistoryPage() {
 
   return (
     <div className="page">
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
+      <StatusModal status={status} onClose={closeStatus} />
 
       <div className="pagehead">
         <div>

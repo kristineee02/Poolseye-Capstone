@@ -63,6 +63,27 @@ export function AuthProvider({ children }) {
       })
   }, [])
 
+  const storeSession = (token, nextUser) => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ token }))
+    setUser(mergeStoredPhoto(nextUser))
+  }
+
+  const authFetch = async (path, { method = 'POST', body } = {}) => {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    const token = stored ? JSON.parse(stored)?.token : null
+    const res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return { ok: false, error: data.error || 'Request failed' }
+    return { ok: true, ...data }
+  }
+
   const signIn = async (email, password) => {
     try {
       const res = await fetch(`${API_BASE}/api/auth/login`, {
@@ -76,9 +97,57 @@ export function AuthProvider({ children }) {
         return { ok: false, error: data.error || 'Invalid email or password' }
       }
 
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ token: data.token }))
-      setUser(mergeStoredPhoto(data.user))
+      if (data.step) {
+        return {
+          ok: true,
+          step: data.step,
+          challengeToken: data.challengeToken,
+          demoCode: data.demoCode,
+        }
+      }
+
+      storeSession(data.token, data.user)
       return { ok: true }
+    } catch {
+      return { ok: false, error: 'Cannot reach backend server' }
+    }
+  }
+
+  const finishPasswordChange = async ({ challengeToken, currentPassword, newPassword }) => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      const token = stored ? JSON.parse(stored)?.token : null
+      const res = await fetch(`${API_BASE}/api/auth/change-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && !challengeToken ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ challengeToken, currentPassword, newPassword }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) return { ok: false, error: data.error || 'Could not update password' }
+      storeSession(data.token, data.user)
+      return { ok: true }
+    } catch {
+      return { ok: false, error: 'Cannot reach backend server' }
+    }
+  }
+
+  const sendResetCode = async (email) => {
+    try {
+      return await authFetch('/api/auth/forgot-password/send', { body: { email } })
+    } catch {
+      return { ok: false, error: 'Cannot reach backend server' }
+    }
+  }
+
+  const resetPassword = async ({ email, code, newPassword }) => {
+    try {
+      const result = await authFetch('/api/auth/forgot-password/reset', {
+        body: { email, code, newPassword },
+      })
+      return result.ok ? { ok: true } : result
     } catch {
       return { ok: false, error: 'Cannot reach backend server' }
     }
@@ -112,7 +181,18 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, ready, signIn, signOut, updateProfile }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        ready,
+        signIn,
+        signOut,
+        updateProfile,
+        finishPasswordChange,
+        sendResetCode,
+        resetPassword,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )

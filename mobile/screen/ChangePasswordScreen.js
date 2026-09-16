@@ -3,13 +3,15 @@
 import React, { useMemo, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
+  KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, radius, shadow, touch } from '../theme/tokens';
+import { GradientButton } from '../components/Primitives';
 import { getPasswordRuleChecks } from '../auth/demoAuth';
 import { useAuth } from '../context/AuthContext';
+import StatusModal from '../components/StatusModal';
 
 function BackArrow({ color = colors.accent, size = 22 }) {
   return (
@@ -67,9 +69,11 @@ function PasswordField({
   placeholder,
   visible,
   onToggleVisible,
+  error,
 }) {
   return (
-    <View style={styles.field}>
+    <View style={styles.fieldBlock}>
+    <View style={[styles.field, error && styles.fieldInvalid]}>
       <TextInput
         style={styles.input}
         value={value}
@@ -90,6 +94,8 @@ function PasswordField({
       >
         <PasswordToggleIcon visible={visible} color={colors.textTertiary} />
       </TouchableOpacity>
+    </View>
+    {error ? <Text style={styles.fieldError}>{error}</Text> : null}
     </View>
   );
 }
@@ -129,7 +135,8 @@ export default function ChangePasswordScreen({
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const email = resetEmail || user?.email || '';
@@ -154,20 +161,12 @@ export default function ChangePasswordScreen({
       : 'Update your password to keep your account secure.';
 
   const handleSubmit = async () => {
-    setError('');
-
-    if (!allRulesMet) {
-      setError('Please meet all password requirements below.');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError('New password and confirmation do not match.');
-      return;
-    }
-    if (showCurrentField && !currentPassword) {
-      setError('Enter your current password.');
-      return;
-    }
+    const next = {};
+    if (!allRulesMet) next.newPassword = 'Password does not meet the requirements below.';
+    if (newPassword !== confirmPassword) next.confirmPassword = 'New password and confirmation do not match.';
+    if (showCurrentField && !currentPassword) next.currentPassword = 'Enter your current password.';
+    setFieldErrors(next);
+    if (Object.keys(next).length) return;
 
     setLoading(true);
     let result;
@@ -183,14 +182,23 @@ export default function ChangePasswordScreen({
     setLoading(false);
 
     if (!result.ok) {
-      setError(result.error || 'Could not update password.');
+      setStatus({
+        tone: 'error',
+        title: 'Password not updated',
+        message: result.error || 'Could not update password.',
+      });
       return;
     }
 
     setCurrentPassword('');
     setNewPassword('');
     setConfirmPassword('');
-    if (!forced && onCancel) onCancel();
+    setStatus({
+      tone: 'success',
+      title: 'Password updated',
+      message: 'Your password was changed successfully.',
+      done: !forced,
+    });
   };
 
   return (
@@ -237,27 +245,30 @@ export default function ChangePasswordScreen({
           {showCurrentField ? (
             <PasswordField
               value={currentPassword}
-              onChangeText={setCurrentPassword}
+              onChangeText={(value) => { setCurrentPassword(value); setFieldErrors((e) => ({ ...e, currentPassword: '' })); }}
               placeholder="Current password"
               visible={showCurrent}
               onToggleVisible={() => setShowCurrent((v) => !v)}
+              error={fieldErrors.currentPassword}
             />
           ) : null}
 
           <PasswordField
             value={newPassword}
-            onChangeText={setNewPassword}
+            onChangeText={(value) => { setNewPassword(value); setFieldErrors((e) => ({ ...e, newPassword: '' })); }}
             placeholder="New password"
             visible={showNew}
             onToggleVisible={() => setShowNew((v) => !v)}
+            error={fieldErrors.newPassword}
           />
 
           <PasswordField
             value={confirmPassword}
-            onChangeText={setConfirmPassword}
+            onChangeText={(value) => { setConfirmPassword(value); setFieldErrors((e) => ({ ...e, confirmPassword: '' })); }}
             placeholder="Confirm new password"
             visible={showConfirm}
             onToggleVisible={() => setShowConfirm((v) => !v)}
+            error={fieldErrors.confirmPassword}
           />
 
           <View style={styles.rulesBox}>
@@ -272,31 +283,17 @@ export default function ChangePasswordScreen({
             ))}
           </View>
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-
-          <TouchableOpacity
+          <GradientButton
             onPress={handleSubmit}
             disabled={loading || !allRulesMet}
-            activeOpacity={0.85}
+            loading={loading}
+            label={forced ? 'Continue' : resetMode ? 'Reset password' : 'Save password'}
             style={[
               styles.button,
               (loading || !allRulesMet) && styles.buttonDisabled,
             ]}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>
-                {forced ? 'Continue' : resetMode ? 'Reset password' : 'Save password'}
-              </Text>
-            )}
-          </TouchableOpacity>
-
-          {!forced && onCancel ? (
-            <TouchableOpacity onPress={onCancel} style={styles.cancelBtn} activeOpacity={0.8}>
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-          ) : null}
+            textStyle={styles.buttonText}
+          />
 
           {forced ? (
             <Text style={styles.forcedHint}>
@@ -305,6 +302,17 @@ export default function ChangePasswordScreen({
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
+      <StatusModal
+        visible={Boolean(status)}
+        onClose={() => {
+          const shouldClose = status?.done;
+          setStatus(null);
+          if (shouldClose && onCancel) onCancel();
+        }}
+        title={status?.title}
+        message={status?.message}
+        tone={status?.tone}
+      />
     </View>
   );
 }
@@ -345,6 +353,19 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: colors.textSecondary,
     fontWeight: '500',
+  },
+  fieldBlock: {
+    marginBottom: 4,
+  },
+  fieldInvalid: {
+    borderColor: colors.alarm,
+  },
+  fieldError: {
+    color: colors.alarm,
+    fontSize: typography.sm,
+    fontWeight: '600',
+    marginTop: -6,
+    marginBottom: 10,
   },
   field: {
     flexDirection: 'row',
@@ -447,9 +468,6 @@ const styles = StyleSheet.create({
   button: {
     minHeight: touch.comfortable + 6,
     borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accent,
     marginTop: 4,
   },
   buttonDisabled: {
@@ -459,15 +477,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: typography.md,
     fontWeight: '700',
-  },
-  cancelBtn: {
-    alignItems: 'center',
-    paddingVertical: 18,
-  },
-  cancelText: {
-    fontSize: typography.base,
-    fontWeight: '700',
-    color: colors.accent,
   },
   forcedHint: {
     marginTop: 8,

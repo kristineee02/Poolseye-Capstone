@@ -38,7 +38,8 @@
   background: var(--alarm);
   color: #fff;
   border: none;
-  border-radius: var(--r-sm);
+  border-radius: var(--btn-radius);
+  box-shadow: var(--btn-alarm-shadow);
   font-size: 12px;
   font-weight: 600;
   padding: 8px 14px;

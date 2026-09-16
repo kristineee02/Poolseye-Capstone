@@ -25,6 +25,7 @@ export const colors = {
   accentHighlight: '#A7ECFF',
   accentTint:   '#F0F8FF',
   brandGradient: ['#4DB8FF', '#1E6FFF'],
+  buttonGradient: ['#35A1F7', '#2881FF'],
 
   // Status trio
   safe:       '#1B9C6E',
@@ -95,5 +96,26 @@ export const shadow = {
     shadowOpacity: 0.12,
     shadowRadius: 16,
     elevation: 4,
+  },
+  button: {
+    shadowColor: '#2881FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  danger: {
+    shadowColor: '#D6364A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  warning: {
+    shadowColor: '#E6B800',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.24,
+    shadowRadius: 10,
+    elevation: 3,
   },
 };

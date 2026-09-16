@@ -3,17 +3,17 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
+  KeyboardAvoidingView, Platform,
   ScrollView, Image,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, radius, shadow, touch } from '../theme/tokens';
+import { GradientButton } from '../components/Primitives';
 import { useAuth } from '../context/AuthContext';
+import StatusModal from '../components/StatusModal';
 import ForgotPasswordScreen from './ForgotPasswordScreen';
 
-const BTN_GRADIENT = colors.brandGradient;
 const ICON_BLUE = colors.accent;
 const logo = require('../assets/logo.png');
 
@@ -91,16 +91,27 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
+  const [fields, setFields] = useState({});
+  const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
 
   const handleSignIn = async () => {
-    setError('');
+    const next = {};
+    if (!email.trim()) next.email = 'Enter your email.';
+    if (!password) next.password = 'Enter your password.';
+    setFields(next);
+    if (Object.keys(next).length) return;
     setLoading(true);
     const result = await signIn(email, password);
     setLoading(false);
-    if (!result.ok) setError(result.error);
+    if (!result.ok) {
+      setStatus({
+        tone: 'error',
+        title: 'Sign in failed',
+        message: result.error || 'Could not sign in.',
+      });
+    }
   };
 
   if (showForgot) {
@@ -136,7 +147,7 @@ export default function LoginScreen() {
               <TextInput
                 style={styles.input}
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(value) => { setEmail(value); setFields((f) => ({ ...f, email: '' })); }}
                 placeholder="Email"
                 placeholderTextColor="#94A3B8"
                 autoCapitalize="none"
@@ -144,6 +155,7 @@ export default function LoginScreen() {
                 autoComplete="email"
               />
             </View>
+            {fields.email ? <Text style={styles.fieldError}>{fields.email}</Text> : null}
 
             <View style={styles.field}>
               <View style={styles.fieldIcon}>
@@ -152,7 +164,7 @@ export default function LoginScreen() {
               <TextInput
                 style={[styles.input, styles.passwordInput]}
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(value) => { setPassword(value); setFields((f) => ({ ...f, password: '' })); }}
                 secureTextEntry={!showPassword}
                 placeholder="Password"
                 placeholderTextColor="#94A3B8"
@@ -168,6 +180,7 @@ export default function LoginScreen() {
                 <PasswordToggleIcon visible={showPassword} color="#94A3B8" />
               </TouchableOpacity>
             </View>
+            {fields.password ? <Text style={styles.fieldError}>{fields.password}</Text> : null}
 
             <TouchableOpacity
               style={styles.forgotBtn}
@@ -177,30 +190,24 @@ export default function LoginScreen() {
               <Text style={styles.forgotText}>Forgot password?</Text>
             </TouchableOpacity>
 
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-
-            <TouchableOpacity
+            <GradientButton
               onPress={handleSignIn}
               disabled={loading}
-              activeOpacity={0.85}
-              style={loading ? styles.buttonDisabled : null}
-            >
-              <LinearGradient
-                colors={BTN_GRADIENT}
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 1, y: 0.5 }}
-                style={styles.button}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.buttonText}>Sign in</Text>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
+              loading={loading}
+              label="Sign in"
+              style={[styles.button, loading && styles.buttonDisabled]}
+              textStyle={styles.buttonText}
+            />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <StatusModal
+        visible={Boolean(status)}
+        onClose={() => setStatus(null)}
+        title={status?.title}
+        message={status?.message}
+        tone={status?.tone}
+      />
     </View>
   );
 }
@@ -279,6 +286,13 @@ const styles = StyleSheet.create({
     color: colors.accent,
   },
 
+  fieldError: {
+    color: colors.alarm,
+    fontSize: typography.sm,
+    fontWeight: '600',
+    marginTop: -8,
+    marginBottom: 10,
+  },
   error: {
     fontSize: typography.sm,
     color: colors.alarmDark,

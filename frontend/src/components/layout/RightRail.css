@@ -193,10 +193,17 @@
   color: var(--text-secondary);
 }
 .qa-btn.danger {
-  background: var(--alarm-tint);
-  border-color: #F4C6CD;
-  color: #7A1C28;
+  background: var(--alarm);
+  border-color: transparent;
+  color: #fff;
+  border-radius: var(--btn-radius);
+  box-shadow: var(--btn-alarm-shadow);
+  font-weight: 600;
 }
 .qa-btn.danger svg {
-  color: var(--alarm);
+  color: #fff;
+}
+.qa-btn.danger:hover {
+  background: #b52b3c;
+  border-color: transparent;
 }

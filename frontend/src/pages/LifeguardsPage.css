@@ -21,13 +21,15 @@
 }
 
 .pagehead-right .btn-secondary svg,
-.pagehead-right .btn-primary svg {
+.pagehead-right .btn-primary svg,
+.pagehead-right .btn-warning svg {
   width: 14px;
   height: 14px;
   flex-shrink: 0;
 }
 
-.pagehead-right .btn-primary {
+.pagehead-right .btn-primary,
+.pagehead-right .btn-warning {
   white-space: nowrap;
 }
 

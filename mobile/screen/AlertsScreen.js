@@ -11,6 +11,7 @@ import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 import ProfileHero from '../components/ProfileHero';
 import ConfirmModal from '../components/ConfirmModal';
+import StatusModal from '../components/StatusModal';
 import { useAuth } from '../context/AuthContext';
 import { fetchMobileEvents, updateMobileEventStatus } from '../api/events';
 
@@ -199,6 +200,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
   const [refreshing, setRefreshing] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [error, setError] = useState('');
+  const [status, setStatus] = useState(null);
 
   const loadAlerts = useCallback(async () => {
     if (!token) return;
@@ -241,7 +243,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
     setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
     const result = await updateMobileEventStatus(token, id, 'resolved');
     if (!result.ok) {
-      setError(result.error || 'Failed to acknowledge');
+      setStatus({ tone: 'error', title: 'Could not acknowledge', message: result.error || 'Failed to acknowledge this alert.' });
       await loadAlerts();
       return;
     }
@@ -254,7 +256,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
     setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
     const result = await updateMobileEventStatus(token, id, 'dismissed');
     if (!result.ok) {
-      setError(result.error || 'Failed to dismiss');
+      setStatus({ tone: 'error', title: 'Could not dismiss', message: result.error || 'Failed to dismiss this alert.' });
       await loadAlerts();
       return;
     }
@@ -337,6 +339,13 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
             },
           },
         ]}
+      />
+      <StatusModal
+        visible={Boolean(status)}
+        onClose={() => setStatus(null)}
+        title={status?.title}
+        message={status?.message}
+        tone={status?.tone}
       />
     </>
   );

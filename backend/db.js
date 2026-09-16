@@ -122,17 +122,26 @@ async function initDb() {
   await migrateUsersTable(db)
 
   const adminEmail = 'piapendergat275@gmail.com'
-  const existingAdmin = await get(db, 'SELECT id FROM users WHERE email = ?', [adminEmail])
+  const existingAdmin = await get(
+    db,
+    'SELECT id, password_hash FROM users WHERE email = ?',
+    [adminEmail]
+  )
 
   if (!existingAdmin) {
     const passwordHash = await bcrypt.hash('AdminPoolsEye@2026', 10)
     await run(
       db,
-      'INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, ?)',
+      `INSERT INTO users (email, password_hash, name, role, must_change_password)
+       VALUES (?, ?, ?, ?, 1)`,
       [adminEmail, passwordHash, 'PoolsEye', 'admin']
     )
     console.log('Default admin created:', adminEmail)
   } else {
+    const stillDefault = await bcrypt.compare('AdminPoolsEye@2026', existingAdmin.password_hash || '')
+    if (stillDefault) {
+      await run(db, 'UPDATE users SET must_change_password = 1 WHERE id = ?', [existingAdmin.id])
+    }
     console.log('Default admin already exists')
   }
 

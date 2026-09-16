@@ -23,54 +23,32 @@
 
 .navitem-tooltip {
   position: absolute;
-  left: calc(100% + 12px);
+  left: calc(100% + 10px);
   top: 50%;
   z-index: 50;
-  transform: translateY(-50%) translateX(-6px);
+  transform: translateY(-50%);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
   white-space: nowrap;
-  padding: 8px 12px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  box-shadow: var(--shadow-md);
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-primary);
-  transition:
-    opacity var(--dur-fast) var(--ease-ui),
-    transform var(--dur-fast) var(--ease-ui),
-    visibility var(--dur-fast) var(--ease-ui);
-}
-
-.navitem-tooltip::before {
-  content: '';
-  position: absolute;
-  right: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  border: 6px solid transparent;
-  border-right-color: var(--border-subtle);
-}
-
-.navitem-tooltip::after {
-  content: '';
-  position: absolute;
-  right: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  margin-right: -1px;
-  border: 5px solid transparent;
-  border-right-color: var(--bg-panel);
+  padding: 6px 10px;
+  background: var(--text-primary);
+  border: none;
+  border-radius: 6px;
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: #FFFFFF;
+  transition: opacity 0.12s var(--ease-ui), visibility 0.12s var(--ease-ui);
+  transition-delay: 0s;
 }
 
 .navitem-wrap:hover .navitem-tooltip,
 .navitem-wrap:focus-within .navitem-tooltip {
   opacity: 1;
   visibility: visible;
-  transform: translateY(-50%) translateX(0);
+  transition-delay: 0.08s;
 }
 
 .navrail-top {
@@ -124,7 +102,15 @@
   border: none;
   background: transparent;
   flex-shrink: 0;
-  transition: background var(--dur-fast) var(--ease-ui), color var(--dur-fast) var(--ease-ui), transform var(--dur-fast) var(--ease-ui);
+  transition:
+    background var(--dur-med) var(--ease-ui),
+    color var(--dur-med) var(--ease-ui),
+    box-shadow var(--dur-med) var(--ease-ui);
+}
+
+.navitem:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
 }
 
 .navitem svg {
@@ -138,8 +124,13 @@
 }
 
 .navitem:not(.active):not(.navitem-logout):hover {
-  background: var(--bg-inset);
-  color: var(--accent-strong);
+  background: rgba(30, 111, 255, 0.06);
+  color: var(--accent);
+}
+
+.navitem.active:hover {
+  background: var(--accent-tint);
+  color: var(--accent-deep);
 }
 
 .navrail-footer {
@@ -152,13 +143,13 @@
 }
 
 .navitem-logout {
-  background: var(--bg-inset);
+  background: transparent;
   color: var(--text-secondary);
 }
 
 .navitem-logout:hover {
-  background: var(--border-subtle);
-  color: var(--text-primary);
+  background: rgba(214, 54, 74, 0.08);
+  color: var(--alarm);
 }
 
 @media (max-width: 900px) {

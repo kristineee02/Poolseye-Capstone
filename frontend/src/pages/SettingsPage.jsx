@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../components/ui/Icon'
-import { ConfirmModal } from '../components/ui/Modal'
-import { useToast, ToastContainer } from '../components/ui/Toast'
+import { ConfirmModal, StatusModal, useStatusModal } from '../components/ui/Modal'
 import { useAuth } from '../auth/AuthContext'
 import './SettingsPage.css'
 
@@ -51,9 +50,10 @@ function PasswordField({
   onToggle,
   autoComplete,
   disabled,
+  error,
 }) {
   return (
-    <label className="settings-field">
+    <label className={`settings-field${error ? ' is-invalid' : ''}`}>
       <span className="field-label">{label}</span>
       <div className="settings-password-wrap">
         <input
@@ -75,13 +75,19 @@ function PasswordField({
           {visible ? <Icon.EyeOff /> : <Icon.Eye />}
         </button>
       </div>
+      {error ? <span className="field-error">{error}</span> : null}
     </label>
   )
 }
 
 export default function SettingsPage() {
-  const { user, updateProfile } = useAuth()
-  const { toasts, addToast, removeToast } = useToast()
+  const { user, updateProfile, finishPasswordChange } = useAuth()
+  const { status, showStatus, closeStatus } = useStatusModal()
+  const [photoError, setPhotoError] = useState('')
+  const [nameError, setNameError] = useState('')
+  const [passwordErrors, setPasswordErrors] = useState({})
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [savingPassword, setSavingPassword] = useState(false)
   const fileInputRef = useRef(null)
 
   const [name, setName] = useState('')
@@ -167,27 +173,30 @@ export default function SettingsPage() {
     if (!file) return
 
     if (!file.type.startsWith('image/')) {
-      addToast('Please choose an image file.', 'warning')
+      setPhotoError('Please choose an image file.')
       return
     }
     if (file.size > MAX_PHOTO_BYTES) {
-      addToast('Image must be 2MB or smaller.', 'warning')
+      setPhotoError('Image must be 2MB or smaller.')
       return
     }
 
+    setPhotoError('')
     const reader = new FileReader()
     reader.onload = () => {
       setPhotoUri(typeof reader.result === 'string' ? reader.result : null)
     }
-    reader.onerror = () => addToast('Could not read that image.', 'error')
+    reader.onerror = () => setPhotoError('Could not read that image.')
     reader.readAsDataURL(file)
   }
 
   const saveProfile = () => {
     if (!name.trim()) {
-      addToast('Name is required.', 'warning')
+      setNameError('Name is required.')
       return
     }
+    setNameError('')
+    setSavingProfile(true)
     const result = updateProfile?.({ name: name.trim(), photoUri })
     writeProfileExtra(user.email, {
       phone: phone.trim(),
@@ -195,12 +204,13 @@ export default function SettingsPage() {
       dateJoined,
       photoUri,
     })
+    setSavingProfile(false)
     if (result?.ok === false) {
-      addToast(result.error || 'Could not save profile.', 'error')
+      showStatus({ tone: 'error', title: 'Profile not saved', message: result.error || 'Could not save profile.' })
       return
     }
     setEditing(false)
-    addToast('Profile saved', 'success')
+    showStatus({ tone: 'success', title: 'Profile saved', message: 'Your profile changes were saved.' })
   }
 
   const resetPasswordFields = () => {
@@ -212,21 +222,29 @@ export default function SettingsPage() {
     setShowConfirm(false)
   }
 
-  const updatePassword = () => {
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      addToast('Fill in all password fields.', 'warning')
+  const requestPasswordUpdate = () => {
+    const next = {}
+    if (!currentPassword) next.current = 'Enter your current password.'
+    if (!newPassword) next.next = 'Enter a new password.'
+    else if (passwordChecks.some((r) => !r.met)) next.next = 'Password does not meet the requirements.'
+    if (!confirmPassword) next.confirm = 'Confirm your new password.'
+    else if (newPassword && newPassword !== confirmPassword) next.confirm = 'New password and confirmation do not match.'
+    setPasswordErrors(next)
+    if (Object.keys(next).length) return
+    setConfirmPasswordUpdate(true)
+  }
+
+  const updatePassword = async () => {
+    setSavingPassword(true)
+    const result = await finishPasswordChange({ currentPassword, newPassword })
+    setSavingPassword(false)
+    if (!result.ok) {
+      showStatus({ tone: 'error', title: 'Password not updated', message: result.error || 'Could not update password.' })
       return
     }
-    if (passwordChecks.some((r) => !r.met)) {
-      addToast('New password does not meet the requirements.', 'warning')
-      return
-    }
-    if (newPassword !== confirmPassword) {
-      addToast('New password and confirmation do not match.', 'warning')
-      return
-    }
-    addToast('Password updated', 'success')
     resetPasswordFields()
+    setPasswordErrors({})
+    showStatus({ tone: 'success', title: 'Password updated', message: 'Your password was changed successfully.' })
   }
 
   return (
@@ -280,6 +298,7 @@ export default function SettingsPage() {
                 onChange={onPhotoSelected}
               />
             </div>
+            {photoError ? <p className="field-error">{photoError}</p> : null}
             <h2 className="settings-name">{name || user?.name || 'Admin'}</h2>
             <p className="settings-role">{roleLabel}</p>
           </aside>
@@ -303,15 +322,16 @@ export default function SettingsPage() {
             </div>
 
             <div className="settings-fields">
-              <label className="settings-field">
+              <label className={`settings-field${nameError ? ' is-invalid' : ''}`}>
                 <span className="field-label">Name</span>
                 <input
                   className="field-input"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => { setName(e.target.value); setNameError('') }}
                   disabled={!editing}
                   autoComplete="name"
                 />
+                {nameError ? <span className="field-error">{nameError}</span> : null}
               </label>
 
               <label className="settings-field">
@@ -357,12 +377,25 @@ export default function SettingsPage() {
 
             {editing ? (
               <div className="settings-card-actions">
-                <button type="button" className="btn-primary" onClick={() => setConfirmSave(true)}>
-                  Save
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={savingProfile}
+                  onClick={() => {
+                    if (!name.trim()) {
+                      setNameError('Name is required.')
+                      return
+                    }
+                    setNameError('')
+                    setConfirmSave(true)
+                  }}
+                >
+                  {savingProfile ? <span className="btn-spinner" aria-hidden="true" /> : null}
+                  {savingProfile ? 'Saving…' : 'Save'}
                 </button>
               </div>
             ) : null}
-          </div>
+            </div>
         </div>
       </section>
 
@@ -380,21 +413,23 @@ export default function SettingsPage() {
               <PasswordField
                 label="Current password"
                 value={currentPassword}
-                onChange={setCurrentPassword}
+                onChange={(value) => { setCurrentPassword(value); setPasswordErrors((e) => ({ ...e, current: '' })) }}
                 placeholder="Enter current password"
                 visible={showCurrent}
                 onToggle={() => setShowCurrent((v) => !v)}
                 autoComplete="current-password"
+                error={passwordErrors.current}
               />
 
               <PasswordField
                 label="New password"
                 value={newPassword}
-                onChange={setNewPassword}
+                onChange={(value) => { setNewPassword(value); setPasswordErrors((e) => ({ ...e, next: '' })) }}
                 placeholder="Enter new password"
                 visible={showNew}
                 onToggle={() => setShowNew((v) => !v)}
                 autoComplete="new-password"
+                error={passwordErrors.next}
               />
               {newPassword ? (
                 <div
@@ -417,11 +452,12 @@ export default function SettingsPage() {
               <PasswordField
                 label="Confirm password"
                 value={confirmPassword}
-                onChange={setConfirmPassword}
+                onChange={(value) => { setConfirmPassword(value); setPasswordErrors((e) => ({ ...e, confirm: '' })) }}
                 placeholder="Confirm new password"
                 visible={showConfirm}
                 onToggle={() => setShowConfirm((v) => !v)}
                 autoComplete="new-password"
+                error={passwordErrors.confirm}
               />
             </div>
 
@@ -429,9 +465,11 @@ export default function SettingsPage() {
               <button
                 type="button"
                 className="btn-primary"
-                onClick={() => setConfirmPasswordUpdate(true)}
+                disabled={savingPassword}
+                onClick={requestPasswordUpdate}
               >
-                Update Password
+                {savingPassword ? <span className="btn-spinner" aria-hidden="true" /> : null}
+                {savingPassword ? 'Updating…' : 'Update Password'}
               </button>
             </div>
           </div>
@@ -478,7 +516,7 @@ export default function SettingsPage() {
         onConfirm={updatePassword}
       />
 
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
+      <StatusModal status={status} onClose={closeStatus} />
     </div>
   )
 }

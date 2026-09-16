@@ -23,7 +23,7 @@
 }
 
 .analytics-tab:hover { background: var(--bg-inset); color: var(--text-primary); }
-.analytics-tab.active { background: var(--accent); color: #fff; }
+.analytics-tab.active { background: var(--btn-gradient); color: #fff; box-shadow: var(--btn-shadow); }
 
 .analytics-filters {
   align-items: center;

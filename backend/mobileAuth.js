@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken')
 const { get, run } = require('./db')
 const { validatePassword } = require('./password')
 const { rowToMobileUser, getLifeguardByEmail } = require('./lifeguards')
+const { sendPasswordResetCodeEmail } = require('./email')
 
 const CODE_TTL_MS = 10 * 60 * 1000
 
@@ -33,6 +34,41 @@ function signLifeguardToken(user) {
     process.env.JWT_SECRET,
     { expiresIn: '7d' }
   )
+}
+
+function makeCode() {
+  return String(Math.floor(100000 + Math.random() * 900000))
+}
+
+async function saveCode(db, email, purpose, code) {
+  const now = Date.now()
+  await run(
+    db,
+    `INSERT INTO email_verifications (email, purpose, code, verified, expires_at, sent_at)
+     VALUES (?, ?, ?, 0, ?, ?)
+     ON CONFLICT(email, purpose) DO UPDATE SET
+       code = excluded.code,
+       verified = 0,
+       expires_at = excluded.expires_at,
+       sent_at = excluded.sent_at`,
+    [email, purpose, code, now + CODE_TTL_MS, now]
+  )
+}
+
+async function consumeCode(db, email, purpose, code) {
+  const row = await get(
+    db,
+    'SELECT code, expires_at FROM email_verifications WHERE email = ? AND purpose = ?',
+    [email, purpose]
+  )
+  if (!row || Date.now() > row.expires_at) {
+    return { ok: false, error: 'No active verification code. Send a new one.' }
+  }
+  if (row.code !== String(code || '').trim()) {
+    return { ok: false, error: 'Incorrect verification code.' }
+  }
+  await run(db, 'DELETE FROM email_verifications WHERE email = ? AND purpose = ?', [email, purpose])
+  return { ok: true }
 }
 
 async function getVerificationEntry(db, email, purpose) {
@@ -172,19 +208,12 @@ function registerMobileAuthRoutes(app, db) {
         return res.status(404).json({ error: 'No lifeguard account found for that email.' })
       }
 
-      const now = Date.now()
-      await run(
-        db,
-        `INSERT INTO email_verifications (email, purpose, code, verified, expires_at, sent_at)
-         VALUES (?, 'password_reset', '', 1, ?, ?)
-         ON CONFLICT(email, purpose) DO UPDATE SET
-           verified = 1,
-           expires_at = excluded.expires_at,
-           sent_at = excluded.sent_at`,
-        [email, now + CODE_TTL_MS, now]
-      )
-
-      res.json({ ok: true, email })
+      const code = makeCode()
+      await saveCode(db, email, 'password_reset', code)
+      const sent = await sendPasswordResetCodeEmail(user.email, code)
+      const payload = { ok: true, email }
+      if (sent.demo) payload.demoCode = code
+      res.json(payload)
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: 'Server error' })
@@ -206,10 +235,8 @@ function registerMobileAuthRoutes(app, db) {
         return res.status(404).json({ error: 'No lifeguard account found for that email.' })
       }
 
-      const entry = await getVerificationEntry(db, email, 'password_reset')
-      if (!entry?.verified) {
-        return res.status(400).json({ error: 'Verify your email before resetting your password.' })
-      }
+      const checked = await consumeCode(db, email, 'password_reset', req.body?.code)
+      if (!checked.ok) return res.status(400).json(checked)
 
       const check = validatePassword(newPassword, { email })
       if (!check.ok) return res.status(400).json(check)
@@ -220,12 +247,6 @@ function registerMobileAuthRoutes(app, db) {
         `UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?`,
         [passwordHash, user.id]
       )
-      await run(
-        db,
-        'DELETE FROM email_verifications WHERE email = ? AND purpose = ?',
-        [email, 'password_reset']
-      )
-
       res.json({ ok: true })
     } catch (err) {
       console.error(err)

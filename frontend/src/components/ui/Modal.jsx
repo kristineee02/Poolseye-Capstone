@@ -1,11 +1,13 @@
+import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from './Icon'
 import './Modal.css'
 
-export function Modal({ isOpen, onClose, title, children, size = 'md', isDangerous = false }) {
+export function Modal({ isOpen, onClose, title, children, size = 'md', elevated = false }) {
   if (!isOpen) return null
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
+  const node = (
+    <div className={`modal-overlay${elevated ? ' modal-overlay-front' : ''}`} onClick={onClose}>
       <div className={`modal modal-${size}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>{title}</h2>
@@ -17,6 +19,12 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', isDangero
       </div>
     </div>
   )
+
+  if (elevated && typeof document !== 'undefined') {
+    return createPortal(node, document.body)
+  }
+
+  return node
 }
 
 export function ConfirmModal({ isOpen, onClose, title, message, onConfirm, isDangerous = false, confirmText = 'Confirm', cancelText = 'Cancel' }) {
@@ -43,10 +51,34 @@ export function ConfirmModal({ isOpen, onClose, title, message, onConfirm, isDan
   )
 }
 
-export function FormModal({ isOpen, onClose, title, onSubmit, submitText = 'Save', submitDisabled = false, children }) {
+export function useStatusModal() {
+  const [status, setStatus] = useState(null)
+  const showStatus = (next) => setStatus(next)
+  const closeStatus = () => setStatus(null)
+  return { status, showStatus, closeStatus }
+}
+
+export function StatusModal({ status, onClose }) {
+  if (!status) return null
+  const failed = status.tone === 'error'
+  return (
+    <Modal isOpen onClose={onClose} title={status.title} size="sm" elevated>
+      <div className={`status-modal ${failed ? 'status-error' : 'status-success'}`}>
+        <p>{status.message}</p>
+        <div className="confirm-modal-actions">
+          <button type="button" className={failed ? 'btn-danger' : 'btn-primary'} onClick={onClose}>
+            OK
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+export function FormModal({ isOpen, onClose, title, onSubmit, submitText = 'Save', submitDisabled = false, submitting = false, children }) {
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (submitDisabled) return
+    if (submitDisabled || submitting) return
     onSubmit()
   }
 
@@ -58,8 +90,9 @@ export function FormModal({ isOpen, onClose, title, onSubmit, submitText = 'Save
           <button type="button" className="btn-secondary" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="btn-primary" disabled={submitDisabled}>
-            {submitText}
+          <button type="submit" className="btn-primary" disabled={submitDisabled || submitting}>
+            {submitting ? <span className="btn-spinner" aria-hidden="true" /> : null}
+            {submitting ? 'Please wait…' : submitText}
           </button>
         </div>
       </form>

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Icon } from '../components/ui/Icon'
 import { SelectDropdown, MenuDropdown, DropdownItem } from '../components/ui/Dropdown'
-import { useToast, ToastContainer } from '../components/ui/Toast'
+import { StatusModal, useStatusModal } from '../components/ui/Modal'
 import WeeklyBarChart from '../components/analytics/WeeklyBarChart'
 import FalsePositiveLineChart from '../components/analytics/FalsePositiveLineChart'
 import PeakRiskHeatmap from '../components/analytics/PeakRiskHeatmap'
@@ -39,7 +39,8 @@ export default function AnalyticsPage() {
   const [dateRange, setDateRange] = useState('7d')
   const [filterCamera, setFilterCamera] = useState('all')
   const [filterLifeguard, setFilterLifeguard] = useState('all')
-  const { toasts, addToast, removeToast } = useToast()
+  const { status, showStatus, closeStatus } = useStatusModal()
+  const [exporting, setExporting] = useState(false)
 
   const cameraOptions = [
     { value: 'all', label: 'All cameras' },
@@ -52,15 +53,22 @@ export default function AnalyticsPage() {
   ]
 
   const handleExport = (format) => {
-    addToast(`Exporting report as ${format.toUpperCase()}…`, 'info')
-    setTimeout(() => addToast(`Report exported as ${format.toUpperCase()} successfully`, 'success'), 1200)
+    setExporting(true)
+    setTimeout(() => {
+      setExporting(false)
+      showStatus({
+        tone: 'success',
+        title: 'Report exported',
+        message: `The report was exported as ${format.toUpperCase()}.`,
+      })
+    }, 900)
   }
 
   const { detectionsSummary, alertResponseTimes, cameraActivity, detectionAccuracy, peakMonitoringHours } = reportingMetrics
 
   return (
     <div className="page">
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
+      <StatusModal status={status} onClose={closeStatus} />
 
       <div className="pagehead">
         <div>

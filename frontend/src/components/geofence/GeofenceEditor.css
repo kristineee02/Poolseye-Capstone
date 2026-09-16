@@ -156,9 +156,10 @@
 }
 
 .mode-btn-add {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--btn-gradient);
+  border-color: transparent;
   color: #fff;
+  box-shadow: var(--btn-shadow);
 }
 
 .mode-btn-add svg {

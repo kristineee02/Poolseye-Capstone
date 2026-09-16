@@ -399,7 +399,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 10,
-    ...shadow.sm,
+    ...shadow.danger,
   },
   signOutText: {
     color: '#FFFFFF',

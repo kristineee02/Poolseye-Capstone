@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '../ui/Icon'
 import CameraFeedIllustration from './CameraFeedIllustration'
 import GeofenceOverlay from '../geofence/GeofenceOverlay'
@@ -11,34 +11,32 @@ import './CameraPanel.css'
 export default function CameraPanel({ compact = false }) {
   const { zones, dirty, updatedAt } = useGeofence()
   const [streamStatus, setStreamStatus] = useState('connecting')
-  const [streamSource, setStreamSource] = useState('rtsp')
+  const [reconnectToken, setReconnectToken] = useState(0)
   const streamSrc = `${STREAM_BASE}/stream`
+  const online = streamStatus === 'online'
+
+  const checkStream = useCallback(() => {
+    fetch(`${STREAM_BASE}/health`, { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => {
+        setStreamStatus(data?.has_frame ? 'online' : 'offline')
+      })
+      .catch(() => {
+        setStreamStatus('offline')
+      })
+  }, [])
 
   useEffect(() => {
     if (compact) return undefined
-    let cancelled = false
+    checkStream()
+    const id = setInterval(checkStream, 5000)
+    return () => clearInterval(id)
+  }, [compact, checkStream, reconnectToken])
 
-    const check = () => {
-      fetch(`${STREAM_BASE}/health`, { cache: 'no-store' })
-        .then((res) => (res.ok ? res.json() : Promise.reject()))
-        .then((data) => {
-          if (cancelled) return
-          setStreamSource(data?.source || 'rtsp')
-          if (data?.has_frame) setStreamStatus('online')
-          else setStreamStatus('connecting')
-        })
-        .catch(() => {
-          if (!cancelled) setStreamStatus('offline')
-        })
-    }
-
-    check()
-    const id = setInterval(check, 5000)
-    return () => {
-      cancelled = true
-      clearInterval(id)
-    }
-  }, [compact])
+  const reconnect = () => {
+    setStreamStatus('connecting')
+    setReconnectToken((n) => n + 1)
+  }
 
   if (compact) {
     return (
@@ -68,8 +66,8 @@ export default function CameraPanel({ compact = false }) {
         </div>
       </div>
 
-      <div className="camera-stage">
-        {streamStatus === 'online' ? (
+      <div className={`camera-stage${online ? '' : ' is-offline'}`}>
+        {online ? (
           <img
             className="camera-stage-feed"
             src={streamSrc}
@@ -79,35 +77,37 @@ export default function CameraPanel({ compact = false }) {
           />
         ) : (
           <div className="camera-stage-offline" role="status">
-            <Icon.AlertTriangle />
-            <strong>{streamStatus === 'connecting' ? 'Connecting to camera' : 'CCTV offline'}</strong>
-            <p>
-              {streamStatus === 'connecting' ? (
-                <>
-                  Stream server is up. Waiting for frames
-                  {streamSource === 'webcam' ? ' from the laptop webcam' : ' from the Tapo RTSP camera'}.
-                </>
-              ) : (
-                <>
-                  Start <code>scripts/live_server.py</code> on the on-site PC, or set{' '}
-                  <code>VITE_STREAM_URL</code> when hosting online.
-                </>
-              )}
+            <Icon.VideoOff />
+            <p className="feed-unavailable-copy">
+              <strong>FEED UNAVAILABLE</strong>
+              <span> — Please check connection.</span>
             </p>
+            <button
+              type="button"
+              className="feed-reconnect"
+              onClick={reconnect}
+              disabled={streamStatus === 'connecting'}
+            >
+              {streamStatus === 'connecting' ? 'Reconnecting…' : 'Reconnect'}
+            </button>
           </div>
         )}
-        <svg
-          className="camera-geofence-overlay"
-          viewBox="0 0 1000 512"
-          preserveAspectRatio="xMidYMid slice"
-          aria-hidden="true"
-        >
-          <GeofenceOverlay zones={zones} />
-        </svg>
-        <div className={`geofence-sync-chip ${dirty ? 'is-live' : ''}`}>
-          {dirty ? 'Geofence live preview' : 'Geofence synced'}
-          {updatedAt && !dirty ? ` · ${new Date(updatedAt).toLocaleTimeString()}` : ''}
-        </div>
+        {online ? (
+          <>
+            <svg
+              className="camera-geofence-overlay"
+              viewBox="0 0 1000 512"
+              preserveAspectRatio="xMidYMid slice"
+              aria-hidden="true"
+            >
+              <GeofenceOverlay zones={zones} />
+            </svg>
+            <div className={`geofence-sync-chip ${dirty ? 'is-live' : ''}`}>
+              {dirty ? 'Geofence live preview' : 'Geofence synced'}
+              {updatedAt && !dirty ? ` · ${new Date(updatedAt).toLocaleTimeString()}` : ''}
+            </div>
+          </>
+        ) : null}
       </div>
 
       <div className="camera-footbar">

@@ -2,7 +2,8 @@
 // Touch-friendly, Sky Harmony–consistent components
 
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
 
 const TAG_STYLES = {
@@ -53,17 +54,75 @@ export function Divider() {
   return <View style={styles.divider} />;
 }
 
-export function Button({ label, onPress, variant = 'primary', style }) {
+export function GradientButton({
+  label,
+  onPress,
+  disabled,
+  loading,
+  children,
+  style,
+  textStyle,
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled || loading}
+      activeOpacity={0.85}
+      style={[styles.gradientShell, (disabled || loading) && styles.btnDisabled, style]}
+    >
+      <LinearGradient
+        colors={colors.buttonGradient}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={styles.gradientContent}>
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : children ? (
+          children
+        ) : (
+          <Text style={[styles.gradientText, textStyle]}>{label}</Text>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+export function Button({
+  label,
+  onPress,
+  variant = 'primary',
+  style,
+  disabled,
+  loading,
+  children,
+}) {
+  if (variant === 'primary') {
+    return (
+      <GradientButton
+        label={label}
+        onPress={onPress}
+        disabled={disabled}
+        loading={loading}
+        style={style}
+      >
+        {children}
+      </GradientButton>
+    );
+  }
+
   const variantStyle = {
-    primary: { bg: colors.accent, text: '#fff', border: 'transparent' },
     secondary: { bg: 'transparent', text: colors.textSecondary, border: colors.borderSubtle },
     danger: { bg: colors.alarm, text: '#fff', border: 'transparent' },
-    ghost:  { bg: colors.bgInset, text: colors.textSecondary, border: colors.borderSubtle },
+    warning: { bg: colors.warn, text: '#fff', border: 'transparent' },
+    ghost: { bg: colors.bgInset, text: colors.textSecondary, border: colors.borderSubtle },
   }[variant] || {};
 
   return (
     <TouchableOpacity
       onPress={onPress}
+      disabled={disabled || loading}
       style={[
         styles.btn,
         {
@@ -71,11 +130,20 @@ export function Button({ label, onPress, variant = 'primary', style }) {
           borderColor: variantStyle.border,
           borderWidth: variant === 'secondary' || variant === 'ghost' ? 1 : 0,
         },
+        variant === 'danger' && shadow.danger,
+        variant === 'warning' && shadow.warning,
+        (disabled || loading) && styles.btnDisabled,
         style,
       ]}
       activeOpacity={0.82}
     >
-      <Text style={[styles.btnText, { color: variantStyle.text }]}>{label}</Text>
+      {loading ? (
+        <ActivityIndicator color={variantStyle.text} />
+      ) : children ? (
+        children
+      ) : (
+        <Text style={[styles.btnText, { color: variantStyle.text }]}>{label}</Text>
+      )}
     </TouchableOpacity>
   );
 }
@@ -187,6 +255,29 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  gradientShell: {
+    minHeight: touch.min,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    ...shadow.button,
+  },
+  gradientText: {
+    color: '#FFFFFF',
+    fontSize: typography.base,
+    fontWeight: '700',
+  },
+  gradientContent: {
+    zIndex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnDisabled: {
+    opacity: 0.55,
   },
   btnText: {
     fontSize: typography.base,

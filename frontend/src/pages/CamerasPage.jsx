@@ -1,10 +1,9 @@
 import { useState } from 'react'
 import { Icon } from '../components/ui/Icon'
-import { Modal, FormModal, ConfirmModal } from '../components/ui/Modal'
+import { Modal, FormModal, ConfirmModal, StatusModal, useStatusModal } from '../components/ui/Modal'
 import { StatusBadge } from '../components/ui/Badge'
 import { DataTable } from '../components/ui/DataTable'
 import { EmptyState } from '../components/ui/EmptyState'
-import { useToast, ToastContainer } from '../components/ui/Toast'
 import { cameras as initialCameras } from '../data/cameras'
 import './CamerasPage.css'
 
@@ -16,7 +15,8 @@ export default function CamerasPage() {
   const [selectedCamera, setSelectedCamera] = useState(null)
   const [search, setSearch] = useState('')
   const [formData, setFormData] = useState({ name: '', ipAddress: '', location: '', zone: '', connectionType: 'IP Camera (RTSP)' })
-  const { toasts, addToast, removeToast } = useToast()
+  const [cameraErrors, setCameraErrors] = useState({})
+  const { status, showStatus, closeStatus } = useStatusModal()
 
   const filtered = cameraList.filter(
     (c) =>
@@ -44,11 +44,16 @@ export default function CamerasPage() {
     setShowDeleteModal(true)
   }
 
+  const validateCamera = () => {
+    const next = {}
+    if (!formData.name.trim()) next.name = 'Camera name is required.'
+    if (!formData.ipAddress.trim()) next.ipAddress = 'IP address is required.'
+    setCameraErrors(next)
+    return Object.keys(next).length === 0
+  }
+
   const handleAddCamera = () => {
-    if (!formData.name.trim() || !formData.ipAddress.trim()) {
-      addToast('Camera name and IP address are required.', 'warning')
-      return
-    }
+    if (!validateCamera()) return
     const newCamera = {
       id: `cam-${Date.now()}`,
       ...formData,
@@ -66,22 +71,21 @@ export default function CamerasPage() {
     }
     setCameraList([...cameraList, newCamera])
     setShowAddModal(false)
-    addToast(`"${formData.name}" added successfully`, 'success')
+    setCameraErrors({})
+    showStatus({ tone: 'success', title: 'Camera added', message: `"${formData.name}" was added.` })
   }
 
   const handleUpdateCamera = () => {
-    if (!formData.name.trim() || !formData.ipAddress.trim()) {
-      addToast('Camera name and IP address are required.', 'warning')
-      return
-    }
+    if (!validateCamera()) return
     setCameraList(cameraList.map((c) => (c.id === selectedCamera.id ? { ...c, ...formData } : c)))
     setShowEditModal(false)
-    addToast(`"${formData.name}" updated successfully`, 'success')
+    setCameraErrors({})
+    showStatus({ tone: 'success', title: 'Camera updated', message: `"${formData.name}" was updated.` })
   }
 
   const handleDeleteCamera = () => {
     setCameraList(cameraList.filter((c) => c.id !== selectedCamera.id))
-    addToast(`"${selectedCamera.name}" removed`, 'info')
+    showStatus({ tone: 'success', title: 'Camera removed', message: `"${selectedCamera.name}" was removed.` })
   }
 
   const columns = [
@@ -118,7 +122,7 @@ export default function CamerasPage() {
 
   return (
     <div className="page">
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
+      <StatusModal status={status} onClose={closeStatus} />
 
       <div className="pagehead">
         <div>
@@ -189,11 +193,13 @@ export default function CamerasPage() {
       <FormModal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Add New Camera" onSubmit={handleAddCamera} submitText="Add Camera">
         <div className="form-field">
           <label>Camera Name *</label>
-          <input type="text" placeholder="e.g., South Patio Pool" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
+          <input type="text" className={cameraErrors.name ? 'is-invalid' : ''} placeholder="e.g., South Patio Pool" value={formData.name} onChange={(e) => { setFormData({ ...formData, name: e.target.value }); setCameraErrors((c) => ({ ...c, name: '' })) }} />
+          {cameraErrors.name ? <p className="field-error">{cameraErrors.name}</p> : null}
         </div>
         <div className="form-field">
           <label>IP Address *</label>
-          <input type="text" placeholder="e.g., 192.168.1.101" value={formData.ipAddress} onChange={(e) => setFormData({ ...formData, ipAddress: e.target.value })} />
+          <input type="text" className={cameraErrors.ipAddress ? 'is-invalid' : ''} placeholder="e.g., 192.168.1.101" value={formData.ipAddress} onChange={(e) => { setFormData({ ...formData, ipAddress: e.target.value }); setCameraErrors((c) => ({ ...c, ipAddress: '' })) }} />
+          {cameraErrors.ipAddress ? <p className="field-error">{cameraErrors.ipAddress}</p> : null}
         </div>
         <div className="form-row-2">
           <div className="form-field">
@@ -220,11 +226,13 @@ export default function CamerasPage() {
       <FormModal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title={`Edit: ${selectedCamera?.name}`} onSubmit={handleUpdateCamera} submitText="Save Changes">
         <div className="form-field">
           <label>Camera Name *</label>
-          <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
+          <input type="text" className={cameraErrors.name ? 'is-invalid' : ''} value={formData.name} onChange={(e) => { setFormData({ ...formData, name: e.target.value }); setCameraErrors((c) => ({ ...c, name: '' })) }} />
+          {cameraErrors.name ? <p className="field-error">{cameraErrors.name}</p> : null}
         </div>
         <div className="form-field">
           <label>IP Address *</label>
-          <input type="text" value={formData.ipAddress} onChange={(e) => setFormData({ ...formData, ipAddress: e.target.value })} />
+          <input type="text" className={cameraErrors.ipAddress ? 'is-invalid' : ''} value={formData.ipAddress} onChange={(e) => { setFormData({ ...formData, ipAddress: e.target.value }); setCameraErrors((c) => ({ ...c, ipAddress: '' })) }} />
+          {cameraErrors.ipAddress ? <p className="field-error">{cameraErrors.ipAddress}</p> : null}
         </div>
         <div className="form-row-2">
           <div className="form-field">

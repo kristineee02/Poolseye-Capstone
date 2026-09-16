@@ -1,9 +1,10 @@
 /* ===== Buttons ===== */
 .btn-primary {
-  background: var(--btn-primary-bg);
+  background: var(--btn-gradient);
   color: #fff;
   border: 1px solid transparent;
-  border-radius: var(--r-sm);
+  border-radius: var(--btn-radius);
+  box-shadow: var(--btn-shadow);
   font-family: var(--font-ui);
   font-size: 12.5px;
   font-weight: 600;
@@ -12,19 +13,21 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  transition: background var(--dur-fast) var(--ease-ui), box-shadow var(--dur-fast) var(--ease-ui);
+  transition: background var(--dur-fast) var(--ease-ui), box-shadow var(--dur-fast) var(--ease-ui), opacity var(--dur-fast) var(--ease-ui);
 }
 .btn-primary:hover:not(:disabled) {
-  background: var(--btn-primary-hover);
-  box-shadow: var(--shadow-sm);
+  background: var(--btn-gradient-hover);
+  box-shadow: 0 6px 16px rgba(40, 129, 255, 0.34);
 }
 .btn-primary:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+  box-shadow: none;
 }
 .btn-primary svg {
   width: 14px;
   height: 14px;
+  color: #fff;
 }
 
 .chip-btn {

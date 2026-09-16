@@ -1,12 +1,76 @@
 /* PoolsEye login — Sky Harmony light layout (matches mobile reference) */
 
 .login-page {
+  position: relative;
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
   background: #F0F8FF;
+}
+
+.login-back {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: #1E6FFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.login-back svg {
+  width: 24px;
+  height: 24px;
+}
+
+.login-back:hover {
+  background: #FFFFFF;
+}
+
+.login-code-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.login-rules {
+  list-style: none;
+  margin: -4px 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.login-rules li {
+  font-size: 0.8rem;
+  color: #8FA3B8;
+}
+
+.login-rules li.met {
+  color: #1B9C6E;
+}
+
+.login-rules li.miss {
+  color: #D6364A;
+}
+
+.login-expire {
+  margin: 0;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #8FA3B8;
 }
 
 .login-panel {
@@ -55,6 +119,10 @@
   background: #FFFFFF;
   border: 1px solid #E2E8F0;
   padding: 0 14px;
+}
+
+.login-field.is-invalid {
+  border-color: #D6364A;
 }
 
 .login-field-icon {
@@ -125,6 +193,30 @@
   height: 18px;
 }
 
+.code-boxes {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.code-box {
+  width: 46px;
+  height: 54px;
+  border-radius: 12px;
+  border: 1px solid #E2E8F0;
+  background: #FFFFFF;
+  text-align: center;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0F172A;
+}
+
+.code-box:focus {
+  outline: none;
+  border-color: #1E6FFF;
+  box-shadow: 0 0 0 3px rgba(30, 111, 255, 0.16);
+}
+
 .login-error {
   font-size: 0.85rem;
   color: #7A1C28;
@@ -136,11 +228,16 @@
 }
 
 .login-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   height: 52px;
   border: none;
   border-radius: 999px;
-  background: var(--btn-primary-bg);
+  background: var(--btn-gradient);
   color: #fff;
+  box-shadow: var(--btn-shadow);
   font-family: var(--font-ui);
   font-size: 1rem;
   font-weight: 700;
@@ -150,13 +247,43 @@
 }
 
 .login-btn:hover:not(:disabled) {
-  background: var(--btn-primary-hover);
-  box-shadow: var(--shadow-md);
+  background: var(--btn-gradient-hover);
+  box-shadow: 0 6px 16px rgba(40, 129, 255, 0.34);
 }
 
 .login-btn:disabled {
   opacity: 0.7;
   cursor: not-allowed;
+  box-shadow: none;
+}
+
+.login-step-title {
+  margin: -16px 0 18px;
+  text-align: center;
+  color: #5A6B7D;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.login-demo {
+  margin: -8px 0 14px;
+  font-size: 0.82rem;
+  color: #1E6FFF;
+  font-weight: 600;
+}
+
+.login-text-btn {
+  border: none;
+  background: transparent;
+  color: #2881FF;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 6px;
+}
+
+.login-code-meta .login-text-btn {
+  padding: 0;
 }
 
 .login-hint {

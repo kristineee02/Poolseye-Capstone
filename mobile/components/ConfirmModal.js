@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Pressable,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
 
 function ActionButton({ label, tone = 'secondary', onPress }) {
@@ -26,12 +27,20 @@ function ActionButton({ label, tone = 'secondary', onPress }) {
       onPress={onPress}
       activeOpacity={0.85}
     >
+      {isPrimary ? (
+        <LinearGradient
+          colors={colors.buttonGradient}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
       <Text
         style={[
           styles.btnText,
-          isPrimary && styles.btnTextOnAccent,
-          isDanger && styles.btnTextOnAccent,
+          (isPrimary || isDanger) && styles.btnTextOnAccent,
           !isPrimary && !isDanger && styles.btnTextSecondary,
+          isPrimary && styles.btnTextRaised,
         ]}
       >
         {label}
@@ -176,6 +185,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   btnSecondary: {
     backgroundColor: colors.bgPanel,
@@ -183,10 +193,11 @@ const styles = StyleSheet.create({
     borderColor: colors.borderStrong,
   },
   btnPrimary: {
-    backgroundColor: colors.accent,
+    ...shadow.button,
   },
   btnDanger: {
     backgroundColor: colors.alarm,
+    ...shadow.danger,
   },
   btnText: {
     fontSize: typography.base,
@@ -197,5 +208,8 @@ const styles = StyleSheet.create({
   },
   btnTextOnAccent: {
     color: '#FFFFFF',
+  },
+  btnTextRaised: {
+    zIndex: 1,
   },
 });

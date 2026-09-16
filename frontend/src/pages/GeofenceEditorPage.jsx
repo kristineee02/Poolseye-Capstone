@@ -4,7 +4,7 @@ import Toggle from '../components/ui/Toggle'
 import GeofenceStage from '../components/geofence/GeofenceStage'
 import { ZONE_TYPES, getZoneTypeMeta, initialZones } from '../data/geofence'
 import { useGeofence } from '../context/GeofenceContext'
-import { useToast, ToastContainer } from '../components/ui/Toast'
+import { StatusModal, useStatusModal } from '../components/ui/Modal'
 import '../components/camera/CameraPanel.css'
 import '../components/geofence/GeofenceEditor.css'
 
@@ -31,7 +31,7 @@ const DEFAULT_NAMES = {
 
 export default function GeofenceEditorPage() {
   const { zones, setZones, dirty, saving, save, discard, syncError } = useGeofence()
-  const { toasts, addToast, removeToast } = useToast()
+  const { status, showStatus, closeStatus } = useStatusModal()
   const [activeZoneId, setActiveZoneId] = useState(zones[0]?.id ?? initialZones[0].id)
   const [mode, setMode] = useState('add')
   const [savedNotice, setSavedNotice] = useState(false)
@@ -179,16 +179,16 @@ export default function GeofenceEditorPage() {
     try {
       await save(zones)
       setSavedNotice(true)
-      addToast('Geofence coordinates saved to SQLite', 'success')
+      showStatus({ tone: 'success', title: 'Geofence saved', message: 'Zone coordinates were saved.' })
       setTimeout(() => setSavedNotice(false), 2200)
     } catch (err) {
-      addToast(err.message || 'Could not save geofence', 'error')
+      showStatus({ tone: 'error', title: 'Save failed', message: err.message || 'Could not save the geofence.' })
     }
   }
 
   return (
     <div className="page geofence-page">
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
+      <StatusModal status={status} onClose={closeStatus} />
       <div className="pagehead geofence-pagehead">
         <div>
           <h1>Geofence editor</h1>

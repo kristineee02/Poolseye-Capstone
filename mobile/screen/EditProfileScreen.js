@@ -3,14 +3,16 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity,
-  Image, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
+  Image, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
+import { GradientButton } from '../components/Primitives';
 import { useAuth } from '../context/AuthContext';
+import StatusModal from '../components/StatusModal';
 import { site } from '../data';
 import CameraIcon from '../components/CameraIcon';
 
@@ -43,7 +45,8 @@ export default function EditProfileScreen({ onCancel }) {
   const [name, setName] = useState(user?.name || '');
   const [photoUri, setPhotoUri] = useState(user?.photoUri || null);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [nameError, setNameError] = useState('');
+  const [status, setStatus] = useState(null);
 
   const initials = getInitials(name, user?.initials || 'LG');
 
@@ -71,16 +74,16 @@ export default function EditProfileScreen({ onCancel }) {
   const handleSave = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
-      setError('Name is required.');
+      setNameError('Name is required.');
       return;
     }
     if (trimmed.length < 2) {
-      setError('Enter at least 2 characters for your name.');
+      setNameError('Enter at least 2 characters for your name.');
       return;
     }
 
+    setNameError('');
     setSaving(true);
-    setError('');
     const result = await updateProfile({
       name: trimmed,
       photoUri,
@@ -88,10 +91,19 @@ export default function EditProfileScreen({ onCancel }) {
     setSaving(false);
 
     if (!result.ok) {
-      setError(result.error || 'Could not save profile.');
+      setStatus({
+        tone: 'error',
+        title: 'Profile not saved',
+        message: result.error || 'Could not save profile.',
+      });
       return;
     }
-    onCancel?.();
+    setStatus({
+      tone: 'success',
+      title: 'Profile saved',
+      message: 'Your profile changes were saved.',
+      done: true,
+    });
   };
 
   return (
@@ -149,13 +161,14 @@ export default function EditProfileScreen({ onCancel }) {
           <TextInput
             style={styles.input}
             value={name}
-            onChangeText={setName}
+            onChangeText={(value) => { setName(value); setNameError(''); }}
             placeholder="Your name"
             placeholderTextColor={colors.textTertiary}
             autoCapitalize="words"
             autoCorrect={false}
           />
         </View>
+        {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
 
         <View style={styles.field}>
           <Text style={styles.label}>Email</Text>
@@ -175,25 +188,26 @@ export default function EditProfileScreen({ onCancel }) {
           <Text style={styles.helper}>{site.name || 'Main Pool'} · On duty</Text>
         </View>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <TouchableOpacity
+        <GradientButton
           style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
           onPress={handleSave}
           disabled={saving}
-          activeOpacity={0.85}
-        >
-          {saving ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.saveText}>Save changes</Text>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={onCancel} style={styles.cancelBtn} activeOpacity={0.8}>
-          <Text style={styles.cancelText}>Cancel</Text>
-        </TouchableOpacity>
+          loading={saving}
+          label="Save changes"
+          textStyle={styles.saveText}
+        />
       </ScrollView>
+      <StatusModal
+        visible={Boolean(status)}
+        onClose={() => {
+          const shouldClose = status?.done;
+          setStatus(null);
+          if (shouldClose) onCancel?.();
+        }}
+        title={status?.title}
+        message={status?.message}
+        tone={status?.tone}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -307,6 +321,12 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontWeight: '500',
   },
+  fieldError: {
+    color: colors.alarm,
+    fontSize: typography.sm,
+    fontWeight: '600',
+    marginTop: -2,
+  },
   error: {
     color: colors.alarm,
     fontSize: typography.sm,
@@ -316,9 +336,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     minHeight: 52,
     borderRadius: radius.full,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   saveBtnDisabled: {
     opacity: 0.7,
@@ -326,15 +343,6 @@ const styles = StyleSheet.create({
   saveText: {
     color: '#FFFFFF',
     fontSize: typography.md,
-    fontWeight: '700',
-  },
-  cancelBtn: {
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  cancelText: {
-    color: colors.accent,
-    fontSize: typography.base,
     fontWeight: '700',
   },
 });
