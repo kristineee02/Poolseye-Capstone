@@ -1,5 +1,6 @@
 /**
- * Professional app icon: logo at 85% of square, equal padding, no stretch/crop.
+ * Square icons with the logo contained (never stretched).
+ * Android adaptive icons mask the outer ~18% — logo must stay in the center 56%.
  */
 const path = require('path');
 const fs = require('fs');
@@ -10,9 +11,11 @@ const SOURCE = fs.existsSync(path.join(ASSETS, 'logo-source.png'))
   ? path.join(ASSETS, 'logo-source.png')
   : path.join(ASSETS, 'logo.png');
 const BG = { r: 255, g: 255, b: 255, alpha: 1 };
-const FILL = 0.85;
+const IOS_FILL = 0.72;
+const ADAPTIVE_FILL = 0.52;
+const SPLASH_FILL = 0.88;
 
-async function makeIcon(output, size, fill = FILL) {
+async function makeIcon(output, size, fill) {
   const trimmed = await sharp(SOURCE).trim({ threshold: 25 }).png().toBuffer();
   const { width: tw, height: th } = await sharp(trimmed).metadata();
 
@@ -36,12 +39,12 @@ async function makeIcon(output, size, fill = FILL) {
 }
 
 async function main() {
-  await makeIcon(path.join(ASSETS, 'icon-v12.png'), 1024);
-  await makeIcon(path.join(ASSETS, 'icon.png'), 1024);
-  await makeIcon(path.join(ASSETS, 'app-icon.png'), 1024);
-  await makeIcon(path.join(ASSETS, 'adaptive-icon.png'), 1024);
-  await makeIcon(path.join(ASSETS, 'splash-icon.png'), 1024);
-  await makeIcon(path.join(ASSETS, 'logo-header.png'), 512);
+  await makeIcon(path.join(ASSETS, 'icon-v12.png'), 1024, IOS_FILL);
+  await makeIcon(path.join(ASSETS, 'icon.png'), 1024, IOS_FILL);
+  await makeIcon(path.join(ASSETS, 'app-icon.png'), 1024, IOS_FILL);
+  await makeIcon(path.join(ASSETS, 'adaptive-icon.png'), 1024, ADAPTIVE_FILL);
+  await makeIcon(path.join(ASSETS, 'splash-icon.png'), 1024, SPLASH_FILL);
+  await makeIcon(path.join(ASSETS, 'logo-header.png'), 512, SPLASH_FILL);
 }
 
 main().catch((err) => {

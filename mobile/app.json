@@ -2,7 +2,7 @@
   "expo": {
     "name": "PoolsEye",
     "slug": "poolseye",
-    "version": "1.2.4",
+    "version": "1.2.5",
     "orientation": "portrait",
     "icon": "./assets/icon-v12.png",
     "userInterfaceStyle": "light",
@@ -12,7 +12,7 @@
         {
           "backgroundColor": "#FFFFFF",
           "image": "./assets/splash-icon.png",
-          "imageWidth": 300,
+          "imageWidth": 200,
           "resizeMode": "contain"
         }
       ]
