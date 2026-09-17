@@ -62,13 +62,26 @@ async function sendEmail({ to, subject, text, html }) {
   return { ok: true, demo: false, messageId: data.messageId }
 }
 
-function verificationEmailHtml({ title, intro, code, ignoreLine }) {
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function brandedEmailHtml({ title, intro, highlight, note, ignoreLine, compactHighlight = false }) {
+  const safeTitle = escapeHtml(title)
+  const highlightStyle = compactHighlight
+    ? 'font-size:22px;line-height:1.45;font-weight:800;letter-spacing:0.4px;color:#111827;word-break:break-all;'
+    : 'font-size:40px;line-height:1;font-weight:800;letter-spacing:6px;color:#111827;'
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${title}</title>
+  <title>${safeTitle}</title>
 </head>
 <body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;">
@@ -82,7 +95,7 @@ function verificationEmailHtml({ title, intro, code, ignoreLine }) {
           </tr>
           <tr>
             <td align="center" style="padding-bottom:16px;">
-              <span style="font-size:22px;line-height:1.3;font-weight:800;color:#111827;">&#128274;&nbsp; ${title}</span>
+              <span style="font-size:22px;line-height:1.3;font-weight:800;color:#111827;">&#128274;&nbsp; ${safeTitle}</span>
             </td>
           </tr>
           <tr>
@@ -92,12 +105,12 @@ function verificationEmailHtml({ title, intro, code, ignoreLine }) {
           </tr>
           <tr>
             <td align="center" style="padding:8px 0 12px;">
-              <span style="font-size:40px;line-height:1;font-weight:800;letter-spacing:6px;color:#111827;">${code}</span>
+              <span style="${highlightStyle}">${escapeHtml(highlight)}</span>
             </td>
           </tr>
           <tr>
             <td align="center" style="padding-bottom:28px;font-size:13px;line-height:1.4;color:#9CA3AF;">
-              This code expires in 10 minutes
+              ${escapeHtml(note)}
             </td>
           </tr>
           <tr>
@@ -116,6 +129,16 @@ function verificationEmailHtml({ title, intro, code, ignoreLine }) {
   </table>
 </body>
 </html>`
+}
+
+function verificationEmailHtml({ title, intro, code, ignoreLine }) {
+  return brandedEmailHtml({
+    title,
+    intro,
+    highlight: code,
+    note: 'This code expires in 10 minutes',
+    ignoreLine,
+  })
 }
 
 async function sendVerificationCodeEmail(to, code) {
@@ -147,20 +170,38 @@ async function sendVerificationCodeEmail(to, code) {
 }
 
 async function sendWelcomeEmail({ to, name, tempPassword }) {
-  const subject = 'Welcome to PoolsEye — your lifeguard account'
+  const greetingName = name || 'Lifeguard'
+  const subject = 'PoolsEye — your lifeguard account'
+  const intro = `Hi ${escapeHtml(greetingName)}, your PoolsEye lifeguard account has been created. Sign in to the mobile app with ${escapeHtml(to)} and this temporary password:`
+  const note = 'You will be asked to change this password on first login.'
+  const ignoreLine = 'If you did not expect this account, contact your administrator.'
   const text = [
-    `Hi ${name || 'Lifeguard'},`,
+    'Your account is ready',
     '',
-    'Your PoolsEye lifeguard account has been created by an administrator.',
+    `Hi ${greetingName}, your PoolsEye lifeguard account has been created.`,
+    `Sign in to the mobile app with ${to} and this temporary password:`,
     '',
-    `Email: ${to}`,
-    `Temporary password: ${tempPassword}`,
+    tempPassword,
     '',
-    'Sign in to the PoolsEye mobile app with these credentials.',
-    'You will be asked to change your password on first login.',
+    note,
+    ignoreLine,
+    '',
+    'The PoolsEye Team',
   ].join('\n')
 
-  return sendEmail({ to, subject, text })
+  return sendEmail({
+    to,
+    subject,
+    text,
+    html: brandedEmailHtml({
+      title: 'Your account is ready',
+      intro,
+      highlight: tempPassword,
+      note,
+      ignoreLine,
+      compactHighlight: true,
+    }),
+  })
 }
 
 async function sendPasswordResetCodeEmail(to, code, { audience = 'lifeguard' } = {}) {
