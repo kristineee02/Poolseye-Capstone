@@ -17,12 +17,14 @@ Host the **frontend + backend** online first. CCTV (`live_server.py`) can stay o
 | `FRONTEND_ORIGIN` | Your Vercel URL, e.g. `https://poolseye.vercel.app` |
 | `BREVO_API_KEY` | Optional |
 | `BREVO_SENDER` | Optional |
+| `TURSO_DATABASE_URL` | `libsql://...` URL from the Turso database page |
+| `TURSO_AUTH_TOKEN` | Full-access read/write token for that database |
 
 4. Deploy and copy the service URL, e.g. `https://poolseye-api.onrender.com`.
 
 Notes:
 - Free tiers may sleep when idle (cold start).
-- SQLite on free hosts may reset on redeploy unless you add a **persistent disk**. Fine for early hosting; plan Postgres later for production data.
+- Without `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`, the API uses a local SQLite file that Render deletes on sleep or redeploy. Set both so accounts stay in Turso.
 
 ## 2. Frontend (Vercel)
 

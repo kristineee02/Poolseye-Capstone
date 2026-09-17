@@ -1,11 +1,14 @@
 require('dotenv').config()
+const { AsyncLocalStorage } = require('node:async_hooks')
 const fs = require('fs')
 const path = require('path')
 const sqlite3 = require('sqlite3').verbose()
+const { createClient } = require('@libsql/client')
 const bcrypt = require('bcrypt')
 
 const DB_PATH = path.join(__dirname, 'data', 'app.db')
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql')
+const txStore = new AsyncLocalStorage()
 
 const LIFEGUARD_COLUMNS = [
   ['lifeguard_role', 'TEXT'],
@@ -25,7 +28,34 @@ const LIFEGUARD_COLUMNS = [
   ['response_time', 'TEXT'],
 ]
 
-function openDb() {
+function isLibsql(db) {
+  return Boolean(db && db._client)
+}
+
+function activeExecutor(db) {
+  return txStore.getStore()?.tx || db._client
+}
+
+function resultMeta(result) {
+  const rawId = result.lastInsertRowid
+  return {
+    lastID: rawId == null ? 0 : Number(rawId),
+    changes: Number(result.rowsAffected || 0),
+  }
+}
+
+function toPlainRow(row) {
+  if (!row) return undefined
+  const plain = {}
+  for (const key of Object.keys(row)) {
+    if (/^\d+$/.test(key)) continue
+    const value = row[key]
+    plain[key] = typeof value === 'bigint' ? Number(value) : value
+  }
+  return plain
+}
+
+function openSqlite() {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(path.dirname(DB_PATH), { recursive: true })
     const db = new sqlite3.Database(DB_PATH, (err) => {
@@ -35,7 +65,7 @@ function openDb() {
   })
 }
 
-function run(db, sql, params = []) {
+function sqliteRun(db, sql, params = []) {
   return new Promise((resolve, reject) => {
     db.run(sql, params, function (err) {
       if (err) reject(err)
@@ -44,7 +74,7 @@ function run(db, sql, params = []) {
   })
 }
 
-function get(db, sql, params = []) {
+function sqliteGet(db, sql, params = []) {
   return new Promise((resolve, reject) => {
     db.get(sql, params, (err, row) => {
       if (err) reject(err)
@@ -53,7 +83,7 @@ function get(db, sql, params = []) {
   })
 }
 
-function all(db, sql, params = []) {
+function sqliteAll(db, sql, params = []) {
   return new Promise((resolve, reject) => {
     db.all(sql, params, (err, rows) => {
       if (err) reject(err)
@@ -62,13 +92,97 @@ function all(db, sql, params = []) {
   })
 }
 
-function exec(db, sql) {
+function sqliteExec(db, sql) {
   return new Promise((resolve, reject) => {
     db.exec(sql, (err) => {
       if (err) reject(err)
       else resolve()
     })
   })
+}
+
+function openLibsql() {
+  const url = process.env.TURSO_DATABASE_URL
+  const authToken = process.env.TURSO_AUTH_TOKEN
+  if (!authToken) {
+    throw new Error('TURSO_DATABASE_URL is set, but TURSO_AUTH_TOKEN is missing')
+  }
+
+  return {
+    _client: createClient({
+      url,
+      authToken,
+      intMode: 'number',
+    }),
+  }
+}
+
+async function libsqlRun(db, sql, params = []) {
+  const statement = sql.trim()
+
+  if (/^BEGIN\b/i.test(statement)) {
+    const tx = await db._client.transaction('write')
+    txStore.enterWith({ tx })
+    return { lastID: 0, changes: 0 }
+  }
+
+  if (/^COMMIT\b/i.test(statement)) {
+    const ctx = txStore.getStore()
+    if (ctx?.tx) {
+      const tx = ctx.tx
+      ctx.tx = null
+      try {
+        await tx.commit()
+      } finally {
+        try { tx.close() } catch { /* already closed */ }
+      }
+    }
+    return { lastID: 0, changes: 0 }
+  }
+
+  if (/^ROLLBACK\b/i.test(statement)) {
+    const ctx = txStore.getStore()
+    if (ctx?.tx) {
+      const tx = ctx.tx
+      ctx.tx = null
+      try { await tx.rollback() } catch { /* already closed */ }
+      try { tx.close() } catch { /* already closed */ }
+    }
+    return { lastID: 0, changes: 0 }
+  }
+
+  const result = await activeExecutor(db).execute({ sql, args: params })
+  return resultMeta(result)
+}
+
+async function libsqlGet(db, sql, params = []) {
+  const result = await activeExecutor(db).execute({ sql, args: params })
+  return result.rows[0] ? toPlainRow(result.rows[0]) : undefined
+}
+
+async function libsqlAll(db, sql, params = []) {
+  const result = await activeExecutor(db).execute({ sql, args: params })
+  return result.rows.map((row) => toPlainRow(row))
+}
+
+async function libsqlExec(db, sql) {
+  await db._client.executeMultiple(sql)
+}
+
+function run(db, sql, params = []) {
+  return isLibsql(db) ? libsqlRun(db, sql, params) : sqliteRun(db, sql, params)
+}
+
+function get(db, sql, params = []) {
+  return isLibsql(db) ? libsqlGet(db, sql, params) : sqliteGet(db, sql, params)
+}
+
+function all(db, sql, params = []) {
+  return isLibsql(db) ? libsqlAll(db, sql, params) : sqliteAll(db, sql, params)
+}
+
+function exec(db, sql) {
+  return isLibsql(db) ? libsqlExec(db, sql) : sqliteExec(db, sql)
 }
 
 async function columnExists(db, table, column) {
@@ -115,8 +229,16 @@ async function seedDemoLifeguard(db) {
 }
 
 async function initDb() {
-  const db = await openDb()
-  await run(db, 'PRAGMA foreign_keys = ON')
+  const useTurso = Boolean(process.env.TURSO_DATABASE_URL)
+  const db = useTurso ? openLibsql() : await openSqlite()
+  console.log(useTurso ? 'Database: Turso' : `Database: local SQLite (${DB_PATH})`)
+
+  try {
+    await run(db, 'PRAGMA foreign_keys = ON')
+  } catch (err) {
+    console.warn('Could not enable foreign keys:', err.message)
+  }
+
   const schema = fs.readFileSync(SCHEMA_PATH, 'utf8')
   await exec(db, schema)
   await migrateUsersTable(db)
