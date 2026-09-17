@@ -58,21 +58,48 @@ export function useStatusModal() {
   return { status, showStatus, closeStatus }
 }
 
+function StatusFace({ failed }) {
+  return (
+    <svg className="status-alert-face" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+      <rect x="7" y="7" width="34" height="34" rx="10" stroke="currentColor" strokeWidth="2.2" />
+      <path d="M17 20h3.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      <path d="M27.5 20H31" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      {failed ? (
+        <path d="M18 31c2.2-2.4 9.8-2.4 12 0" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      ) : (
+        <path d="M18 28c2.2 2.6 9.8 2.6 12 0" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      )}
+    </svg>
+  )
+}
+
 export function StatusModal({ status, onClose }) {
   if (!status) return null
   const failed = status.tone === 'error'
-  return (
-    <Modal isOpen onClose={onClose} title={status.title} size="sm" elevated>
-      <div className={`status-modal ${failed ? 'status-error' : 'status-success'}`}>
-        <p>{status.message}</p>
-        <div className="confirm-modal-actions">
-          <button type="button" className={failed ? 'btn-danger' : 'btn-primary'} onClick={onClose}>
-            OK
-          </button>
+  const node = (
+    <div className="modal-overlay modal-overlay-front" onClick={onClose}>
+      <div
+        className={`status-alert ${failed ? 'is-error' : 'is-success'}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="status-alert-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button type="button" className="status-alert-close" onClick={onClose} aria-label="Close">
+          <Icon.X />
+        </button>
+        <div className="status-alert-glow" aria-hidden="true">
+          <StatusFace failed={failed} />
         </div>
+        <h2 id="status-alert-title">{status.title}</h2>
+        {status.message ? <p>{status.message}</p> : null}
+        <button type="button" className="status-alert-ok" onClick={onClose}>OK</button>
       </div>
-    </Modal>
+    </div>
   )
+
+  if (typeof document !== 'undefined') return createPortal(node, document.body)
+  return node
 }
 
 export function FormModal({ isOpen, onClose, title, onSubmit, submitText = 'Save', submitDisabled = false, submitting = false, children }) {
