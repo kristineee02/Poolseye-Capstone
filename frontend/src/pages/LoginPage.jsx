@@ -258,7 +258,6 @@ export default function LoginPage() {
                 placeholder="New password"
               />
             </label>
-            <PasswordRules password={newPassword} invalid={Boolean(fields.newPassword)} />
             {fields.newPassword ? <p className="field-error">{fields.newPassword}</p> : null}
             <label className={`login-field${fields.confirmPassword ? ' is-invalid' : ''}`}>
               <span className="login-field-icon" aria-hidden="true"><Icon.Lock /></span>
@@ -270,6 +269,7 @@ export default function LoginPage() {
               />
             </label>
             {fields.confirmPassword ? <p className="field-error">{fields.confirmPassword}</p> : null}
+            <PasswordRules password={newPassword} invalid={Boolean(fields.newPassword)} />
             <button type="submit" className="login-btn" disabled={loading}>
               {loading ? <span className="btn-spinner" aria-hidden="true" /> : null}
               {loading ? 'Saving…' : 'Continue'}
@@ -310,7 +310,6 @@ export default function LoginPage() {
                 placeholder="New password"
               />
             </label>
-            <PasswordRules password={newPassword} invalid={Boolean(fields.newPassword)} />
             {fields.newPassword ? <p className="field-error">{fields.newPassword}</p> : null}
             <label className={`login-field${fields.confirmPassword ? ' is-invalid' : ''}`}>
               <span className="login-field-icon" aria-hidden="true"><Icon.Lock /></span>
@@ -322,6 +321,7 @@ export default function LoginPage() {
               />
             </label>
             {fields.confirmPassword ? <p className="field-error">{fields.confirmPassword}</p> : null}
+            <PasswordRules password={newPassword} invalid={Boolean(fields.newPassword)} />
             <button type="submit" className="login-btn" disabled={loading || secondsLeft <= 0}>
               {loading ? <span className="btn-spinner" aria-hidden="true" /> : null}
               {loading ? 'Saving…' : 'Reset password'}
