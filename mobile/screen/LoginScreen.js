@@ -194,7 +194,7 @@ export default function LoginScreen() {
               onPress={handleSignIn}
               disabled={loading}
               loading={loading}
-              label="Sign in"
+              label="Login"
               style={[styles.button, loading && styles.buttonDisabled]}
               textStyle={styles.buttonText}
             />

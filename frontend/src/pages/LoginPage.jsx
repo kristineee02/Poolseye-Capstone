@@ -64,6 +64,8 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [code, setCode] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -239,7 +241,7 @@ export default function LoginPage() {
             {fields.password ? <p className="field-error">{fields.password}</p> : null}
             <button type="submit" className="login-btn" disabled={loading}>
               {loading ? <span className="btn-spinner" aria-hidden="true" /> : null}
-              {loading ? 'Signing in…' : 'Sign in'}
+              {loading ? 'Logging in…' : 'Login'}
             </button>
             <button type="button" className="login-text-btn" onClick={() => { clearFields(); setStep('forgot') }}>
               Forgot password?
@@ -249,25 +251,25 @@ export default function LoginPage() {
 
         {step === 'change_password' ? (
           <form className="login-form" onSubmit={handlePasswordChange}>
-            <label className={`login-field${fields.newPassword ? ' is-invalid' : ''}`}>
-              <span className="login-field-icon" aria-hidden="true"><Icon.Lock /></span>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => { setNewPassword(e.target.value); setField('newPassword', '') }}
-                placeholder="New password"
-              />
-            </label>
+            <PasswordInput
+              value={newPassword}
+              onChange={(value) => { setNewPassword(value); setField('newPassword', '') }}
+              placeholder="New password"
+              visible={showNewPassword}
+              onToggle={() => setShowNewPassword((v) => !v)}
+              invalid={Boolean(fields.newPassword)}
+              autoComplete="new-password"
+            />
             {fields.newPassword ? <p className="field-error">{fields.newPassword}</p> : null}
-            <label className={`login-field${fields.confirmPassword ? ' is-invalid' : ''}`}>
-              <span className="login-field-icon" aria-hidden="true"><Icon.Lock /></span>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => { setConfirmPassword(e.target.value); setField('confirmPassword', '') }}
-                placeholder="Confirm new password"
-              />
-            </label>
+            <PasswordInput
+              value={confirmPassword}
+              onChange={(value) => { setConfirmPassword(value); setField('confirmPassword', '') }}
+              placeholder="Confirm new password"
+              visible={showConfirmPassword}
+              onToggle={() => setShowConfirmPassword((v) => !v)}
+              invalid={Boolean(fields.confirmPassword)}
+              autoComplete="new-password"
+            />
             {fields.confirmPassword ? <p className="field-error">{fields.confirmPassword}</p> : null}
             <PasswordRules password={newPassword} invalid={Boolean(fields.newPassword)} />
             <button type="submit" className="login-btn" disabled={loading}>
@@ -301,25 +303,25 @@ export default function LoginPage() {
           <form className="login-form" onSubmit={handleReset}>
             <CodeBoxes value={code} onChange={(value) => { setCode(value); setField('code', '') }} />
             {fields.code ? <p className="field-error">{fields.code}</p> : null}
-            <label className={`login-field${fields.newPassword ? ' is-invalid' : ''}`}>
-              <span className="login-field-icon" aria-hidden="true"><Icon.Lock /></span>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => { setNewPassword(e.target.value); setField('newPassword', '') }}
-                placeholder="New password"
-              />
-            </label>
+            <PasswordInput
+              value={newPassword}
+              onChange={(value) => { setNewPassword(value); setField('newPassword', '') }}
+              placeholder="New password"
+              visible={showNewPassword}
+              onToggle={() => setShowNewPassword((v) => !v)}
+              invalid={Boolean(fields.newPassword)}
+              autoComplete="new-password"
+            />
             {fields.newPassword ? <p className="field-error">{fields.newPassword}</p> : null}
-            <label className={`login-field${fields.confirmPassword ? ' is-invalid' : ''}`}>
-              <span className="login-field-icon" aria-hidden="true"><Icon.Lock /></span>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => { setConfirmPassword(e.target.value); setField('confirmPassword', '') }}
-                placeholder="Confirm new password"
-              />
-            </label>
+            <PasswordInput
+              value={confirmPassword}
+              onChange={(value) => { setConfirmPassword(value); setField('confirmPassword', '') }}
+              placeholder="Confirm new password"
+              visible={showConfirmPassword}
+              onToggle={() => setShowConfirmPassword((v) => !v)}
+              invalid={Boolean(fields.confirmPassword)}
+              autoComplete="new-password"
+            />
             {fields.confirmPassword ? <p className="field-error">{fields.confirmPassword}</p> : null}
             <PasswordRules password={newPassword} invalid={Boolean(fields.newPassword)} />
             <button type="submit" className="login-btn" disabled={loading || secondsLeft <= 0}>
@@ -346,6 +348,29 @@ export default function LoginPage() {
       </div>
       <StatusModal status={status} onClose={closeStatus} />
     </div>
+  )
+}
+
+function PasswordInput({ value, onChange, placeholder, visible, onToggle, invalid, autoComplete }) {
+  return (
+    <label className={`login-field${invalid ? ' is-invalid' : ''}`}>
+      <span className="login-field-icon" aria-hidden="true"><Icon.Lock /></span>
+      <input
+        type={visible ? 'text' : 'password'}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoComplete={autoComplete}
+      />
+      <button
+        type="button"
+        className="login-password-toggle"
+        onClick={onToggle}
+        aria-label={visible ? 'Hide password' : 'Show password'}
+      >
+        {visible ? <Icon.EyeOff /> : <Icon.Eye />}
+      </button>
+    </label>
   )
 }
 
