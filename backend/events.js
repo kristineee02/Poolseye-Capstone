@@ -104,8 +104,29 @@ function rowToEvent(row) {
     event: row.event_name,
     is_alert: Boolean(row.is_alert),
     snapshot_uri: row.snapshot_uri,
+    acknowledged_at: row.acknowledged_at ?? null,
+    acknowledged_by: row.acknowledged_by ?? null,
     ts: row.ts,
   }
+}
+
+async function setEventStatus(db, id, status, userId) {
+  if (status === 'pending') {
+    await run(
+      db,
+      'UPDATE events SET status = ?, acknowledged_at = NULL, acknowledged_by = NULL WHERE id = ?',
+      [status, id]
+    )
+    return
+  }
+  await run(
+    db,
+    `UPDATE events SET status = ?,
+      acknowledged_at = COALESCE(acknowledged_at, ?),
+      acknowledged_by = COALESCE(acknowledged_by, ?)
+     WHERE id = ?`,
+    [status, Date.now() / 1000, userId ?? null, id]
+  )
 }
 
 function normalizeIngestPayload(body) {
@@ -296,7 +317,7 @@ function registerEventRoutes(app, db, adminRequired) {
         return res.status(400).json({ error: 'Invalid status' })
       }
 
-      await run(db, 'UPDATE events SET status = ? WHERE id = ?', [status, req.params.id])
+      await setEventStatus(db, req.params.id, status, req.user?.id)
       const updated = await get(db, 'SELECT * FROM events WHERE id = ?', [req.params.id])
       res.json({ ok: true, event: rowToEvent(updated) })
     } catch (err) {
@@ -329,4 +350,5 @@ module.exports = {
   seedDemoEvents,
   rowToEvent,
   insertEvent,
+  setEventStatus,
 }

@@ -62,6 +62,10 @@ export async function fetchEventCameras() {
   return apiFetch('/api/events/cameras')
 }
 
+export async function fetchAnalytics(range = '7d') {
+  return apiFetch(`/api/analytics?range=${encodeURIComponent(range)}`)
+}
+
 export async function updateEventStatus(id, status) {
   return apiFetch(`/api/events/${encodeURIComponent(id)}`, {
     method: 'PATCH',

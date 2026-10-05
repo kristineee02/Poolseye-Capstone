@@ -36,12 +36,15 @@ const LEGEND = [
 
 const maxVal = 5
 
-export default function PeakRiskHeatmap({ values }) {
+export default function PeakRiskHeatmap({ counts }) {
+  const peak = Math.max(0, ...counts)
+  const levels = counts.map((c) => (c === 0 || peak === 0 ? 0 : Math.max(1, Math.ceil((c / peak) * maxVal))))
+
   return (
     <div className="prh-wrapper">
       {/* Bar chart */}
       <div className="prh-chart">
-        {values.map((v, i) => (
+        {levels.map((v, i) => (
           <div key={i} className="prh-col">
             <div className="prh-bar-track">
               <div
@@ -51,7 +54,7 @@ export default function PeakRiskHeatmap({ values }) {
                   background: riskColor(v),
                   opacity: v === 0 ? 0.3 : 1,
                 }}
-                title={`${hourLabel(i)}: ${riskLabel(v)}`}
+                title={`${hourLabel(i)}: ${counts[i]} alert${counts[i] === 1 ? '' : 's'} (${riskLabel(v)})`}
               />
             </div>
             <div className="prh-label">{hourLabel(i)}</div>

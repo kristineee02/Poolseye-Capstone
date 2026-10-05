@@ -97,6 +97,29 @@ export const Icon = {
       <path d="M20 6 9 17l-5-5" />
     </svg>
   ),
+  CheckCircle: (p) => (
+    <svg {...base} {...p}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8.5 12.5 2.5 2.5 4.5-5" />
+    </svg>
+  ),
+  ArrowUp: (p) => (
+    <svg {...base} {...p}>
+      <line x1="12" y1="19" x2="12" y2="5" />
+      <polyline points="5 12 12 5 19 12" />
+    </svg>
+  ),
+  ArrowDown: (p) => (
+    <svg {...base} {...p}>
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <polyline points="19 12 12 19 5 12" />
+    </svg>
+  ),
+  Minus: (p) => (
+    <svg {...base} {...p}>
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  ),
   Refresh: (p) => (
     <svg {...base} {...p}>
       <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />

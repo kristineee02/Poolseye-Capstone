@@ -87,6 +87,8 @@ CREATE TABLE IF NOT EXISTS events (
   event_name TEXT,
   is_alert INTEGER NOT NULL DEFAULT 0,
   snapshot_uri TEXT,
+  acknowledged_at REAL,
+  acknowledged_by INTEGER,
   ts REAL NOT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
