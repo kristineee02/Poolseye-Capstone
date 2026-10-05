@@ -118,6 +118,8 @@ async function buildAnalytics(db, rangeKey) {
   const prevAlerts = prevRows.filter(isAlert)
   const prevReviewed = prevAlerts.filter((r) => r.status !== 'pending').length
   const previous = {
+    totalDetections: prevRows.length,
+    acknowledged: prevAlerts.filter((r) => r.status === 'resolved').length,
     totalAlerts: prevAlerts.length,
     highSeverity: prevAlerts.filter((r) => severityOf(r) === 'HIGH').length,
     acknowledgedRate: prevAlerts.length ? prevReviewed / prevAlerts.length : null,

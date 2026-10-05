@@ -43,6 +43,8 @@ export async function fetchEvents({
   type = 'all',
   status = 'all',
   camera = 'all',
+  kind = 'all',
+  since = null,
   page = 1,
   pageSize = 4,
 } = {}) {
@@ -52,7 +54,9 @@ export async function fetchEvents({
     type,
     status,
     camera,
+    kind,
   })
+  if (since) params.set('since', String(since))
   if (search.trim()) params.set('search', search.trim())
 
   return apiFetch(`/api/events?${params.toString()}`)

@@ -226,6 +226,8 @@ async function insertEvent(db, payload) {
   return rowToEvent(row)
 }
 
+const ALERT_SQL = "(is_alert = 1 OR type = 'alarm')"
+
 function registerEventRoutes(app, db, adminRequired) {
   app.get('/api/events', adminRequired, async (req, res) => {
     try {
@@ -233,11 +235,26 @@ function registerEventRoutes(app, db, adminRequired) {
       const type = String(req.query.type || 'all')
       const status = String(req.query.status || 'all')
       const camera = String(req.query.camera || 'all')
+      const kind = String(req.query.kind || 'all')
+      const since = Number(req.query.since)
       const page = Math.max(1, Number(req.query.page) || 1)
       const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 4))
 
       const conditions = []
       const params = []
+
+      if (Number.isFinite(since) && since > 0) {
+        conditions.push('ts >= ?')
+        params.push(since)
+      }
+      if (kind === 'alerts') {
+        conditions.push(ALERT_SQL)
+      } else if (kind === 'activity') {
+        conditions.push(`NOT ${ALERT_SQL}`)
+      } else if (['intrusion', 'deep-water', 'drowning'].includes(kind)) {
+        conditions.push('category = ?')
+        params.push(kind)
+      }
 
       if (search) {
         conditions.push('(LOWER(title) LIKE ? OR LOWER(meta) LIKE ? OR LOWER(camera) LIKE ?)')
@@ -248,13 +265,37 @@ function registerEventRoutes(app, db, adminRequired) {
         conditions.push('type = ?')
         params.push(type)
       }
-      if (status !== 'all') {
-        conditions.push('status = ?')
-        params.push(status)
-      }
       if (camera !== 'all') {
         conditions.push('camera = ?')
         params.push(camera)
+      }
+
+      const baseWhere = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+      const summaryRow = await get(
+        db,
+        `SELECT COUNT(*) AS total,
+          SUM(CASE WHEN status = 'pending' AND ${ALERT_SQL} THEN 1 ELSE 0 END) AS unacknowledged,
+          SUM(CASE WHEN status = 'pending' AND NOT ${ALERT_SQL} THEN 1 ELSE 0 END) AS logged,
+          SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) AS acknowledged,
+          SUM(CASE WHEN status = 'dismissed' THEN 1 ELSE 0 END) AS dismissed
+        FROM events ${baseWhere}`,
+        params
+      )
+      const summary = {
+        total: summaryRow?.total || 0,
+        unacknowledged: summaryRow?.unacknowledged || 0,
+        logged: summaryRow?.logged || 0,
+        acknowledged: summaryRow?.acknowledged || 0,
+        dismissed: summaryRow?.dismissed || 0,
+      }
+
+      if (status === 'unacknowledged') {
+        conditions.push(`status = 'pending' AND ${ALERT_SQL}`)
+      } else if (status === 'logged') {
+        conditions.push(`status = 'pending' AND NOT ${ALERT_SQL}`)
+      } else if (status !== 'all') {
+        conditions.push('status = ?')
+        params.push(status)
       }
 
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
@@ -275,6 +316,7 @@ function registerEventRoutes(app, db, adminRequired) {
         page,
         pageSize,
         totalPages,
+        summary,
       })
     } catch (err) {
       console.error(err)
