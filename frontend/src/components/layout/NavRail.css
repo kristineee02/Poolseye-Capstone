@@ -91,21 +91,18 @@
 }
 
 .navitem {
+  --nav-gradient: linear-gradient(160deg, #4C9BFF 0%, #1E6FFF 55%, #0B57E3 100%);
   width: 44px;
   height: 44px;
   border-radius: var(--r-md);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--accent-strong);
   cursor: pointer;
   border: none;
   background: transparent;
   flex-shrink: 0;
-  transition:
-    background var(--dur-med) var(--ease-ui),
-    color var(--dur-med) var(--ease-ui),
-    box-shadow var(--dur-med) var(--ease-ui);
+  transition: background var(--dur-med) var(--ease-ui);
 }
 
 .navitem:focus-visible {
@@ -113,24 +110,17 @@
   outline-offset: 2px;
 }
 
-.navitem svg {
-  width: 20px;
-  height: 20px;
+.navitem-icon {
+  width: 22px;
+  height: 22px;
+  background: var(--nav-gradient);
+  -webkit-mask: var(--nav-icon) center / contain no-repeat;
+  mask: var(--nav-icon) center / contain no-repeat;
 }
 
+.navitem:hover,
 .navitem.active {
   background: var(--accent-tint);
-  color: var(--accent);
-}
-
-.navitem:not(.active):not(.navitem-logout):hover {
-  background: rgba(30, 111, 255, 0.06);
-  color: var(--accent);
-}
-
-.navitem.active:hover {
-  background: var(--accent-tint);
-  color: var(--accent-deep);
 }
 
 .navrail-footer {
@@ -143,13 +133,11 @@
 }
 
 .navitem-logout {
-  background: transparent;
-  color: var(--text-secondary);
+  --nav-gradient: linear-gradient(160deg, #6B7280 0%, #374151 100%);
 }
-
 .navitem-logout:hover {
+  --nav-gradient: linear-gradient(160deg, #F0606F 0%, #D6364A 100%);
   background: rgba(214, 54, 74, 0.08);
-  color: var(--alarm);
 }
 
 @media (max-width: 900px) {
