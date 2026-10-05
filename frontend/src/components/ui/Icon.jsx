@@ -97,6 +97,71 @@ export const Icon = {
       <path d="M20 6 9 17l-5-5" />
     </svg>
   ),
+  Waves: (p) => (
+    <svg {...base} {...p}>
+      <path d="M2 8c2-1.5 3.5-1.5 5 0s3.5 1.5 5 0 3.5-1.5 5 0 3.5 1.5 5 0" />
+      <path d="M2 13c2-1.5 3.5-1.5 5 0s3.5 1.5 5 0 3.5-1.5 5 0 3.5 1.5 5 0" />
+      <path d="M2 18c2-1.5 3.5-1.5 5 0s3.5 1.5 5 0 3.5-1.5 5 0 3.5 1.5 5 0" />
+    </svg>
+  ),
+  FileSearch: (p) => (
+    <svg {...base} {...p}>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4" />
+      <path d="M14 3v5h5" />
+      <path d="M19 8v2" />
+      <path d="M9 9h2M9 13h3" />
+      <circle cx="16.5" cy="16.5" r="3" />
+      <path d="m21 21-2.4-2.4" />
+    </svg>
+  ),
+  MapPin: (p) => (
+    <svg {...base} {...p}>
+      <path d="M12 21s-7-6.1-7-11.5A7 7 0 0 1 19 9.5C19 14.9 12 21 12 21z" />
+      <circle cx="12" cy="9.5" r="2.5" />
+    </svg>
+  ),
+  Volume: (p) => (
+    <svg {...base} {...p}>
+      <polygon points="11 5 6 9 3 9 3 15 6 15 11 19 11 5" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+    </svg>
+  ),
+  VolumeOff: (p) => (
+    <svg {...base} {...p}>
+      <polygon points="11 5 6 9 3 9 3 15 6 15 11 19 11 5" />
+      <path d="m16 9 5 6M21 9l-5 6" />
+    </svg>
+  ),
+  PauseBars: (p) => (
+    <svg {...base} {...p}>
+      <rect x="6" y="5" width="4" height="14" rx="1" />
+      <rect x="14" y="5" width="4" height="14" rx="1" />
+    </svg>
+  ),
+  ArrowLeft: (p) => (
+    <svg {...base} {...p}>
+      <path d="M19 12H5M11 6l-6 6 6 6" />
+    </svg>
+  ),
+  ArrowRight: (p) => (
+    <svg {...base} {...p}>
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </svg>
+  ),
+  Play: (p) => (
+    <svg {...base} {...p}>
+      <polygon points="7 4 20 12 7 20 7 4" />
+    </svg>
+  ),
+  Calendar: (p) => (
+    <svg {...base} {...p}>
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  ),
   CheckCircle: (p) => (
     <svg {...base} {...p}>
       <circle cx="12" cy="12" r="9" />

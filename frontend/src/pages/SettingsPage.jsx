@@ -501,6 +501,8 @@ export default function SettingsPage() {
         onClose={() => setConfirmSave(false)}
         title="Save profile?"
         message="Are you sure you want to save these profile changes?"
+        tone="info"
+        icon={Icon.Save}
         confirmText="Save"
         cancelText="Cancel"
         onConfirm={saveProfile}
@@ -511,6 +513,8 @@ export default function SettingsPage() {
         onClose={() => setConfirmPasswordUpdate(false)}
         title="Update password?"
         message="Are you sure you want to update your password?"
+        tone="info"
+        icon={Icon.Lock}
         confirmText="Update"
         cancelText="Cancel"
         onConfirm={updatePassword}

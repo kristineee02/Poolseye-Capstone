@@ -238,17 +238,30 @@
   color: var(--alarm);
 }
 
-.status-alert {
+.alert-dialog {
+  --alert-tone: var(--accent);
   position: relative;
-  width: min(92vw, 340px);
+  width: min(92vw, 360px);
   background: #FFFFFF;
-  border-radius: 22px;
-  padding: 28px 24px 22px;
+  border-radius: 18px;
+  padding: 30px 24px 22px;
   text-align: center;
-  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.16);
+  font-family: var(--font-ui);
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18);
+  animation: alertPop 0.2s ease-out;
+}
+.alert-dialog.color-safe { --alert-tone: var(--safe); }
+.alert-dialog.color-alarm { --alert-tone: var(--alarm); }
+.alert-dialog.color-warn { --alert-tone: #F08C00; }
+.alert-dialog.color-accent { --alert-tone: var(--accent); }
+.alert-dialog.is-processing { padding: 34px 24px 30px; }
+
+@keyframes alertPop {
+  from { transform: scale(0.95); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
 }
 
-.status-alert-close {
+.alert-dialog-close {
   position: absolute;
   top: 14px;
   right: 14px;
@@ -256,75 +269,94 @@
   height: 28px;
   border: none;
   border-radius: 50%;
-  background: #FDECEC;
-  color: #E11D48;
+  background: #F1F3F6;
+  color: #6B7280;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   padding: 0;
+  transition: background 0.12s, color 0.12s;
 }
+.alert-dialog-close:hover { background: #E5E7EB; color: #111827; }
+.alert-dialog-close svg { width: 14px; height: 14px; }
 
-.status-alert-close svg {
-  width: 14px;
-  height: 14px;
-}
-
-.status-alert-glow {
-  width: 92px;
-  height: 92px;
-  margin: 4px auto 8px;
+.alert-dialog-icon {
+  width: 68px;
+  height: 68px;
+  margin: 0 auto 14px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--alert-tone);
+  background: color-mix(in srgb, var(--alert-tone) 13%, #FFFFFF);
+}
+.alert-dialog-icon svg { width: 32px; height: 32px; stroke-width: 1.8; }
+
+.alert-dialog-spinner {
+  display: block;
+  width: 46px;
+  height: 46px;
+  margin: 0 auto 16px;
+  border-radius: 50%;
+  border: 4px solid color-mix(in srgb, var(--alert-tone) 18%, #FFFFFF);
+  border-top-color: var(--alert-tone);
+  animation: btn-spin 0.9s linear infinite;
 }
 
-.status-alert.is-success .status-alert-glow {
-  background: radial-gradient(circle, rgba(34, 160, 107, 0.28) 0%, rgba(34, 160, 107, 0.08) 48%, transparent 72%);
-  color: #1B9C6E;
-}
-
-.status-alert.is-error .status-alert-glow {
-  background: radial-gradient(circle, rgba(225, 29, 72, 0.24) 0%, rgba(225, 29, 72, 0.08) 48%, transparent 72%);
-  color: #E11D48;
-}
-
-.status-alert-face {
-  width: 54px;
-  height: 54px;
-}
-
-.status-alert h2 {
-  margin: 0 0 8px;
-  font-size: 20px;
+.alert-dialog h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
   line-height: 1.3;
-  font-weight: 800;
+  font-weight: 700;
   color: #111827;
 }
 
-.status-alert p {
-  margin: 0 0 20px;
-  font-size: 14px;
-  line-height: 1.5;
+.alert-dialog p {
+  margin: 0 auto;
+  max-width: 280px;
+  font-size: 13px;
+  line-height: 1.55;
   color: #6B7280;
 }
 
-.status-alert-ok {
-  width: 100%;
-  height: 46px;
-  border: none;
-  border-radius: 999px;
-  background: #F3F4F6;
-  color: #6B7280;
-  font-size: 15px;
+.alert-dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-top: 22px;
+}
+.alert-dialog-actions.has-cancel { grid-template-columns: 1fr 1fr; }
+
+.alert-dialog-btn {
+  height: 42px;
+  border-radius: 12px;
+  font-family: var(--font-ui);
+  font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s, filter 0.12s;
 }
-
-.status-alert-ok:hover {
-  background: #E5E7EB;
+.alert-dialog-btn.is-primary {
+  background: var(--accent);
+  color: #FFFFFF;
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--accent) 28%, transparent);
 }
+.alert-dialog-btn.is-danger {
+  background: var(--alarm);
+  color: #FFFFFF;
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--alarm) 28%, transparent);
+}
+.alert-dialog-btn.is-primary:hover,
+.alert-dialog-btn.is-danger:hover { filter: brightness(0.94); }
+.alert-dialog-btn.is-secondary {
+  background: #FFFFFF;
+  color: #374151;
+  border-color: #E5E7EB;
+}
+.alert-dialog-btn.is-secondary:hover { background: #F9FAFB; border-color: #D1D5DB; }
 
 .btn-spinner {
   width: 14px;

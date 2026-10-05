@@ -3,6 +3,7 @@ import Topbar from './components/layout/Topbar'
 import NavRail from './components/layout/NavRail'
 import RightRail from './components/layout/RightRail'
 import { ConfirmModal } from './components/ui/Modal'
+import { Icon } from './components/ui/Icon'
 import LoginPage from './pages/LoginPage'
 import LiveMonitoringPage from './pages/LiveMonitoringPage'
 import GeofenceEditorPage from './pages/GeofenceEditorPage'
@@ -60,6 +61,7 @@ export default function App() {
         message="Are you sure you want to log out? You’ll need to sign in again to access the admin dashboard."
         onConfirm={signOut}
         isDangerous
+        icon={Icon.LogOut}
         confirmText="Log out"
         cancelText="Cancel"
       />

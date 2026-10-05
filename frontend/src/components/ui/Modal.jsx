@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from './Icon'
 import './Modal.css'
@@ -27,79 +27,136 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', elevated 
   return node
 }
 
-export function ConfirmModal({ isOpen, onClose, title, message, onConfirm, isDangerous = false, confirmText = 'Confirm', cancelText = 'Cancel' }) {
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title={title} size="sm">
-      <div className="confirm-modal-content">
-        <p>{message}</p>
-        <div className="confirm-modal-actions">
-          <button className="btn-secondary" onClick={onClose}>
-            {cancelText}
-          </button>
-          <button
-            className={isDangerous ? 'btn-danger' : 'btn-primary'}
-            onClick={() => {
-              onConfirm()
-              onClose()
-            }}
-          >
-            {confirmText}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  )
+const ALERT_TONES = {
+  success: { icon: Icon.CheckCircle, color: 'safe' },
+  error: { icon: Icon.AlertCircle, color: 'alarm' },
+  notfound: { icon: Icon.FileSearch, color: 'alarm' },
+  warning: { icon: Icon.AlertCircle, color: 'warn' },
+  danger: { icon: Icon.Trash, color: 'alarm' },
+  info: { icon: Icon.Info, color: 'accent' },
+  processing: { icon: null, color: 'accent' },
 }
 
-export function useStatusModal() {
-  const [status, setStatus] = useState(null)
-  const showStatus = (next) => setStatus(next)
-  const closeStatus = () => setStatus(null)
-  return { status, showStatus, closeStatus }
-}
+export function AlertDialog({
+  open = true,
+  tone = 'info',
+  icon,
+  title,
+  message,
+  onClose,
+  confirmText = 'OK',
+  cancelText,
+  onConfirm,
+  confirmVariant,
+}) {
+  if (!open) return null
+  const config = ALERT_TONES[tone] || ALERT_TONES.info
+  const AlertIcon = icon || config.icon
+  const isProcessing = tone === 'processing'
+  const variant = confirmVariant || (tone === 'danger' ? 'danger' : 'primary')
+  const dismiss = isProcessing ? undefined : onClose
 
-function StatusFace({ failed }) {
-  return (
-    <svg className="status-alert-face" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-      <rect x="7" y="7" width="34" height="34" rx="10" stroke="currentColor" strokeWidth="2.2" />
-      <path d="M17 20h3.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-      <path d="M27.5 20H31" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-      {failed ? (
-        <path d="M18 31c2.2-2.4 9.8-2.4 12 0" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-      ) : (
-        <path d="M18 28c2.2 2.6 9.8 2.6 12 0" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-      )}
-    </svg>
-  )
-}
+  const handleConfirm = () => {
+    if (onConfirm) onConfirm()
+    else onClose?.()
+  }
 
-export function StatusModal({ status, onClose }) {
-  if (!status) return null
-  const failed = status.tone === 'error'
   const node = (
-    <div className="modal-overlay modal-overlay-front" onClick={onClose}>
+    <div className="modal-overlay modal-overlay-front" onClick={dismiss}>
       <div
-        className={`status-alert ${failed ? 'is-error' : 'is-success'}`}
-        role="dialog"
+        className={`alert-dialog color-${config.color}${isProcessing ? ' is-processing' : ''}`}
+        role={isProcessing ? 'status' : 'alertdialog'}
         aria-modal="true"
-        aria-labelledby="status-alert-title"
+        aria-labelledby="alert-dialog-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <button type="button" className="status-alert-close" onClick={onClose} aria-label="Close">
-          <Icon.X />
-        </button>
-        <div className="status-alert-glow" aria-hidden="true">
-          <StatusFace failed={failed} />
-        </div>
-        <h2 id="status-alert-title">{status.title}</h2>
-        {status.message ? <p>{status.message}</p> : null}
-        <button type="button" className="status-alert-ok" onClick={onClose}>OK</button>
+        {!isProcessing && onClose ? (
+          <button type="button" className="alert-dialog-close" onClick={onClose} aria-label="Close">
+            <Icon.X />
+          </button>
+        ) : null}
+
+        {isProcessing ? (
+          <span className="alert-dialog-spinner" aria-hidden="true" />
+        ) : (
+          <div className="alert-dialog-icon" aria-hidden="true">
+            <AlertIcon />
+          </div>
+        )}
+
+        <h2 id="alert-dialog-title">{title}</h2>
+        {message ? <p>{message}</p> : null}
+
+        {!isProcessing ? (
+          <div className={`alert-dialog-actions${cancelText ? ' has-cancel' : ''}`}>
+            {cancelText ? (
+              <button type="button" className="alert-dialog-btn is-secondary" onClick={onClose}>
+                {cancelText}
+              </button>
+            ) : null}
+            <button type="button" className={`alert-dialog-btn is-${variant}`} onClick={handleConfirm} autoFocus>
+              {confirmText}
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   )
 
   if (typeof document !== 'undefined') return createPortal(node, document.body)
   return node
+}
+
+export function ConfirmModal({
+  isOpen,
+  onClose,
+  title,
+  message,
+  onConfirm,
+  isDangerous = false,
+  tone,
+  icon,
+  confirmText = 'Confirm',
+  cancelText = 'Cancel',
+}) {
+  return (
+    <AlertDialog
+      open={isOpen}
+      tone={tone || (isDangerous ? 'danger' : 'warning')}
+      icon={icon}
+      title={title}
+      message={message}
+      onClose={onClose}
+      cancelText={cancelText}
+      confirmText={confirmText}
+      confirmVariant={isDangerous ? 'danger' : 'primary'}
+      onConfirm={() => {
+        onConfirm()
+        onClose()
+      }}
+    />
+  )
+}
+
+export function useStatusModal() {
+  const [status, setStatus] = useState(null)
+  const showStatus = useCallback((next) => setStatus(next), [])
+  const closeStatus = useCallback(() => setStatus(null), [])
+  return { status, showStatus, closeStatus }
+}
+
+export function StatusModal({ status, onClose }) {
+  if (!status) return null
+  return (
+    <AlertDialog
+      tone={status.tone || 'info'}
+      icon={status.icon}
+      title={status.title}
+      message={status.message}
+      onClose={onClose}
+      confirmText={status.confirmText || 'OK'}
+    />
+  )
 }
 
 export function FormModal({ isOpen, onClose, title, onSubmit, submitText = 'Save', submitDisabled = false, submitting = false, children }) {
