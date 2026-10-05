@@ -234,18 +234,14 @@ export default function AnalyticsPage() {
                   label="Total alerts"
                   value={summary.totalAlerts}
                   trend={{ current: summary.totalAlerts, previous: previous?.totalAlerts }}
-                  comparisonLabel={comparisonLabel}
-                  series={data.timeline.map((b) => b.alerts)}
-                />
+                  comparisonLabel={comparisonLabel}                />
                 <StatCard
                   tone="alarm"
                   icon={Icon.AlertTriangle}
                   label="High-severity alerts"
                   value={summary.highSeverity}
                   trend={{ current: summary.highSeverity, previous: previous?.highSeverity }}
-                  comparisonLabel={comparisonLabel}
-                  series={data.timeline.map((b) => b.HIGH)}
-                />
+                  comparisonLabel={comparisonLabel}                />
                 <StatCard
                   tone="safe"
                   icon={Icon.CheckCircle}
@@ -258,9 +254,7 @@ export default function AnalyticsPage() {
                     betterWhen: 'up',
                   } : null}
                   comparisonLabel={comparisonLabel}
-                  hint={`${summary.pending} still pending`}
-                  series={data.timeline.map((b) => b.responded)}
-                />
+                  hint={`${summary.pending} still pending`}                />
                 <StatCard
                   tone="warn"
                   icon={Icon.Clock}
@@ -273,9 +267,7 @@ export default function AnalyticsPage() {
                   comparisonLabel={comparisonLabel}
                   hint={responseTimes.samples
                     ? `From ${responseTimes.samples} acknowledged alert${responseTimes.samples === 1 ? '' : 's'}`
-                    : 'No acknowledged alerts yet'}
-                  series={data.timeline.map((b) => b.responded)}
-                />
+                    : 'No acknowledged alerts yet'}                />
               </div>
 
               {!hasData ? (
@@ -355,9 +347,7 @@ export default function AnalyticsPage() {
                     icon={icon}
                     label={label}
                     value={formatDuration(value)}
-                    hint={responseTimes.samples ? `${responseTimes.samples} acknowledged alerts` : 'No acknowledged alerts yet'}
-                    series={data.timeline.map((b) => b.responded)}
-                  />
+                    hint={responseTimes.samples ? `${responseTimes.samples} acknowledged alerts` : 'No acknowledged alerts yet'}                  />
                 ))}
               </div>
 
