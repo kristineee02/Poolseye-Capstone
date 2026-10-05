@@ -3,13 +3,9 @@ import AlertBar from '../components/layout/AlertBar'
 import CameraPanel from '../components/camera/CameraPanel'
 import LiveEventLogPanel from '../components/history/LiveEventLogPanel'
 import { useToast, ToastContainer } from '../components/ui/Toast'
-import { cameras } from '../data/cameras'
 import { STREAM_BASE } from '../config'
 import './LiveMonitoringPage.css'
 import { Icon } from '../components/ui/Icon'
-
-// Single-pool deployment: one CCTV covers the main pool
-const POOL_CAMERA = cameras[0]
 
 export default function LiveMonitoringPage() {
   const { toasts, addToast, removeToast } = useToast()
@@ -52,15 +48,6 @@ export default function LiveMonitoringPage() {
           >
             <Icon.Refresh /> Events API
           </button>
-        </div>
-      </div>
-
-      <div className="live-camera-header">
-        <div>
-          <span className="live-cam-name">{POOL_CAMERA.name}</span>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {POOL_CAMERA.status === 'online' && <span className="live-pill">● LIVE</span>}
         </div>
       </div>
 

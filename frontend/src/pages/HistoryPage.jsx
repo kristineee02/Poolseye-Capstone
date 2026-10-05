@@ -4,7 +4,7 @@ import { SelectDropdown } from '../components/ui/Dropdown'
 import Pagination from '../components/ui/Pagination'
 import SnapshotThumb from '../components/history/SnapshotThumb'
 import SnapshotModal from '../components/history/SnapshotModal'
-import { fetchEvents, fetchEventCameras, updateEventStatus } from '../api/events'
+import { fetchEvents, updateEventStatus } from '../api/events'
 import { StatusModal, useStatusModal } from '../components/ui/Modal'
 import '../components/history/HistoryTable.css'
 
@@ -35,8 +35,6 @@ export default function HistoryPage() {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [cameraFilter, setCameraFilter] = useState('all')
-  const [cameras, setCameras] = useState([])
   const [events, setEvents] = useState([])
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
@@ -46,14 +44,6 @@ export default function HistoryPage() {
   const { status, showStatus, closeStatus } = useStatusModal()
 
   useEffect(() => {
-    fetchEventCameras().then((result) => {
-      if (result.ok && Array.isArray(result.cameras)) {
-        setCameras(result.cameras)
-      }
-    })
-  }, [])
-
-  useEffect(() => {
     let cancelled = false
     setLoading(true)
 
@@ -61,7 +51,6 @@ export default function HistoryPage() {
       search,
       type: typeFilter,
       status: statusFilter,
-      camera: cameraFilter,
       page,
       pageSize: PAGE_SIZE,
     }).then((result) => {
@@ -83,11 +72,11 @@ export default function HistoryPage() {
     return () => {
       cancelled = true
     }
-  }, [search, typeFilter, statusFilter, cameraFilter, page])
+  }, [search, typeFilter, statusFilter, page])
 
   useEffect(() => {
     setPage(1)
-  }, [search, typeFilter, statusFilter, cameraFilter])
+  }, [search, typeFilter, statusFilter])
 
   const currentPage = Math.min(page, totalPages)
   const start = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
@@ -161,16 +150,6 @@ export default function HistoryPage() {
             placeholder="Search events..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-          />
-          <SelectDropdown
-            value={cameraFilter}
-            onChange={setCameraFilter}
-            options={[
-              { value: 'all', label: 'All cameras' },
-              ...cameras.map((cam) => ({ value: cam, label: cam })),
-            ]}
-            minWidth={140}
-            ariaLabel="Camera filter"
           />
           <SelectDropdown
             value={typeFilter}
