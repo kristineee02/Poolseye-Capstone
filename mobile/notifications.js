@@ -3,12 +3,19 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
 import { apiFetch } from './api/client';
 
 const ALERT_CHANNEL = 'alerts';
 
-Notifications.setNotificationHandler({
+// Expo Go on Android throws as soon as expo-notifications is loaded (SDK 53+),
+// so the module is only required where it is supported.
+const IS_EXPO_GO_ANDROID =
+  Platform.OS === 'android' && Constants.executionEnvironment === 'storeClient';
+
+const Notifications =
+  Platform.OS === 'web' || IS_EXPO_GO_ANDROID ? null : require('expo-notifications');
+
+Notifications?.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
     shouldShowList: true,
@@ -46,7 +53,7 @@ async function ensurePermission() {
  * Expo Go on Android cannot receive remote push, so push is false there.
  */
 export async function registerForNotifications(apiToken) {
-  if (Platform.OS === 'web') return { local: false, push: false };
+  if (!Notifications) return { local: false, push: false };
   try {
     await ensureChannels();
     if (!(await ensurePermission())) return { local: false, push: false };
@@ -70,13 +77,13 @@ export async function registerForNotifications(apiToken) {
 }
 
 export async function unregisterFromNotifications(apiToken) {
-  if (!apiToken || Platform.OS === 'web') return;
+  if (!apiToken || !Notifications) return;
   await apiFetch('/api/mobile/push-token', { method: 'DELETE', token: apiToken });
 }
 
 /** Show a banner right away for an alert the app found while polling. */
 export async function showAlertNotification(alert) {
-  if (Platform.OS === 'web') return;
+  if (!Notifications) return;
   try {
     await Notifications.scheduleNotificationAsync({
       content: {
@@ -93,6 +100,7 @@ export async function showAlertNotification(alert) {
 }
 
 export function onNotificationTapped(handler) {
+  if (!Notifications) return () => {};
   const sub = Notifications.addNotificationResponseReceivedListener((response) => {
     handler(response.notification.request.content.data || {});
   });
