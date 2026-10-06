@@ -105,6 +105,12 @@ function rowToEvent(row) {
     is_alert: Boolean(row.is_alert),
     snapshot_uri: row.snapshot_uri,
     ts: row.ts,
+    // Supervision-specific fields
+    child_confidence: row.child_confidence,
+    adult_confidence: row.adult_confidence,
+    separation_distance: row.separation_distance,
+    supervision_threshold: row.supervision_threshold,
+    boundary_direction: row.boundary_direction,
   }
 }
 
@@ -131,6 +137,12 @@ function normalizeIngestPayload(body) {
     is_alert: body?.is_alert ? 1 : 0,
     snapshot_uri: body?.snapshot_uri ? String(body.snapshot_uri) : null,
     ts,
+    // Supervision-specific fields
+    child_confidence: body?.child_confidence != null ? Number(body.child_confidence) : null,
+    adult_confidence: body?.adult_confidence != null ? Number(body.adult_confidence) : null,
+    separation_distance: body?.separation_distance != null ? Number(body.separation_distance) : null,
+    supervision_threshold: body?.supervision_threshold != null ? Number(body.supervision_threshold) : null,
+    boundary_direction: body?.boundary_direction ? String(body.boundary_direction) : null,
   }
 }
 
@@ -173,8 +185,10 @@ async function insertEvent(db, payload) {
     `INSERT INTO events (
       id, type, code, title, meta, event_time, event_date, status,
       severity, category, confidence, camera, person_id, zone, zone_label,
-      event_name, is_alert, snapshot_uri, ts
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      event_name, is_alert, snapshot_uri, ts,
+      child_confidence, adult_confidence, separation_distance,
+      supervision_threshold, boundary_direction
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       status = excluded.status,
       meta = excluded.meta,
@@ -199,6 +213,11 @@ async function insertEvent(db, payload) {
       e.is_alert,
       e.snapshot_uri,
       e.ts,
+      e.child_confidence,
+      e.adult_confidence,
+      e.separation_distance,
+      e.supervision_threshold,
+      e.boundary_direction,
     ]
   )
   const row = await get(db, 'SELECT * FROM events WHERE id = ?', [e.id])
@@ -271,6 +290,59 @@ function registerEventRoutes(app, db, adminRequired) {
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: 'Failed to load cameras' })
+    }
+  })
+
+  app.get('/api/events/active', adminRequired, async (_req, res) => {
+    try {
+      // Get the most recent pending alarm event
+      const row = await get(
+        db,
+        `SELECT * FROM events
+         WHERE status = 'pending' AND is_alert = 1
+         ORDER BY ts DESC
+         LIMIT 1`
+      )
+      if (!row) {
+        return res.json({ active: null })
+      }
+      res.json({ active: rowToEvent(row) })
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: 'Failed to load active alert' })
+    }
+  })
+
+  app.get('/api/events/summary', adminRequired, async (_req, res) => {
+    try {
+      // Get today's summary statistics
+      const todayStart = new Date()
+      todayStart.setHours(0, 0, 0, 0)
+      const todayTs = todayStart.getTime() / 1000
+
+      // Count intrusions flagged (alarms)
+      const intrusionRow = await get(
+        db,
+        `SELECT COUNT(*) as count FROM events
+         WHERE ts >= ? AND is_alert = 1 AND category = 'supervision'`
+      )
+      const intrusionsFlagged = intrusionRow?.count || 0
+
+      // Count supervised visits (resolved supervision events)
+      const supervisedRow = await get(
+        db,
+        `SELECT COUNT(*) as count FROM events
+         WHERE ts >= ? AND category = 'supervision' AND event_name = 'SUPERVISED'`
+      )
+      const supervisedVisits = supervisedRow?.count || 0
+
+      res.json({
+        intrusions_flagged: intrusionsFlagged,
+        supervised_visits: supervisedVisits,
+      })
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: 'Failed to load summary' })
     }
   })
 

@@ -2,12 +2,12 @@ export const rules = [
   {
     id: 'rule-1',
     flow: [
-      { text: 'Child detected', tone: 'warn' },
-      { text: 'No adult within threshold', tone: 'alarm' },
+      { text: 'Person in pool zone', tone: 'warn' },
+      { text: 'No one within 0.7m', tone: 'alarm' },
       { text: 'Notify on-duty lifeguard', tone: 'accent', isResult: true },
     ],
     description:
-      'Unsupervised intrusion. Sends a push alert to the lifeguard app and sounds the ESP32 buzzer immediately.',
+      'Unsupervised person detection using 0.7m proximity rule. Sends a push alert to the lifeguard app when a person in the pool has no one within 0.7 meters.',
     enabled: true,
   },
   {

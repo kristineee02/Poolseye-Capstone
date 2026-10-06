@@ -62,6 +62,14 @@ export async function fetchEventCameras() {
   return apiFetch('/api/events/cameras')
 }
 
+export async function fetchActiveAlert() {
+  return apiFetch('/api/events/active')
+}
+
+export async function fetchEventSummary() {
+  return apiFetch('/api/events/summary')
+}
+
 export async function updateEventStatus(id, status) {
   return apiFetch(`/api/events/${encodeURIComponent(id)}`, {
     method: 'PATCH',

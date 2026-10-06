@@ -88,7 +88,13 @@ CREATE TABLE IF NOT EXISTS events (
   is_alert INTEGER NOT NULL DEFAULT 0,
   snapshot_uri TEXT,
   ts REAL NOT NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  -- Supervision-specific fields
+  child_confidence REAL,
+  adult_confidence REAL,
+  separation_distance REAL,
+  supervision_threshold REAL,
+  boundary_direction TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts DESC);

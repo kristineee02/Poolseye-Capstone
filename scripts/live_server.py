@@ -25,7 +25,9 @@ if str(SCRIPTS_DIR) not in sys.path:
 from zone_check import (  # noqa: E402
     PersonTracker,
     ZONE_LABEL,
+    SpatialCalibrator,
     draw_person,
+    draw_supervision_overlay,
     draw_zones,
     foot_point,
     load_full_config,
@@ -34,11 +36,10 @@ from zone_check import (  # noqa: E402
     validate_nesting,
     zone_pixels,
 )
-
 CONFIG_PATH = SCRIPTS_DIR / "config.json"
-GEOFENCE_API = os.environ.get("GEOFENCE_API", "http://127.0.0.1:4000/api/geofence/live")
-EVENTS_INGEST_API = os.environ.get("EVENTS_INGEST_API", "http://127.0.0.1:4000/api/events/ingest")
-DEFAULT_RTSP = "rtsp://PoolsEye:PoolsEyeCapstone@192.168.1.20:554/stream1"
+GEOFENCE_API = os.environ.get("GEOFENCE_API","https://poolseye-api.onrender.com/api/geofence/live")
+EVENTS_INGEST_API = os.environ.get("EVENTS_INGEST_API", "https://poolseye-api.onrender.com/api/events/ingest")
+DEFAULT_RTSP = "rtsp://PoolsEye:PoolsEyeCapstone@192.168.0.130:554/stream1"
 
 app = Flask(__name__)
 
@@ -100,6 +101,20 @@ EVENT_CATALOG = {
         "severity": "LOW",
         "category": "clear",
     },
+    "UNSUPERVISED": {
+        "type": "alarm",
+        "code": "SUP",
+        "title": "Unsupervised Person",
+        "severity": "HIGH",
+        "category": "supervision",
+    },
+    "SUPERVISED": {
+        "type": "safe",
+        "code": "SUP",
+        "title": "Person Supervised",
+        "severity": "LOW",
+        "category": "supervision",
+    },
 }
 
 
@@ -117,7 +132,7 @@ def sync_event_to_backend(entry: dict):
         pass
 
 
-def push_event(person_id: int, zone: str, event_name: str, is_alert: bool):
+def push_event(person_id: int, zone: str, event_name: str, is_alert: bool, supervision_data: dict = None):
     """Append a dashboard-ready event when a zone crossing fires (once per change)."""
     global _last_logged_global
     pid = int(person_id)
@@ -167,6 +182,11 @@ def push_event(person_id: int, zone: str, event_name: str, is_alert: bool):
         "is_alert": bool(is_alert),
         "ts": now.timestamp(),
     }
+
+    # Add supervision-specific data if provided
+    if supervision_data:
+        entry.update(supervision_data)
+
     with _lock:
         _event_log.appendleft(entry)
     sync_event_to_backend(entry)
@@ -194,7 +214,9 @@ def read_fresh_frame(cap, flush: int):
     return cap.retrieve()
 
 
-def annotate_frame(frame, model, zcfg, tracker, conf, kpt_conf, imgsz: int):
+def annotate_frame(frame, model, zcfg, tracker, conf, kpt_conf, imgsz: int,
+                   supervision_cfg: dict | None = None,
+                   calibrator: SpatialCalibrator | None = None):
     """Run pose track + zone overlays; return BGR frame, reports, and draw cache."""
     results = model.track(
         source=frame,
@@ -229,6 +251,26 @@ def annotate_frame(frame, model, zcfg, tracker, conf, kpt_conf, imgsz: int):
             "zone": zone,
             "event": event,
         })
+
+    # Draw 0.7m supervision overlays (projected circles + proximity lines)
+    if supervision_cfg and supervision_cfg.get('enabled', False) and reports:
+        threshold_m = float(supervision_cfg.get('threshold_meters', 0.7))
+        sup_people = [
+            {
+                'id': r['id'],
+                'foot': r['foot'],
+                'zone': r['zone'],
+                'is_supervisor': tracker.states.get(r['id'], None) and
+                    tracker.states[r['id']].is_supervisor or False,
+                'supervision_data': r.get('supervision_data', {}),
+            }
+            for r in reports if r.get('foot')
+        ]
+        try:
+            draw_supervision_overlay(annotated, sup_people, calibrator, threshold_m)
+        except Exception:
+            pass
+
     return annotated, reports, draw_cache
 
 
@@ -353,10 +395,21 @@ def capture_loop(cfg: dict):
     print(f"[stream] loading pose model {model_name}")
     model = YOLO(model_name)
 
+    sup_cfg_init = cfg.get("SUPERVISION", {})
     tracker = PersonTracker(
         cooldown_sec=float(track_cfg.get("alert_cooldown_sec", 3.0)),
         lost_sec=float(track_cfg.get("lost_track_sec", 2.0)),
+        supervision_cooldown_sec=float(sup_cfg_init.get("alert_cooldown_sec", 10.0)),
+        unsupervised_confirm_frames=int(sup_cfg_init.get("unsupervised_confirm_frames", 4)),
+        supervised_confirm_frames=int(sup_cfg_init.get("supervised_confirm_frames", 3)),
+        hysteresis_margin_meters=float(sup_cfg_init.get("hysteresis_margin_meters", 0.05)),
+        occlusion_grace_sec=float(sup_cfg_init.get("occlusion_grace_sec", 1.2)),
+        distance_smoothing_alpha=float(sup_cfg_init.get("distance_smoothing_alpha", 0.5)),
     )
+
+    # Build spatial calibrator from config and first-frame dimensions
+    # Calibrator will be lazily initialized on first valid frame
+    _calibrator: SpatialCalibrator | None = None
 
     for warn in validate_nesting(current_zcfg(fallback_zcfg)):
         print(f"[stream] WARN {warn}")
@@ -411,10 +464,71 @@ def capture_loop(cfg: dict):
             fresh_events = False
             try:
                 zcfg = current_zcfg(fallback_zcfg)
+                supervision_cfg = cfg.get("SUPERVISION", {})
+
+                # Lazily init calibrator on first valid frame using zone polygon + config
+                if _calibrator is None:
+                    fh, fw = frame.shape[:2]
+                    full_cfg = {**cfg, "ZONES": zcfg}
+                    try:
+                        _calibrator = SpatialCalibrator.from_config(full_cfg, fw, fh)
+                        print(f"[stream] SpatialCalibrator initialized ({fw}x{fh}) — 0.7m proximity using perspective projection")
+                    except Exception as cal_err:
+                        print(f"[stream] Calibrator init warning: {cal_err} — falling back to linear scale")
+                        _calibrator = SpatialCalibrator(
+                            pool_width_m=float(supervision_cfg.get('pool_real_width_meters', 15.0)),
+                            pool_length_m=float(supervision_cfg.get('pool_real_length_meters', 25.0)),
+                            frame_size=(fw, fh),
+                        )
+
                 if frame_i % infer_every_n == 0 or not draw_cache:
                     annotated, reports, draw_cache = annotate_frame(
-                        frame, model, zcfg, tracker, conf, kpt_conf, imgsz
+                        frame, model, zcfg, tracker, conf, kpt_conf, imgsz,
+                        supervision_cfg=supervision_cfg,
+                        calibrator=_calibrator,
                     )
+
+                    # Build full person payloads for supervision engine (include xyxy for role classification)
+                    supervision_people = [
+                        {
+                            'id': r['id'],
+                            'foot': r.get('foot'),
+                            'zone': r['zone'],
+                            'xyxy': r.get('xyxy'),
+                            'supervision_data': r.get('supervision_data', {}),
+                        }
+                        for r in reports
+                        if r.get('foot')
+                    ]
+
+                    # Update supervision with calibrator-based precise 0.7m proximity check
+                    supervision_events = tracker.update_supervision(
+                        supervision_people,
+                        supervision_cfg,
+                        _calibrator,
+                        time.time()
+                    )
+
+                    # Process and log supervision state-change events
+                    for sev in supervision_events:
+                        supervision_data = sev.get('supervision_data', {})
+                        logged = push_event(
+                            sev['id'],
+                            sev['zone'],
+                            sev['event'],
+                            bool(sev['is_alert']),
+                            supervision_data
+                        )
+                        if logged:
+                            role = supervision_data.get('role', 'person')
+                            sep = supervision_data.get('separation_distance')
+                            thr = supervision_data.get('supervision_threshold', 0.7)
+                            sep_str = f"{sep:.2f}m" if sep is not None else "N/A"
+                            print(
+                                f"  [{sev['event']}] Person #{sev['id']} ({role}) "
+                                f"| Zone: {sev['zone']} | Dist: {sep_str} vs {thr}m threshold"
+                            )
+
                     # Strip events from cache so non-infer frames never re-log
                     last_reports = [
                         {**r, "event": None, "is_alert": False} for r in reports
