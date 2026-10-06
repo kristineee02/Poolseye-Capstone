@@ -1,16 +1,25 @@
-import { Icon } from '../ui/Icon'
 import Logo from '../ui/Logo'
 import './NavRail.css'
 
 const NAV_ITEMS = [
-  { id: 'live',       label: 'Live monitoring',     icon: Icon.Grid   },
-  { id: 'geofence',   label: 'Geofence editor',     icon: Icon.Fence  },
-  { id: 'lifeguards', label: 'Lifeguard accounts',  icon: Icon.Users  },
-  { id: 'history',    label: 'Event history',       icon: Icon.Clock  },
-  { id: 'analytics',  label: 'Analytics & reports', icon: Icon.Chart  },
+  { id: 'live',       label: 'Live monitoring',     icon: 'dashboard.png' },
+  { id: 'geofence',   label: 'Geofence editor',     icon: 'map.png' },
+  { id: 'lifeguards', label: 'Lifeguard accounts',  icon: 'people.svg' },
+  { id: 'history',    label: 'Event history',       icon: 'events.png' },
+  { id: 'analytics',  label: 'Analytics & reports', icon: 'analytics.png' },
 ]
 
-function NavItemButton({ label, active, onClick, children, className = '' }) {
+function NavIcon({ file }) {
+  return (
+    <span
+      className="navitem-icon"
+      style={{ '--nav-icon': `url(/icons/nav/${file})` }}
+      aria-hidden="true"
+    />
+  )
+}
+
+function NavItemButton({ label, icon, active, onClick, className = '' }) {
   return (
     <div className="navitem-wrap">
       <button
@@ -20,7 +29,7 @@ function NavItemButton({ label, active, onClick, children, className = '' }) {
         aria-current={active ? 'page' : undefined}
         onClick={onClick}
       >
-        {children}
+        <NavIcon file={icon} />
       </button>
       <span className="navitem-tooltip">{label}</span>
     </div>
@@ -38,15 +47,14 @@ export default function NavRail({ activePage, onNavigate, onRequestSignOut }) {
         </div>
 
         <div className="navrail-items">
-          {NAV_ITEMS.map(({ id, label, icon: ItemIcon }) => (
+          {NAV_ITEMS.map((item) => (
             <NavItemButton
-              key={id}
-              label={label}
-              active={activePage === id}
-              onClick={() => onNavigate(id)}
-            >
-              <ItemIcon />
-            </NavItemButton>
+              key={item.id}
+              label={item.label}
+              icon={item.icon}
+              active={activePage === item.id}
+              onClick={() => onNavigate(item.id)}
+            />
           ))}
         </div>
       </div>
@@ -54,18 +62,16 @@ export default function NavRail({ activePage, onNavigate, onRequestSignOut }) {
       <div className="navrail-footer">
         <NavItemButton
           label="Settings"
+          icon="settings.png"
           active={activePage === 'settings'}
           onClick={() => onNavigate('settings')}
-        >
-          <Icon.Settings />
-        </NavItemButton>
+        />
         <NavItemButton
           label="Sign out"
+          icon="logout.png"
           className="navitem-logout"
           onClick={onRequestSignOut}
-        >
-          <Icon.LogOut />
-        </NavItemButton>
+        />
       </div>
     </nav>
   )

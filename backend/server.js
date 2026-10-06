@@ -9,6 +9,7 @@ const { registerMobileAuthRoutes } = require('./mobileAuth')
 const { registerMobileEventRoutes } = require('./mobileEvents')
 const { registerEventRoutes, seedDemoEvents } = require('./events')
 const { registerAdminAuthRoutes } = require('./adminAuth')
+const { registerAnalyticsRoutes } = require('./analytics')
 
 const app = express()
 const PORT = process.env.PORT || 4000
@@ -158,6 +159,7 @@ initDb()
     registerMobileAuthRoutes(app, db)
     registerMobileEventRoutes(app, db)
     registerEventRoutes(app, db, adminRequired)
+    registerAnalyticsRoutes(app, db, adminRequired)
     await geofence.seedGeofence(db)
     await seedDemoEvents(db)
     app.listen(PORT, HOST, () => {

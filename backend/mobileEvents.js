@@ -1,5 +1,5 @@
 const { get, all, run } = require('./db')
-const { rowToEvent } = require('./events')
+const { rowToEvent, setEventStatus } = require('./events')
 const { lifeguardAuthRequired } = require('./mobileAuth')
 
 function registerMobileEventRoutes(app, db) {
@@ -54,7 +54,7 @@ function registerMobileEventRoutes(app, db) {
       const row = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
       if (!row) return res.status(404).json({ error: 'Alert not found' })
 
-      await run(db, 'UPDATE events SET status = ? WHERE id = ?', [status, id])
+      await setEventStatus(db, id, status, req.lifeguard?.id)
 
       if (status === 'resolved' || status === 'dismissed') {
         const lifeguardId = req.lifeguard?.id

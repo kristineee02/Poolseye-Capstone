@@ -104,6 +104,8 @@ function rowToEvent(row) {
     event: row.event_name,
     is_alert: Boolean(row.is_alert),
     snapshot_uri: row.snapshot_uri,
+    acknowledged_at: row.acknowledged_at ?? null,
+    acknowledged_by: row.acknowledged_by ?? null,
     ts: row.ts,
     // Supervision-specific fields
     child_confidence: row.child_confidence,
@@ -112,6 +114,25 @@ function rowToEvent(row) {
     supervision_threshold: row.supervision_threshold,
     boundary_direction: row.boundary_direction,
   }
+}
+
+async function setEventStatus(db, id, status, userId) {
+  if (status === 'pending') {
+    await run(
+      db,
+      'UPDATE events SET status = ?, acknowledged_at = NULL, acknowledged_by = NULL WHERE id = ?',
+      [status, id]
+    )
+    return
+  }
+  await run(
+    db,
+    `UPDATE events SET status = ?,
+      acknowledged_at = COALESCE(acknowledged_at, ?),
+      acknowledged_by = COALESCE(acknowledged_by, ?)
+     WHERE id = ?`,
+    [status, Date.now() / 1000, userId ?? null, id]
+  )
 }
 
 function normalizeIngestPayload(body) {
@@ -224,6 +245,8 @@ async function insertEvent(db, payload) {
   return rowToEvent(row)
 }
 
+const ALERT_SQL = "(is_alert = 1 OR type = 'alarm')"
+
 function registerEventRoutes(app, db, adminRequired) {
   app.get('/api/events', adminRequired, async (req, res) => {
     try {
@@ -231,11 +254,26 @@ function registerEventRoutes(app, db, adminRequired) {
       const type = String(req.query.type || 'all')
       const status = String(req.query.status || 'all')
       const camera = String(req.query.camera || 'all')
+      const kind = String(req.query.kind || 'all')
+      const since = Number(req.query.since)
       const page = Math.max(1, Number(req.query.page) || 1)
       const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 4))
 
       const conditions = []
       const params = []
+
+      if (Number.isFinite(since) && since > 0) {
+        conditions.push('ts >= ?')
+        params.push(since)
+      }
+      if (kind === 'alerts') {
+        conditions.push(ALERT_SQL)
+      } else if (kind === 'activity') {
+        conditions.push(`NOT ${ALERT_SQL}`)
+      } else if (['intrusion', 'deep-water', 'drowning'].includes(kind)) {
+        conditions.push('category = ?')
+        params.push(kind)
+      }
 
       if (search) {
         conditions.push('(LOWER(title) LIKE ? OR LOWER(meta) LIKE ? OR LOWER(camera) LIKE ?)')
@@ -246,13 +284,37 @@ function registerEventRoutes(app, db, adminRequired) {
         conditions.push('type = ?')
         params.push(type)
       }
-      if (status !== 'all') {
-        conditions.push('status = ?')
-        params.push(status)
-      }
       if (camera !== 'all') {
         conditions.push('camera = ?')
         params.push(camera)
+      }
+
+      const baseWhere = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+      const summaryRow = await get(
+        db,
+        `SELECT COUNT(*) AS total,
+          SUM(CASE WHEN status = 'pending' AND ${ALERT_SQL} THEN 1 ELSE 0 END) AS unacknowledged,
+          SUM(CASE WHEN status = 'pending' AND NOT ${ALERT_SQL} THEN 1 ELSE 0 END) AS logged,
+          SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) AS acknowledged,
+          SUM(CASE WHEN status = 'dismissed' THEN 1 ELSE 0 END) AS dismissed
+        FROM events ${baseWhere}`,
+        params
+      )
+      const summary = {
+        total: summaryRow?.total || 0,
+        unacknowledged: summaryRow?.unacknowledged || 0,
+        logged: summaryRow?.logged || 0,
+        acknowledged: summaryRow?.acknowledged || 0,
+        dismissed: summaryRow?.dismissed || 0,
+      }
+
+      if (status === 'unacknowledged') {
+        conditions.push(`status = 'pending' AND ${ALERT_SQL}`)
+      } else if (status === 'logged') {
+        conditions.push(`status = 'pending' AND NOT ${ALERT_SQL}`)
+      } else if (status !== 'all') {
+        conditions.push('status = ?')
+        params.push(status)
       }
 
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
@@ -273,6 +335,7 @@ function registerEventRoutes(app, db, adminRequired) {
         page,
         pageSize,
         totalPages,
+        summary,
       })
     } catch (err) {
       console.error(err)
@@ -368,7 +431,7 @@ function registerEventRoutes(app, db, adminRequired) {
         return res.status(400).json({ error: 'Invalid status' })
       }
 
-      await run(db, 'UPDATE events SET status = ? WHERE id = ?', [status, req.params.id])
+      await setEventStatus(db, req.params.id, status, req.user?.id)
       const updated = await get(db, 'SELECT * FROM events WHERE id = ?', [req.params.id])
       res.json({ ok: true, event: rowToEvent(updated) })
     } catch (err) {
@@ -401,4 +464,5 @@ module.exports = {
   seedDemoEvents,
   rowToEvent,
   insertEvent,
+  setEventStatus,
 }

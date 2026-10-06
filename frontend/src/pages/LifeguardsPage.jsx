@@ -963,6 +963,7 @@ export default function LifeguardsPage() {
         title="Deactivate Lifeguard Account"
         message={`Deactivate ${selected?.name}'s account? They will be moved to Archived and lose access. You can activate them again anytime.`}
         onConfirm={handleDeactivate}
+        icon={Icon.Archive}
         confirmText="Deactivate"
         cancelText="Cancel"
       />

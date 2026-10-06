@@ -28,6 +28,11 @@ const LIFEGUARD_COLUMNS = [
   ['response_time', 'TEXT'],
 ]
 
+const EVENT_COLUMNS = [
+  ['acknowledged_at', 'REAL'],
+  ['acknowledged_by', 'INTEGER'],
+]
+
 function isLibsql(db) {
   return Boolean(db && db._client)
 }
@@ -200,6 +205,16 @@ async function migrateUsersTable(db) {
   }
 }
 
+async function migrateEventsTable(db) {
+  for (const [column, definition] of EVENT_COLUMNS) {
+    const exists = await columnExists(db, 'events', column)
+    if (!exists) {
+      await run(db, `ALTER TABLE events ADD COLUMN ${column} ${definition}`)
+      console.log(`Migrated events.${column}`)
+    }
+  }
+}
+
 async function seedDemoLifeguard(db) {
   const email = 'jonas@poolseye.com'
   const existing = await get(db, 'SELECT id FROM users WHERE email = ?', [email])
@@ -242,6 +257,7 @@ async function initDb() {
   const schema = fs.readFileSync(SCHEMA_PATH, 'utf8')
   await exec(db, schema)
   await migrateUsersTable(db)
+  await migrateEventsTable(db)
 
   const adminEmail = 'piapendergat275@gmail.com'
   const existingAdmin = await get(
