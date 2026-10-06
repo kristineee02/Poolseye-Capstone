@@ -72,6 +72,8 @@ export async function fetchActiveAlert() {
 
 export async function fetchEventSummary() {
   return apiFetch('/api/events/summary')
+}
+
 export async function fetchAnalytics(range = '7d') {
   return apiFetch(`/api/analytics?range=${encodeURIComponent(range)}`)
 }

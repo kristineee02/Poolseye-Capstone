@@ -8,8 +8,19 @@ import { useGeofence } from '../../context/GeofenceContext'
 import { STREAM_BASE } from '../../config'
 import './CameraPanel.css'
 
+const GEOFENCE_VISIBLE_KEY = 'poolseye.live.showGeofences'
+
+function readGeofenceVisible() {
+  try {
+    return localStorage.getItem(GEOFENCE_VISIBLE_KEY) !== 'false'
+  } catch {
+    return true
+  }
+}
+
 export default function CameraPanel({ compact = false }) {
   const { zones, dirty, updatedAt } = useGeofence()
+  const [showGeofences, setShowGeofences] = useState(readGeofenceVisible)
   const [streamStatus, setStreamStatus] = useState('connecting')
   const [reconnectToken, setReconnectToken] = useState(0)
   const streamSrc = `${STREAM_BASE}/stream`
@@ -36,6 +47,18 @@ export default function CameraPanel({ compact = false }) {
   const reconnect = () => {
     setStreamStatus('connecting')
     setReconnectToken((n) => n + 1)
+  }
+
+  const toggleGeofences = () => {
+    setShowGeofences((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem(GEOFENCE_VISIBLE_KEY, String(next))
+      } catch {
+        // storage unavailable (private mode); keep in-memory state only
+      }
+      return next
+    })
   }
 
   if (compact) {
@@ -92,7 +115,7 @@ export default function CameraPanel({ compact = false }) {
             </button>
           </div>
         )}
-        {online ? (
+        {online && showGeofences ? (
           <>
             <svg
               className="camera-geofence-overlay"
@@ -135,6 +158,16 @@ export default function CameraPanel({ compact = false }) {
           </span>
         </div>
         <div className="camera-controls">
+          <button
+            type="button"
+            className={`ctrl-btn ctrl-btn-labeled${showGeofences ? ' is-active' : ''}`}
+            onClick={toggleGeofences}
+            aria-pressed={showGeofences}
+            title={showGeofences ? 'Hide geofence overlay' : 'Show geofence overlay'}
+          >
+            {showGeofences ? <Icon.Eye /> : <Icon.EyeOff />}
+            {showGeofences ? 'Hide geofences' : 'Show geofences'}
+          </button>
           <button className="ctrl-btn" title="Zoom"><Icon.Search /></button>
           <button className="ctrl-btn" title="Play"><Icon.Aperture /></button>
           <button className="ctrl-btn" title="Fullscreen"><Icon.Grid /></button>
