@@ -1,5 +1,6 @@
 import math
 import json
+import time
 from pathlib import Path
 
 # Load DROWNING_LOGIC from scripts/config.json (same file as zone check).
@@ -18,39 +19,38 @@ except FileNotFoundError:
     ANGLE_LIMIT, MOVE_LIMIT, CONF_LIMIT, DANGER_THRESHOLD = 20.0, 5.0, 0.75, 10
 
 class DrowningDetector:
-    def __init__(self):
-        self.danger_counter = 0
+    """Flags possible drowning once the distress posture holds for
+    DANGER_THRESHOLD seconds (wall-clock, so it does not depend on FPS)."""
 
-    def process_frame(self, angle, movement, confidence):
-        # Confidence Check
+    def __init__(self):
+        self.danger_since = None
+
+    def process_frame(self, angle, movement, confidence, now=None):
+        now = time.monotonic() if now is None else now
+
         if confidence < CONF_LIMIT:
-            return "Low Confidence", 0, False
-            
-        # Logic Check using Config variables
+            return "Low Confidence", 0.0, False
+
         if angle < ANGLE_LIMIT and movement < MOVE_LIMIT:
-            self.danger_counter += 1
+            if self.danger_since is None:
+                self.danger_since = now
             status = "Danger"
         else:
-            self.danger_counter = 0
+            self.danger_since = None
             status = "Safe"
-            
-        # Trigger Alert if counter hits threshold
-        alert = self.danger_counter >= DANGER_THRESHOLD
-        return status, self.danger_counter, alert
 
-# --- Simulation ---
-detector = DrowningDetector()
+        held = 0.0 if self.danger_since is None else now - self.danger_since
+        return status, held, held >= DANGER_THRESHOLD
 
-print(f"System loaded with Thresholds: Angle={ANGLE_LIMIT}, Move={MOVE_LIMIT}")
 
-for frame in range(15):
-    # Simulate: High confidence, Vertical posture (10 deg), Stationary (2px move)
-    conf = 0.9 
-    angle, movement = 10.0, 2.0 
-    
-    status, count, alert = detector.process_frame(angle, movement, conf)
-    
-    if alert:
-        print(f"Frame {frame+1}: >>> CRITICAL ALERT! <<<")
-    else:
-        print(f"Frame {frame+1}: Status: {status} (Counter: {count})")
+if __name__ == "__main__":
+    detector = DrowningDetector()
+    print(f"Thresholds: Angle={ANGLE_LIMIT}, Move={MOVE_LIMIT}, Hold={DANGER_THRESHOLD}s")
+
+    # Simulate 15 s of a vertical (10 deg), stationary (2 px) swimmer at 1 sample per second.
+    for second in range(16):
+        status, held, alert = detector.process_frame(10.0, 2.0, 0.9, now=float(second))
+        if alert:
+            print(f"t={second:>2}s: >>> POSSIBLE DROWNING ({held:.0f}s) <<<")
+        else:
+            print(f"t={second:>2}s: {status} (held {held:.0f}s)")
