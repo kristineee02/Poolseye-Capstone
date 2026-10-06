@@ -22,7 +22,7 @@ export const alerts = [
     id: 'evt-1',
     type: 'alarm',
     title: 'Unsupervised intrusion detected',
-    detail: 'Child class object inside restricted zone. No adult within 2.4 m proximity threshold.',
+    detail: 'Person inside restricted zone with no one else within the 0.7 m proximity threshold.',
     meta: 'CAM-01 · Main Pool · Red Zone',
     time: '10:42:11 AM',
     date: 'Jun 22',
@@ -53,7 +53,7 @@ export const events = [
     id: 'evt-1',
     code: 'DRN',
     title: 'Possible Drowning',
-    description: 'A person was detected motionless in the Red Zone. No nearby adult movement was found within the safety threshold. Immediate lifeguard response is recommended.',
+    description: 'A person was detected motionless in the Red Zone. No nearby person movement was found within the safety threshold. Immediate lifeguard response is recommended.',
     meta: 'Red Zone · 2:15 PM · HIGH',
     zone: 'Red Zone',
     time: '2:15 PM',
@@ -81,16 +81,16 @@ export const events = [
   },
   {
     id: 'evt-3',
-    code: 'CH',
-    title: 'Unsupervised Child',
-    description: 'A child-class detection was found in the Yellow Zone without an adult within the proximity threshold. Lifeguard acknowledgment was recorded.',
+    code: 'SUP',
+    title: 'Unsupervised Person',
+    description: 'A person was detected in the Yellow Zone with no one else within the proximity threshold. Lifeguard acknowledgment was recorded.',
     meta: 'Yellow Zone · 1:58 PM · MEDIUM',
     zone: 'Yellow Zone',
     time: '1:58 PM',
     date: 'Today',
     severity: 'MEDIUM',
     status: 'ack',
-    category: 'child',
+    category: 'supervision',
     type: 'warn',
     confidence: 0.87,
   },
@@ -173,8 +173,9 @@ export const cameras = [
 // ── Notification preferences ──────────────────────────────────────────────────
 
 export const notificationSettings = [
-  { id: 'ns-1', label: 'Unsupervised intrusion alerts', description: 'Immediate push for danger/warning zones', enabled: true  },
-  { id: 'ns-2', label: 'Transition boundary alerts',    description: 'Notify when shallow–deep line is crossed', enabled: true  },
-  { id: 'ns-3', label: 'Escalation alerts',             description: 'If unacknowledged after 60 seconds',      enabled: true  },
-  { id: 'ns-4', label: 'System health updates',         description: 'CCTV camera status',                     enabled: false },
+  // ids match the backend notification_prefs keys
+  { id: 'supervision',   label: 'Unsupervised person alerts', description: 'No one within 0.7 m, or anyone detected after hours', enabled: true  },
+  { id: 'boundary',      label: 'Zone boundary alerts',       description: 'Red zone, deep-pool and pool-area crossings',        enabled: true  },
+  { id: 'escalation',    label: 'Escalation alerts',          description: 'If unacknowledged after 60 seconds',                 enabled: true  },
+  { id: 'system_health', label: 'System health updates',      description: 'CCTV camera status',                                 enabled: false },
 ];

@@ -40,7 +40,7 @@ export const rules = [
       { text: 'Notify lifeguard + site owner', tone: 'accent', isResult: true },
     ],
     description:
-      'After-hours presence is always treated as unsupervised, regardless of adult proximity.',
+      'After-hours presence is always treated as unsupervised, regardless of proximity to other people. Set the hours in Settings → Operating Hours.',
     enabled: false,
   },
 ]

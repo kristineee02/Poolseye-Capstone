@@ -5,6 +5,9 @@ const { validatePassword } = require('./password')
 const { sendPasswordResetCodeEmail } = require('./email')
 
 const CODE_TTL_MS = 10 * 60 * 1000
+const ADMIN_POSITIONS = ['admin', 'Owner', 'Supervisor']
+const PHONE_RE = /^[+\d][\d\s-]{6,19}$/
+const MAX_PHOTO_CHARS = 3 * 1024 * 1024
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase()
@@ -31,7 +34,43 @@ function adminPayload(user) {
     initials: initials(user.name),
     role: user.role,
     mustChangePassword: Boolean(user.must_change_password),
+    phone: user.phone || '',
+    position: user.position || 'admin',
+    photoUri: user.photo_uri || null,
+    createdAt: user.created_at || null,
   }
+}
+
+function readAdminToken(req) {
+  const header = req.headers.authorization || ''
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null
+  if (!token) return null
+  const payload = jwt.verify(token, process.env.JWT_SECRET)
+  if (payload.role !== 'admin' || payload.aud !== 'admin') return null
+  return payload
+}
+
+function validateProfile(body, user) {
+  const name = String(body?.name ?? user.name).trim()
+  if (!name) return { error: 'Name is required.' }
+  if (name.length > 80) return { error: 'Name must be 80 characters or fewer.' }
+
+  const phone = String(body?.phone ?? user.phone ?? '').trim()
+  if (phone && !PHONE_RE.test(phone)) return { error: 'Enter a valid contact number, e.g. 09171234567.' }
+
+  const position = String(body?.position ?? user.position ?? 'admin')
+  if (!ADMIN_POSITIONS.includes(position)) return { error: 'Choose a valid position.' }
+
+  let photoUri = body?.photoUri !== undefined ? body.photoUri : user.photo_uri
+  if (photoUri === '') photoUri = null
+  if (photoUri !== null && photoUri !== undefined) {
+    if (typeof photoUri !== 'string' || !/^(data:image\/|https?:\/\/)/.test(photoUri)) {
+      return { error: 'Profile picture must be an image.' }
+    }
+    if (photoUri.length > MAX_PHOTO_CHARS) return { error: 'Image must be 2MB or smaller.' }
+  }
+
+  return { name, phone, position, photoUri: photoUri ?? null }
 }
 
 function signAdminToken(user) {
@@ -245,6 +284,35 @@ function registerAdminAuthRoutes(app, db) {
       res.json({ user: adminPayload(user) })
     } catch {
       res.status(401).json({ error: 'Unauthorized' })
+    }
+  })
+
+  app.patch('/api/auth/profile', async (req, res) => {
+    let payload
+    try {
+      payload = readAdminToken(req)
+    } catch {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+    if (!payload) return res.status(403).json({ error: 'Admin access only' })
+
+    try {
+      const user = await get(db, 'SELECT * FROM users WHERE id = ? AND role = ?', [payload.id, 'admin'])
+      if (!user) return res.status(401).json({ error: 'Unauthorized' })
+
+      const next = validateProfile(req.body, user)
+      if (next.error) return res.status(400).json({ error: next.error })
+
+      await run(
+        db,
+        'UPDATE users SET name = ?, phone = ?, position = ?, photo_uri = ? WHERE id = ?',
+        [next.name, next.phone || null, next.position, next.photoUri, user.id]
+      )
+      const updated = await get(db, 'SELECT * FROM users WHERE id = ?', [user.id])
+      res.json({ ok: true, user: adminPayload(updated) })
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: 'Could not save profile' })
     }
   })
 

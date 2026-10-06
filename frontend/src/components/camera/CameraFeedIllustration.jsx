@@ -93,21 +93,21 @@ export default function CameraFeedIllustration({ zones = initialZones }) {
       {/* Safety geofence zones from Geofence editor (Yellow / Orange / Red) */}
       <GeofenceOverlay zones={zones} />
 
-      {/* ── Adult bounding box — deck, before pool ── */}
+      {/* ── Person bounding box — deck, before pool ── */}
       <rect x={adult.x} y={adult.y} width={adult.w} height={adult.h} rx="4"
         fill="#1B9C6E" fillOpacity="0.18" stroke="#1B9C6E" strokeWidth="3" />
       <rect x={adult.x} y={adult.y} width={adult.w} height={20} rx="4" fill="#1B9C6E" />
       <text x={adult.x + adult.w / 2} y={adult.y + 14} fill="#fff"
-        fontFamily="Roboto Mono, monospace" fontSize="11" fontWeight="700" textAnchor="middle">ADULT</text>
+        fontFamily="Roboto Mono, monospace" fontSize="11" fontWeight="700" textAnchor="middle">PERSON</text>
       <text x={adult.x + adult.w / 2} y={adultCy - 6} fill="#1B9C6E"
         fontFamily="Roboto Mono, monospace" fontSize="13" fontWeight="700" textAnchor="middle">0.97</text>
 
-      {/* ── Child bounding box — deck, before pool ── */}
+      {/* ── Unsupervised person bounding box — deck, before pool ── */}
       <rect x={child.x} y={child.y} width={child.w} height={child.h} rx="4"
         fill="#B6790A" fillOpacity="0.18" stroke="#B6790A" strokeWidth="3" />
       <rect x={child.x} y={child.y} width={child.w} height={20} rx="4" fill="#B6790A" />
       <text x={child.x + child.w / 2} y={child.y + 14} fill="#fff"
-        fontFamily="Roboto Mono, monospace" fontSize="11" fontWeight="700" textAnchor="middle">CHILD</text>
+        fontFamily="Roboto Mono, monospace" fontSize="11" fontWeight="700" textAnchor="middle">PERSON</text>
       <text x={child.x + child.w / 2} y={childCy - 6} fill="#B6790A"
         fontFamily="Roboto Mono, monospace" fontSize="13" fontWeight="700" textAnchor="middle">0.93</text>
 
@@ -118,7 +118,7 @@ export default function CameraFeedIllustration({ zones = initialZones }) {
         width={88} height={22} rx="4" fill="#D6364A" />
       <text x={(childCx + adultCx) / 2} y={(childCy + adultCy) / 2 + 4}
         fill="#fff" fontFamily="Roboto Mono, monospace" fontSize="11" fontWeight="700" textAnchor="middle">
-        2.4m · OVER
+        1.2m · OVER
       </text>
 
       {/* Timestamp */}

@@ -1,7 +1,7 @@
 // PoolsEye — ProfileScreen
 // Profile card · account menu (camera / password) · notifications · no shift
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Image,
 } from 'react-native';
@@ -105,6 +105,14 @@ function AccountMenuItem({ icon, label, description, onPress, isLast }) {
   );
 }
 
+function prefsFromUser(user) {
+  const saved = user?.notificationPrefs || {};
+  return notificationSettings.reduce(
+    (acc, s) => ({ ...acc, [s.id]: typeof saved[s.id] === 'boolean' ? saved[s.id] : s.enabled }),
+    {}
+  );
+}
+
 function NotifRow({ setting, value, onChange, isLast }) {
   return (
     <View style={[styles.listRow, !isLast && styles.listRowBorder]}>
@@ -119,24 +127,33 @@ function NotifRow({ setting, value, onChange, isLast }) {
 
 export default function ProfileScreen() {
   const { tabBarClearance } = useLayoutInsets();
-  const { user, signOut } = useAuth();
+  const { user, signOut, updateNotificationPrefs } = useAuth();
   const lifeguard = user || defaultLifeguard;
   const name = lifeguard.name || 'Lifeguard';
   const initials = lifeguard.initials || getInitials(name);
   const role = lifeguard.role || 'On-duty lifeguard · primary';
   const photoUri = user?.photoUri || null;
 
-  const [settings, setSettings] = useState(
-    notificationSettings.reduce((acc, s) => ({ ...acc, [s.id]: s.enabled }), {})
-  );
+  const [settings, setSettings] = useState(() => prefsFromUser(user));
+  const [notifError, setNotifError] = useState('');
   const [showSignOut, setShowSignOut] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
 
+  useEffect(() => {
+    setSettings(prefsFromUser(user));
+  }, [user]);
+
   const enabledCount = Object.values(settings).filter(Boolean).length;
 
-  const handleToggle = (id, value) => {
+  const handleToggle = async (id, value) => {
+    setNotifError('');
     setSettings((prev) => ({ ...prev, [id]: value }));
+    const result = await updateNotificationPrefs({ [id]: value });
+    if (!result.ok) {
+      setSettings((prev) => ({ ...prev, [id]: !value }));
+      setNotifError(result.error || 'Could not save notification setting.');
+    }
   };
 
   if (showEditProfile) {
@@ -218,6 +235,7 @@ export default function ProfileScreen() {
             />
           ))}
         </View>
+        {notifError ? <Text style={styles.notifError}>{notifError}</Text> : null}
 
         <TouchableOpacity
           style={styles.signOutBtn}
@@ -383,6 +401,12 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 3,
     lineHeight: 18,
+  },
+  notifError: {
+    fontSize: typography.sm,
+    color: colors.alarm,
+    fontWeight: '600',
+    marginTop: -6,
   },
   listChevron: {
     fontSize: 22,

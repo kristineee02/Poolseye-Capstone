@@ -13,6 +13,9 @@ dataset/**/labels/**/*.txt
 # Trained YOLO model weights
 ai/models/*.pt
 
+# Videos uploaded from the Live Monitoring page
+scripts/uploads/
+
 # Python
 __pycache__/
 *.pyc

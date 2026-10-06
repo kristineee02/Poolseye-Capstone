@@ -246,7 +246,7 @@ class SpatialCalibrator:
         num_points: int = 32,
     ) -> List[Tuple[int, int]]:
         """
-        Project a circular boundary of radius_m (e.g. 0.7m) around a supervisor's ground location
+        Project a circular boundary of radius_m (e.g. 0.7m) around a person's ground location
         into the CCTV camera image plane. Due to perspective projection, this circle projects
         as a precise ellipse matching the camera view angle.
         """
@@ -259,30 +259,3 @@ class SpatialCalibrator:
             u, v = self.metric_to_pixel(xm, ym)
             pixel_points.append((int(round(u)), int(round(v))))
         return pixel_points
-
-    def estimate_person_height_m(
-        self,
-        xyxy: Tuple[float, float, float, float] | List[float],
-        foot_pixel: Tuple[float, float],
-    ) -> float:
-        """
-        Estimate physical height of a person in meters by computing the metric distance
-        from the top of the head (top of bounding box) to the ground contact foot point.
-        """
-        x1, y1, x2, y2 = xyxy
-        head_u = (x1 + x2) / 2.0
-        head_v = y1
-
-        # In perspective projection, vertical height on ground plane maps proportionally
-        # to the local scale factor (meters per pixel) at the foot location.
-        fx, fy = foot_pixel
-        # Test 10 pixels offset in y at foot location to find local meters/pixel scale
-        xm0, ym0 = self.pixel_to_metric(fx, fy)
-        xm1, ym1 = self.pixel_to_metric(fx, fy - 10.0)
-        meters_per_pixel = math.hypot(xm1 - xm0, ym1 - ym0) / 10.0
-
-        pixel_height = max(1.0, fy - head_v)
-        estimated_m = pixel_height * meters_per_pixel
-
-        # Clamp to realistic human range (0.5m to 2.3m)
-        return float(max(0.5, min(2.3, estimated_m)))

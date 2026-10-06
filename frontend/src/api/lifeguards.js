@@ -119,6 +119,13 @@ export async function archiveLifeguard(id) {
   })
 }
 
+export async function broadcastAlert({ message, priority }) {
+  return apiFetch('/api/lifeguards/broadcast', {
+    method: 'POST',
+    body: JSON.stringify({ message, priority }),
+  })
+}
+
 export async function restoreLifeguard(id) {
   return apiFetch(`/api/lifeguards/${encodeURIComponent(id)}/restore`, {
     method: 'POST',

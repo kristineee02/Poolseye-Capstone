@@ -51,7 +51,7 @@ export default function LiveMonitoringPage() {
         </div>
       </div>
 
-      <CameraPanel />
+      <CameraPanel onNotify={addToast} />
 
       <LiveEventLogPanel onNewAlert={handleNewAlert} />
     </div>

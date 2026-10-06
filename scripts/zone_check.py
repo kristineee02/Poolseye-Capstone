@@ -35,7 +35,9 @@ import math
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import cv2
 import numpy as np
@@ -74,10 +76,16 @@ COLORS = {
     "ankle_l": (255, 180, 0),
     "ankle_r": (255, 0, 255),
     "bone": (180, 220, 255),
-    "adult": (110, 156, 27),        # #1B9C6E in BGR (Emerald green)
-    "child": (10, 121, 182),        # #B6790A in BGR (Amber/Gold)
-    "supervised": (110, 156, 27),   # Safe green
+    "supervised": (110, 156, 27),   # Safe green #1B9C6E in BGR
     "unsupervised": (74, 54, 214),  # Alert red #D6364A in BGR
+}
+
+# Supervision status → (tag text, BGR color) for the per-person label
+SUPERVISION_TAGS = {
+    "supervised": ("SUPERVISED", COLORS["supervised"]),
+    "unsupervised": ("UNSUPERVISED", COLORS["unsupervised"]),
+    "after_hours": ("AFTER HOURS", COLORS["unsupervised"]),
+    "outside": ("NOT IN POOL", (120, 120, 120)),
 }
 
 ZONE_LABEL = {
@@ -211,68 +219,15 @@ def calculate_person_distances(people, frame_width=1920, pool_real_width_m=15.0,
     return distances
 
 
-def classify_person_role(
-    person: dict,
-    calibrator: SpatialCalibrator | None,
-    supervision_cfg: dict,
-) -> tuple[str, bool, float, float]:
-    """
-    Classify person as 'adult' (authorized supervisor/guardian) or 'child' (individual requiring supervision).
-    Returns (role, is_supervisor, adult_confidence, child_confidence).
-    """
-    track_id = person.get("id")
-    authorized_ids = supervision_cfg.get("authorized_supervisor_ids") or []
-    if track_id is not None and track_id in authorized_ids:
-        return "adult", True, 1.0, 0.0
-
-    if person.get("role") in ("adult", "supervisor", "guardian"):
-        adult_conf = float(person.get("adult_confidence", 0.95))
-        return "adult", True, adult_conf, round(1.0 - adult_conf, 2)
-    if person.get("role") in ("child", "individual"):
-        child_conf = float(person.get("child_confidence", 0.95))
-        return "child", False, round(1.0 - child_conf, 2), child_conf
-
-    xyxy = person.get("xyxy")
-    foot = person.get("foot") or (0.0, 0.0)
-    est_height_m = None
-    if xyxy is not None and calibrator is not None:
-        est_height_m = calibrator.estimate_person_height_m(xyxy, foot)
-
-    adult_thresh_m = float(supervision_cfg.get("adult_height_threshold_m", 1.40))
-    conf_thresh = float(supervision_cfg.get("adult_confidence_threshold", 0.55))
-
-    scores = []
-    if est_height_m is not None:
-        diff = (est_height_m - adult_thresh_m) / 0.15
-        h_score = 1.0 / (1.0 + math.exp(-max(-5.0, min(5.0, diff))))
-        scores.append(h_score)
-
-    if xyxy is not None:
-        w_box = max(1.0, xyxy[2] - xyxy[0])
-        h_box = max(1.0, xyxy[3] - xyxy[1])
-        aspect = h_box / w_box
-        aspect_score = 1.0 / (1.0 + math.exp(-max(-5.0, min(5.0, (aspect - 2.5) * 1.5))))
-        scores.append(aspect_score)
-
-    adult_confidence = float(np.mean(scores)) if scores else 0.5
-    child_confidence = float(1.0 - adult_confidence)
-    is_adult = adult_confidence >= conf_thresh
-    role = "adult" if is_adult else "child"
-    is_supervisor = is_adult
-
-    return role, is_supervisor, round(adult_confidence, 2), round(child_confidence, 2)
-
-
 def check_supervision(people, supervision_cfg, frame_width_or_calibrator):
     """
-    Check if individuals in pool zones have supervision within 0.7-meter radius of an authorized supervisor.
-    
+    Check if individuals in pool zones are supervised, regardless of age or height.
+
     Proximity Threshold Requirement:
-    - An individual is classified as 'supervised' ONLY IF they are within a 0.7-meter radius of an
-      authorized supervisor/guardian.
-    - If distance exceeds 0.7 meters (or no authorized supervisor is present), they MUST be flagged
-      as 'unsupervised'.
-    - Non-supervisors near each other do NOT supervise each other.
+    - An individual is classified as 'supervised' ONLY IF another detected person
+      (standing in a supervisor zone) is within the threshold radius (default 0.7 m).
+    - If the nearest other person is farther than the threshold, or nobody else is
+      present, they are flagged as 'unsupervised'.
     """
     if not supervision_cfg.get('enabled', False):
         return []
@@ -288,69 +243,36 @@ def check_supervision(people, supervision_cfg, frame_width_or_calibrator):
     threshold = float(supervision_cfg.get('threshold_meters', 0.7))
     check_zones = supervision_cfg.get('check_zones', ['yellow', 'red', 'orange'])
     supervisor_zones = supervision_cfg.get('supervisor_zones', ['clear', 'yellow', 'red', 'orange'])
-    supervisor_role_required = bool(supervision_cfg.get('supervisor_role_required', True))
 
-    # Classify all people and attach roles and metric ground coordinates
     for p in people:
-        role, is_sup, a_conf, c_conf = classify_person_role(p, calibrator, supervision_cfg)
-        p['role'] = role
-        p['is_supervisor'] = is_sup
-        p['adult_confidence'] = a_conf
-        p['child_confidence'] = c_conf
         foot = p.get('foot', (0.0, 0.0))
         p['metric_pos'] = calibrator.pixel_to_metric(foot[0], foot[1])
 
-    if supervisor_role_required:
-        supervisors = [p for p in people if p.get('is_supervisor', False) and p['zone'] in supervisor_zones]
-    else:
-        supervisors = [p for p in people if p['zone'] in supervisor_zones]
-
+    candidates = [p for p in people if p['zone'] in supervisor_zones]
     people_in_pool = [p for p in people if p['zone'] in check_zones]
     unsupervised = []
 
     for person in people_in_pool:
-        # Adults/supervisors in pool are self-supervised
-        if person.get('is_supervisor', False):
-            person['supervised'] = True
-            person['supervision_data'] = {
-                'supervised': True,
-                'role': person.get('role', 'adult'),
-                'separation_distance': 0.0,
-                'supervision_threshold': threshold,
-                'nearest_person_id': person['id'],
-                'supervisor_id': person['id'],
-                'adult_confidence': person.get('adult_confidence', 1.0),
-                'child_confidence': person.get('child_confidence', 0.0),
-                'boundary_direction': 'supervisor_presence',
-            }
-            continue
-
-        # Individual requiring supervision: calculate precise distance to nearest authorized supervisor
         nearest_distance = float('inf')
-        nearest_supervisor_id = None
+        nearest_person_id = None
 
-        for sup in supervisors:
-            if sup['id'] == person['id']:
+        for other in candidates:
+            if other['id'] == person['id']:
                 continue
-            dist_m = calibrator.calculate_distance(person['foot'], sup['foot'])
+            dist_m = calibrator.calculate_distance(person['foot'], other['foot'])
             if dist_m < nearest_distance:
                 nearest_distance = dist_m
-                nearest_supervisor_id = sup['id']
+                nearest_person_id = other['id']
 
-        # Proximity Threshold: Classified as 'supervised' ONLY IF within 0.7-meter radius of supervisor
         has_supervision = (nearest_distance <= threshold)
 
         person['supervised'] = has_supervision
         sep_dist = round(nearest_distance, 2) if nearest_distance != float('inf') else None
         person['supervision_data'] = {
             'supervised': has_supervision,
-            'role': person.get('role', 'child'),
             'separation_distance': sep_dist,
             'supervision_threshold': threshold,
-            'nearest_person_id': nearest_supervisor_id,
-            'supervisor_id': nearest_supervisor_id,
-            'adult_confidence': person.get('adult_confidence', 0.0),
-            'child_confidence': person.get('child_confidence', 1.0),
+            'nearest_person_id': nearest_person_id,
             'boundary_direction': 'toward_pool' if not has_supervision else 'monitored',
         }
 
@@ -433,6 +355,60 @@ def crossing_event(prev_zone, zone):
     return CROSSING_EVENTS.get((prev_zone, zone), (None, False))
 
 
+DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+def _hhmm_to_minutes(value: str) -> int:
+    h, m = str(value).split(":")
+    return int(h) * 60 + int(m)
+
+
+def is_open_at(schedule: dict, day_key: str, minutes: int) -> bool:
+    """Same rule as backend/operatingHours.js: close <= open spills into the next day."""
+    today = schedule.get(day_key) or {}
+    if today and not today.get("closed"):
+        o, c = _hhmm_to_minutes(today["open"]), _hhmm_to_minutes(today["close"])
+        if (o <= minutes < c) if c > o else (minutes >= o):
+            return True
+    prev = schedule.get(DAY_KEYS[(DAY_KEYS.index(day_key) + 6) % 7]) or {}
+    if prev and not prev.get("closed"):
+        o, c = _hhmm_to_minutes(prev["open"]), _hhmm_to_minutes(prev["close"])
+        if c <= o and minutes < c:
+            return True
+    return False
+
+
+def site_clock(hours: dict, now: datetime | None = None) -> tuple[str, int]:
+    """(day key, minutes since midnight) at the site.
+
+    Uses the IANA zone when Python has tz data; Windows often lacks the tzdata
+    package, so fall back to the UTC offset the backend sends with the schedule.
+    """
+    now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    local = None
+    tz_name = hours.get("timezone")
+    if tz_name:
+        try:
+            local = now_utc.astimezone(ZoneInfo(tz_name))
+        except (ZoneInfoNotFoundError, ValueError):
+            local = None
+    if local is None:
+        offset = hours.get("utcOffsetMinutes")
+        local = now_utc + timedelta(minutes=int(offset)) if offset is not None else now_utc.astimezone()
+    return DAY_KEYS[local.weekday()], local.hour * 60 + local.minute
+
+
+def is_after_hours(hours: dict | None, now: datetime | None = None) -> bool:
+    if not hours or not hours.get("enabled"):
+        return False
+    schedule = hours.get("schedule") or {}
+    day, minutes = site_clock(hours, now)
+    try:
+        return not is_open_at(schedule, day, minutes)
+    except (KeyError, ValueError):
+        return False
+
+
 @dataclass
 class PersonState:
     id: int
@@ -444,20 +420,14 @@ class PersonState:
     last_event_time: float = 0.0
     last_alert_key: str | None = None
     
-    # Supervision & anti-jitter fields
-    role: str = "child"
-    is_supervisor: bool = False
-    adult_confidence: float = 0.5
-    child_confidence: float = 0.5
     supervised: bool = True
-    pending_state: bool | None = None
-    pending_frames: int = 0
     smoothed_distance: float | None = None
-    nearest_supervisor_id: int | None = None
-    last_supervisor_seen_time: float = 0.0
+    nearest_person_id: int | None = None
+    last_person_seen_time: float = 0.0
     last_supervision_check: float = 0.0
-    consecutive_occluded_frames: int = 0
     supervision_history: list = field(default_factory=list)
+    after_hours: bool = False
+    in_check_zone: bool = False
 
 
 @dataclass
@@ -465,11 +435,6 @@ class PersonTracker:
     cooldown_sec: float = 3.0
     lost_sec: float = 2.0
     supervision_cooldown_sec: float = 10.0
-    unsupervised_confirm_frames: int = 4
-    supervised_confirm_frames: int = 3
-    hysteresis_margin_meters: float = 0.05
-    occlusion_grace_sec: float = 1.2
-    distance_smoothing_alpha: float = 0.5
     states: dict[int, PersonState] = field(default_factory=dict)
 
     def prune(self, now: float):
@@ -502,11 +467,51 @@ class PersonTracker:
                 st.last_alert_key = event
         return st, event, is_alert
 
-    def update_supervision(self, people, supervision_cfg, frame_width_or_calibrator, now: float):
+    def update_after_hours(self, people, now: float):
+        """Outside operating hours everyone in view is unsupervised, with no debounce."""
+        events = []
+        for person in people:
+            pid = person['id']
+            st = self.states.get(pid)
+            if st is None:
+                st = PersonState(id=pid, zone=person.get('zone', 'clear'), prev_zone='clear', last_seen=now)
+                self.states[pid] = st
+            person['supervised'] = False
+            person['supervision_data'] = {
+                'supervised': False,
+                'after_hours': True,
+                'separation_distance': None,
+                'nearest_person_id': None,
+                'boundary_direction': 'after_hours',
+            }
+            first_sighting = not st.after_hours
+            st.after_hours = True
+            st.supervised = False
+            st.smoothed_distance = None
+            if first_sighting or (now - st.last_supervision_check) > self.supervision_cooldown_sec:
+                st.last_supervision_check = now
+                events.append({
+                    'id': pid,
+                    'zone': person['zone'],
+                    'event': 'AFTER_HOURS_PRESENCE',
+                    'is_alert': True,
+                    'supervision_data': dict(person['supervision_data']),
+                })
+        return events
+
+    def update_supervision(self, people, supervision_cfg, frame_width_or_calibrator, now: float,
+                           after_hours: bool = False):
         """
-        Update supervision status for all people with anti-jitter debouncing,
-        hysteresis, occlusion grace periods, and continuous status change logging.
+        A person in a pool zone is SUPERVISED only while another person is within
+        threshold_meters in the current frame; otherwise UNSUPERVISED. Emits an event
+        on pool entry (an alert only if unsupervised) and on every status change after that.
+        After hours, the proximity rule is skipped and everyone is unsupervised.
         """
+        if after_hours:
+            return self.update_after_hours(people, now)
+        for st in self.states.values():
+            st.after_hours = False
+
         if not supervision_cfg.get('enabled', False):
             return []
 
@@ -519,14 +524,7 @@ class PersonTracker:
             calibrator = SpatialCalibrator(pool_width_m=pool_w, pool_length_m=pool_l, frame_size=(int(fw), int(fw * 9 / 16)))
 
         threshold = float(supervision_cfg.get('threshold_meters', 0.7))
-        hysteresis_margin = float(supervision_cfg.get('hysteresis_margin_meters', self.hysteresis_margin_meters))
-        unsupervised_confirm_frames = int(supervision_cfg.get('unsupervised_confirm_frames', self.unsupervised_confirm_frames))
-        supervised_confirm_frames = int(supervision_cfg.get('supervised_confirm_frames', self.supervised_confirm_frames))
-        occlusion_grace_sec = float(supervision_cfg.get('occlusion_grace_sec', self.occlusion_grace_sec))
-        alpha = float(supervision_cfg.get('distance_smoothing_alpha', self.distance_smoothing_alpha))
-
-        unsupervised = check_supervision(people, supervision_cfg, calibrator)
-        unsupervised_ids = {p['id'] for p in unsupervised}
+        check_supervision(people, supervision_cfg, calibrator)
 
         events = []
         for person in people:
@@ -543,175 +541,64 @@ class PersonTracker:
                     zone=person.get('zone', 'clear'),
                     prev_zone='clear',
                     last_seen=now,
-                    # Start unsupervised-pending so solo detection fires quickly
-                    supervised=True,
-                    last_supervisor_seen_time=0.0,
                     last_supervision_check=now,
                 )
                 self.states[pid] = st
-
-            st.role = person.get('role', 'child')
-            st.is_supervisor = bool(person.get('is_supervisor', False))
-            st.adult_confidence = float(person.get('adult_confidence', 0.5))
-            st.child_confidence = float(person.get('child_confidence', 0.5))
-
-            # Adults/supervisors in pool are self-supervised
-            if st.is_supervisor:
-                st.supervised = True
-                st.pending_state = None
-                st.pending_frames = 0
-                st.smoothed_distance = 0.0
-                st.last_supervisor_seen_time = now
-                continue
 
             # Outside pool zones, person is safe
             check_zones = supervision_cfg.get('check_zones', ['yellow', 'red', 'orange'])
             if person['zone'] not in check_zones:
                 st.supervised = True
-                st.pending_state = None
-                st.pending_frames = 0
+                st.in_check_zone = False
                 continue
 
             sup_data = person.get('supervision_data', {})
             raw_dist = sup_data.get('separation_distance')
-            # check_supervision writes 'supervisor_id'; fall back to 'nearest_supervisor_id'
-            nearest_sup_id = sup_data.get('supervisor_id') or sup_data.get('nearest_supervisor_id')
-            st.nearest_supervisor_id = nearest_sup_id
+            nearest_id = sup_data.get('nearest_person_id')
+            st.nearest_person_id = nearest_id
 
-            # If no supervisors exist at all (not just occluded), treat as provably unsupervised
-            # immediately — no grace period applies since there is no supervisor to be occluded.
-            no_supervisors_at_all = not any(
-                p.get('is_supervisor', False) for p in people if p['id'] != pid
+            supervisor_zones = supervision_cfg.get('supervisor_zones', ['clear', 'yellow', 'red', 'orange'])
+            alone = not any(
+                p['id'] != pid and p['zone'] in supervisor_zones for p in people
             )
-            if no_supervisors_at_all and person['zone'] in supervision_cfg.get('check_zones', ['yellow', 'red', 'orange']):
-                raw_dist = None   # No supervisor → infinite distance
-                nearest_sup_id = None
-                # Skip occlusion grace — there's no supervisor who could be occluded
-                st.consecutive_occluded_frames = 0
+            if alone:
+                raw_dist = None
+                nearest_id = None
 
-            # Exponential Moving Average distance smoothing
-            if raw_dist is not None:
-                if st.smoothed_distance is None:
-                    st.smoothed_distance = raw_dist
-                else:
-                    st.smoothed_distance = alpha * raw_dist + (1.0 - alpha) * st.smoothed_distance
-                effective_dist = st.smoothed_distance
-            else:
-                effective_dist = float('inf')
-
-            # Occlusion handling
-            is_occluded = (raw_dist is None or nearest_sup_id is None) and st.supervised
-            time_since_sup_seen = now - st.last_supervisor_seen_time
-
-            if is_occluded and time_since_sup_seen < occlusion_grace_sec:
-                st.consecutive_occluded_frames += 1
+            supervised_now = raw_dist is not None and raw_dist <= threshold
+            entering = not st.in_check_zone
+            st.in_check_zone = True
+            st.smoothed_distance = raw_dist
+            if not entering and supervised_now == st.supervised:
                 continue
-            elif not is_occluded:
-                st.consecutive_occluded_frames = 0
 
-            # Candidate state evaluation with hysteresis margin
-            # To become UNSUPERVISED: distance must exceed (threshold + margin) or supervisor gone past grace
-            # To become SUPERVISED: distance must be <= threshold
-            check_dist = raw_dist if raw_dist is not None else float('inf')
-            if st.supervised:
-                candidate = False if (check_dist > (threshold + hysteresis_margin) or (raw_dist is None and time_since_sup_seen >= occlusion_grace_sec)) else True
-            else:
-                candidate = True if (check_dist <= threshold and raw_dist is not None) else False
-
-            if candidate:
-                st.last_supervisor_seen_time = now
-                if not st.supervised and raw_dist is not None:
-                    # Snap smoothed distance towards supervisor's current position on return
-                    st.smoothed_distance = raw_dist
-
-            # Debouncing: Require N consecutive frames in candidate state before state transition
-            if candidate != st.supervised:
-                if st.pending_state == candidate:
-                    st.pending_frames += 1
-                else:
-                    st.pending_state = candidate
-                    st.pending_frames = 1
-
-                required_frames = supervised_confirm_frames if candidate else unsupervised_confirm_frames
-                if st.pending_frames >= required_frames:
-                    was_supervised = st.supervised
-                    st.supervised = candidate
-                    st.pending_state = None
-                    st.pending_frames = 0
-                    st.last_supervision_check = now
-
-                    log_entry = {
-                        'from': 'SUPERVISED' if was_supervised else 'UNSUPERVISED',
-                        'to': 'SUPERVISED' if candidate else 'UNSUPERVISED',
-                        'time': now,
-                        'distance_m': round(effective_dist, 2) if effective_dist != float('inf') else None,
-                        'supervisor_id': nearest_sup_id,
-                        'zone': person['zone'],
-                    }
-                    st.supervision_history.append(log_entry)
-
-                    if not candidate:
-                        # Transitioned to UNSUPERVISED
-                        events.append({
-                            'id': pid,
-                            'zone': person['zone'],
-                            'event': 'UNSUPERVISED',
-                            'is_alert': True,
-                            'supervision_data': {
-                                'supervised': False,
-                                'role': st.role,
-                                'separation_distance': round(effective_dist, 2) if effective_dist != float('inf') else None,
-                                'supervision_threshold': threshold,
-                                'nearest_person_id': nearest_sup_id,
-                                'supervisor_id': nearest_sup_id,
-                                'adult_confidence': st.adult_confidence,
-                                'child_confidence': st.child_confidence,
-                                'boundary_direction': 'toward_pool',
-                            }
-                        })
-                    else:
-                        # Transitioned to SUPERVISED
-                        events.append({
-                            'id': pid,
-                            'zone': person['zone'],
-                            'event': 'SUPERVISED',
-                            'is_alert': False,
-                            'supervision_data': {
-                                'supervised': True,
-                                'role': st.role,
-                                'separation_distance': round(effective_dist, 2),
-                                'supervision_threshold': threshold,
-                                'nearest_person_id': nearest_sup_id,
-                                'supervisor_id': nearest_sup_id,
-                                'adult_confidence': st.adult_confidence,
-                                'child_confidence': st.child_confidence,
-                                'boundary_direction': 'supervised',
-                            }
-                        })
-            else:
-                st.pending_state = None
-                st.pending_frames = 0
-
-                # Periodic reminder if still unsupervised in danger zone
-                if not st.supervised and (now - st.last_supervision_check) > self.supervision_cooldown_sec:
-                    st.last_supervision_check = now
-                    events.append({
-                        'id': pid,
-                        'zone': person['zone'],
-                        'event': 'UNSUPERVISED',
-                        'is_alert': True,
-                        'supervision_data': {
-                            'supervised': False,
-                            'role': st.role,
-                            'separation_distance': round(effective_dist, 2) if effective_dist != float('inf') else None,
-                            'supervision_threshold': threshold,
-                            'nearest_person_id': nearest_sup_id,
-                            'supervisor_id': nearest_sup_id,
-                            'adult_confidence': st.adult_confidence,
-                            'child_confidence': st.child_confidence,
-                            'boundary_direction': 'toward_pool',
-                        }
-                    })
+            was_supervised = st.supervised
+            st.supervised = supervised_now
+            st.last_supervision_check = now
+            if supervised_now:
+                st.last_person_seen_time = now
+            if not entering:
+                st.supervision_history.append({
+                    'from': 'SUPERVISED' if was_supervised else 'UNSUPERVISED',
+                    'to': 'SUPERVISED' if supervised_now else 'UNSUPERVISED',
+                    'time': now,
+                    'distance_m': round(raw_dist, 2) if raw_dist is not None else None,
+                    'nearest_person_id': nearest_id,
+                    'zone': person['zone'],
+                })
+            events.append({
+                'id': pid,
+                'zone': person['zone'],
+                'event': 'SUPERVISED' if supervised_now else 'UNSUPERVISED',
+                'is_alert': not supervised_now,
+                'supervision_data': {
+                    'supervised': supervised_now,
+                    'separation_distance': round(raw_dist, 2) if raw_dist is not None else None,
+                    'supervision_threshold': threshold,
+                    'nearest_person_id': nearest_id,
+                    'boundary_direction': 'supervised' if supervised_now else 'toward_pool',
+                },
+            })
 
         return events
 
@@ -769,59 +656,81 @@ def draw_skeleton(frame, kxy, kcf, kpt_conf):
 
 def draw_supervision_overlay(frame, people, calibrator: SpatialCalibrator | None = None, threshold_m: float = 0.7):
     """
-    Render visual supervision overlays on CCTV frame:
-    1. 0.7m projected ground-plane circle/ellipse around supervisors.
-    2. Proximity lines between individuals and nearest supervisors with distance badges.
+    Render proximity lines on the CCTV frame between each person in a pool zone
+    and the nearest other person, with a distance badge.
     """
+    drawn_pairs = set()
     for p in people:
-        foot = p.get('foot')
-        if not foot:
-            continue
-        fx, fy = int(foot[0]), int(foot[1])
-        if p.get('is_supervisor', False) and calibrator is not None:
-            try:
-                circle_pts = calibrator.get_proximity_circle_pixels((fx, fy), radius_m=threshold_m, num_points=32)
-                pts_arr = np.array(circle_pts, dtype=np.int32).reshape((-1, 1, 2))
-                bubble_overlay = frame.copy()
-                cv2.fillPoly(bubble_overlay, [pts_arr], (110, 156, 27))
-                cv2.addWeighted(bubble_overlay, 0.15, frame, 0.85, 0, frame)
-                cv2.polylines(frame, [pts_arr], isClosed=True, color=(110, 156, 27), thickness=2, lineType=cv2.LINE_AA)
-            except Exception:
-                pass
-
-    for p in people:
-        if p.get('is_supervisor', False):
-            continue
         sup_data = p.get('supervision_data', {})
-        sup_id = sup_data.get('nearest_supervisor_id')
+        other_id = sup_data.get('nearest_person_id')
         sep_dist = sup_data.get('separation_distance')
-        if sup_id is not None and sep_dist is not None:
-            sup = next((s for s in people if s['id'] == sup_id), None)
-            if sup and sup.get('foot') and p.get('foot'):
-                cx, cy = int(p['foot'][0]), int(p['foot'][1])
-                sx, sy = int(sup['foot'][0]), int(sup['foot'][1])
-                is_sup = sup_data.get('supervised', False)
-                line_color = (110, 156, 27) if is_sup else (74, 54, 214)
-                cv2.line(frame, (cx, cy), (sx, sy), line_color, 2, cv2.LINE_AA)
-                mx, my = (cx + sx) // 2, (cy + sy) // 2
-                badge_txt = f"{sep_dist:.2f}m" + (" [OK]" if is_sup else " [OVER 0.7m]")
-                (bw, bh), _ = cv2.getTextSize(badge_txt, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
-                cv2.rectangle(frame, (mx - bw//2 - 4, my - bh - 4), (mx + bw//2 + 4, my + 4), (0, 0, 0), -1)
-                cv2.rectangle(frame, (mx - bw//2 - 4, my - bh - 4), (mx + bw//2 + 4, my + 4), line_color, 1)
-                cv2.putText(frame, badge_txt, (mx - bw//2, my - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+        if other_id is None or other_id == p.get('id') or sep_dist is None:
+            continue
+        pair = frozenset((p.get('id'), other_id))
+        if pair in drawn_pairs:
+            continue
+        other = next((s for s in people if s['id'] == other_id), None)
+        if other and other.get('foot') and p.get('foot'):
+            drawn_pairs.add(pair)
+            cx, cy = int(p['foot'][0]), int(p['foot'][1])
+            sx, sy = int(other['foot'][0]), int(other['foot'][1])
+            is_sup = sup_data.get('supervised', False)
+            line_color = (110, 156, 27) if is_sup else (74, 54, 214)
+            cv2.line(frame, (cx, cy), (sx, sy), line_color, 2, cv2.LINE_AA)
+            mx, my = (cx + sx) // 2, (cy + sy) // 2
+            badge_txt = f"{sep_dist:.2f}m" + (" [OK]" if is_sup else f" [OVER {threshold_m:g}m]")
+            (bw, bh), _ = cv2.getTextSize(badge_txt, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+            cv2.rectangle(frame, (mx - bw//2 - 4, my - bh - 4), (mx + bw//2 + 4, my + 4), (0, 0, 0), -1)
+            cv2.rectangle(frame, (mx - bw//2 - 4, my - bh - 4), (mx + bw//2 + 4, my + 4), line_color, 1)
+            cv2.putText(frame, badge_txt, (mx - bw//2, my - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+
+
+def supervision_label(person: dict, tracker: PersonTracker, enabled: bool = True) -> dict | None:
+    """Per-person supervision status for the on-frame label.
+
+    Uses the tracker's debounced state so the label always agrees with the
+    SUPERVISED / UNSUPERVISED alerts. Call after tracker.update_supervision().
+    """
+    if not enabled:
+        return None
+    sup = person.get('supervision_data') or {}
+    base = {
+        'separation_distance': sup.get('separation_distance'),
+    }
+    st = tracker.states.get(person['id'])
+    if st is not None and st.after_hours:
+        return {**base, 'status': 'after_hours', 'supervised': False}
+    # check_supervision only attaches supervision_data to people inside check_zones
+    if not sup or st is None:
+        return {**base, 'status': 'outside', 'supervised': True}
+    return {**base, 'status': 'supervised' if st.supervised else 'unsupervised', 'supervised': st.supervised}
+
+
+def _draw_status_tag(frame, x, y_top, tag, tag_color, detail):
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    pad = 4
+    (tw, th), _ = cv2.getTextSize(tag, font, 0.5, 2)
+    (dw, dh), _ = cv2.getTextSize(detail, font, 0.42, 1)
+    h = max(th, dh) + pad * 2
+    top = y_top - h - 2
+    if top < 0:
+        top = y_top + 2
+    total_w = tw + dw + pad * 4
+    x = max(0, min(x, frame.shape[1] - total_w))
+    cv2.rectangle(frame, (x, top), (x + tw + pad * 2, top + h), tag_color, -1)
+    cv2.putText(frame, tag, (x + pad, top + h - pad - 1), font, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
+    dx = x + tw + pad * 2
+    cv2.rectangle(frame, (dx, top), (dx + dw + pad * 2, top + h), (0, 0, 0), -1)
+    cv2.putText(frame, detail, (dx + pad, top + h - pad - 1), font, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
 
 
 def draw_person(frame, track_id, xyxy, foot, src, left, right, kxy, kcf, kpt_conf, zone, event, supervision_data: dict | None = None):
     x1, y1, x2, y2 = (int(v) for v in xyxy)
-    
-    is_sup = supervision_data.get('is_supervisor', False) if supervision_data else False
-    supervised = supervision_data.get('supervised', True) if supervision_data else True
-    role = supervision_data.get('role') if supervision_data else None
 
-    if is_sup:
-        color = COLORS["adult"]
-    elif role == "child" or not supervised:
-        color = COLORS["supervised"] if supervised else COLORS["unsupervised"]
+    status = supervision_data.get('status') if supervision_data else None
+    tag = SUPERVISION_TAGS.get(status)
+    if tag and status != "outside":
+        color = tag[1]
     else:
         color = COLORS[BOX_COLOR.get(zone, "clear")]
 
@@ -834,26 +743,26 @@ def draw_person(frame, track_id, xyxy, foot, src, left, right, kxy, kcf, kpt_con
     fx, fy = int(foot[0]), int(foot[1])
     cv2.circle(frame, (fx, fy), 7, COLORS["foot"], -1)
     cv2.circle(frame, (fx, fy), 9, color, 2)
-    
-    event_txt = event or "-"
-    if is_sup:
-        a_conf = supervision_data.get('adult_confidence', 1.0)
-        label = f"SUPERVISOR #{track_id} | Adult:{a_conf:.2f} | Zone: {ZONE_LABEL.get(zone, zone)}"
-    elif role == "child" or (supervision_data and not is_sup):
-        status_txt = "SUPERVISED" if supervised else "UNSUPERVISED"
-        sep = supervision_data.get('separation_distance')
-        sep_str = f" {sep:.2f}m" if sep is not None else " No Sup"
-        label = f"CHILD #{track_id} | {status_txt}{sep_str} | Zone: {ZONE_LABEL.get(zone, zone)}"
-    else:
-        label = f"Person #{track_id} | Zone: {ZONE_LABEL.get(zone, zone)} | Event: {event_txt}"
 
-    (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
-    ty = max(th + 8, y1 - 8)
-    cv2.rectangle(frame, (x1, ty - th - 6), (x1 + tw + 8, ty + 4), (0, 0, 0), -1)
-    cv2.putText(
-        frame, label, (x1 + 4, ty),
-        cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA,
-    )
+    if tag:
+        details = [f"#{track_id}", ZONE_LABEL.get(zone, zone)]
+        if status in ("supervised", "unsupervised"):
+            sep = supervision_data.get('separation_distance')
+            details.append(f"{sep:.2f}m to nearest person" if sep is not None else "alone")
+        elif status == "after_hours":
+            details.append("pool closed")
+        if event:
+            details.append(event)
+        _draw_status_tag(frame, x1, y1, tag[0], tag[1], " | ".join(details))
+    else:
+        label = f"Person #{track_id} | Zone: {ZONE_LABEL.get(zone, zone)} | Event: {event or '-'}"
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+        ty = max(th + 8, y1 - 8)
+        cv2.rectangle(frame, (x1, ty - th - 6), (x1 + tw + 8, ty + 4), (0, 0, 0), -1)
+        cv2.putText(
+            frame, label, (x1 + 4, ty),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA,
+        )
     cv2.putText(
         frame, f"foot={src}", (x1, min(frame.shape[0] - 8, y2 + 16)),
         cv2.FONT_HERSHEY_SIMPLEX, 0.40, COLORS["foot"], 1, cv2.LINE_AA,
@@ -901,7 +810,8 @@ def people_from_result(result):
         yield int(ids[i]), xyxy[i], (None if kxy is None else kxy[i]), (None if kcf is None else kcf[i])
 
 
-def process_result(result, zcfg, tracker: PersonTracker, kpt_conf, persist: bool):
+def process_result(result, zcfg, tracker: PersonTracker, kpt_conf, persist: bool,
+                   draw_zone_overlay: bool = True, draw_people: bool = True):
     frame = result.orig_img.copy()
     h, w = frame.shape[:2]
     zones_px = zone_pixels(zcfg, w, h)
@@ -910,9 +820,11 @@ def process_result(result, zcfg, tracker: PersonTracker, kpt_conf, persist: bool
     if persist:
         tracker.prune(now)
 
-    draw_zones(frame, zones_px)
+    if draw_zone_overlay:
+        draw_zones(frame, zones_px)
     reports = []
-    for track_id, xyxy, kxy, kcf in people_from_result(result):
+    box_conf = result.boxes.conf.cpu().numpy() if result.boxes is not None and result.boxes.conf is not None else None
+    for i, (track_id, xyxy, kxy, kcf) in enumerate(people_from_result(result) or []):
         fx, fy, src, left, right = foot_point(xyxy, kxy, kcf, kpt_conf)
         zone = classify_zone(fx, fy, zones_px, orange_px)
         if persist:
@@ -920,9 +832,11 @@ def process_result(result, zcfg, tracker: PersonTracker, kpt_conf, persist: bool
         else:
             event, is_alert = None, False
             st = None
-        draw_person(frame, track_id, xyxy, (fx, fy), src, left, right, kxy, kcf, kpt_conf, zone, event)
+        if draw_people:
+            draw_person(frame, track_id, xyxy, (fx, fy), src, left, right, kxy, kcf, kpt_conf, zone, event)
         reports.append({
             "id": track_id,
+            "conf": None if box_conf is None else round(float(box_conf[i]), 2),
             "foot": (round(fx, 1), round(fy, 1)),
             "source": src,
             "zone": zone,
@@ -1022,100 +936,121 @@ def run_self_test() -> int:
         "threshold_meters": 0.7,
         "check_zones": ["yellow", "red", "orange"],
         "supervisor_zones": ["clear", "yellow", "red", "orange"],
-        "supervisor_role_required": True,
-        "unsupervised_confirm_frames": 4,
-        "supervised_confirm_frames": 3,
-        "hysteresis_margin_meters": 0.05,
-        "occlusion_grace_sec": 1.2,
-        "distance_smoothing_alpha": 0.5,
     }
 
-    # Check 2: Individual within 0.7m of authorized adult supervisor -> SUPERVISED
-    p_adult = {
-        "id": 10,
-        "foot": pt1_px,
-        "zone": "yellow",
-        "role": "adult",
-        "adult_confidence": 0.95,
-        "xyxy": [100, 100, 150, 220],
-    }
-    p_child_near = {
-        "id": 20,
-        "foot": pt2_px,  # 0.65m from adult
-        "zone": "yellow",
-        "role": "child",
-        "child_confidence": 0.95,
-        "xyxy": [150, 120, 180, 180],
-    }
-    unsupervised_res = check_supervision([p_adult, p_child_near], sup_cfg, cal)
-    check("child <= 0.7m from adult is supervised", p_child_near.get("supervised") is True and len(unsupervised_res) == 0)
+    # Check 2: Person within 0.7m of another person -> SUPERVISED (no age/height involved)
+    p_anchor = {"id": 10, "foot": pt1_px, "zone": "yellow", "xyxy": [100, 100, 150, 220]}
+    p_near = {"id": 20, "foot": pt2_px, "zone": "yellow", "xyxy": [150, 120, 180, 180]}  # 0.65m away
+    unsupervised_res = check_supervision([p_anchor, p_near], sup_cfg, cal)
+    check("person <= 0.7m from another person is supervised",
+          p_near.get("supervised") is True and p_anchor.get("supervised") is True and len(unsupervised_res) == 0)
+    check("no age/role fields are attached", "role" not in p_near and "is_supervisor" not in p_near)
 
-    # Check 3: Individual > 0.7m from supervisor -> UNSUPERVISED
-    p_child_far = {
-        "id": 21,
-        "foot": pt3_px,  # 0.85m from adult
-        "zone": "yellow",
-        "role": "child",
-        "child_confidence": 0.95,
-        "xyxy": [150, 120, 180, 180],
-    }
-    unsupervised_res2 = check_supervision([p_adult, p_child_far], sup_cfg, cal)
-    check("child > 0.7m from adult is unsupervised", p_child_far.get("supervised") is False and len(unsupervised_res2) == 1)
+    # Check 3: Person > 0.7m from anyone else -> UNSUPERVISED
+    p_far = {"id": 21, "foot": pt3_px, "zone": "yellow", "xyxy": [150, 120, 180, 180]}  # 0.85m away
+    unsupervised_res2 = check_supervision([p_anchor, p_far], sup_cfg, cal)
+    check("person > 0.7m from everyone is unsupervised",
+          p_far.get("supervised") is False and len(unsupervised_res2) == 2)
 
-    # Check 4: Two children at 0.4m from each other without an adult -> BOTH UNSUPERVISED
+    # Check 4: Box size does not matter — a small and a tall box 0.4m apart supervise each other
     pt_c1 = cal.metric_to_pixel(8.0, 12.0)
     pt_c2 = cal.metric_to_pixel(8.0, 12.4)  # 0.4m apart
-    c1 = {"id": 31, "foot": pt_c1, "zone": "yellow", "role": "child", "child_confidence": 0.9}
-    c2 = {"id": 32, "foot": pt_c2, "zone": "yellow", "role": "child", "child_confidence": 0.9}
-    unsupervised_kids = check_supervision([c1, c2], sup_cfg, cal)
-    check("two kids near each other without supervisor are both unsupervised", len(unsupervised_kids) == 2 and c1.get("supervised") is False and c2.get("supervised") is False)
+    c1 = {"id": 31, "foot": pt_c1, "zone": "yellow", "xyxy": [0, 0, 20, 30]}
+    c2 = {"id": 32, "foot": pt_c2, "zone": "yellow", "xyxy": [0, 0, 40, 200]}
+    unsupervised_pair = check_supervision([c1, c2], sup_cfg, cal)
+    check("two people 0.4m apart are both supervised regardless of size",
+          len(unsupervised_pair) == 0 and c1.get("supervised") is True and c2.get("supervised") is True)
 
-    # Check 5: Anti-Jitter Debouncing: 1-frame distance spike does NOT flip state to UNSUPERVISED
-    tracker_debounce = PersonTracker(unsupervised_confirm_frames=4, supervised_confirm_frames=3)
+    # Check 4b: Person on the deck (clear zone) within 0.7m still counts as supervision
+    p_deck = {"id": 33, "foot": pt1_px, "zone": "clear"}
+    p_pool = {"id": 34, "foot": pt2_px, "zone": "yellow"}
+    unsupervised_deck = check_supervision([p_deck, p_pool], sup_cfg, cal)
+    check("deck person within 0.7m supervises pool person", p_pool.get("supervised") is True and len(unsupervised_deck) == 0)
+
+    # Check 5: Status follows the current frame exactly — no smoothing or grace periods
+    tr = PersonTracker()
     t_start = time.time()
-    # Establish person states
-    tracker_debounce.update(10, "yellow", pt1_px, t_start)
-    tracker_debounce.update(20, "yellow", pt2_px, t_start)
-    # Frame 1: child at 0.65m (confirmed supervised)
-    ev_f1 = tracker_debounce.update_supervision([p_adult, p_child_near], sup_cfg, cal, t_start)
-    check("stable initial state supervised", tracker_debounce.states[20].supervised is True)
-    # Frame 2: 1-frame spike to 0.85m (> 0.7m)
-    p_child_spike = dict(p_child_near, foot=pt3_px)
-    ev_spike = tracker_debounce.update_supervision([p_adult, p_child_spike], sup_cfg, cal, t_start + 0.1)
-    check("1-frame spike does NOT emit UNSUPERVISED alert", len(ev_spike) == 0 and tracker_debounce.states[20].supervised is True)
-    # Frame 3: returns to 0.65m
-    tracker_debounce.update_supervision([p_adult, p_child_near], sup_cfg, cal, t_start + 0.2)
-    check("spike discarded, state remains supervised", tracker_debounce.states[20].supervised is True)
+    tr.update(10, "yellow", pt1_px, t_start)
+    tr.update(20, "yellow", pt2_px, t_start)
+    tr.update_supervision([p_anchor, p_near], sup_cfg, cal, t_start)
+    check("0.65m apart -> supervised", tr.states[20].supervised is True)
+    p_apart = dict(p_near, foot=pt3_px)
+    ev_apart = tr.update_supervision([p_anchor, p_apart], sup_cfg, cal, t_start + 0.1)
+    check("one frame at 0.85m -> UNSUPERVISED immediately",
+          tr.states[20].supervised is False and any(e.get("event") == "UNSUPERVISED" for e in ev_apart))
+    check("UNSUPERVISED event carries no age/role data",
+          all('role' not in e['supervision_data'] and 'adult_confidence' not in e['supervision_data'] for e in ev_apart))
+    ev_back = tr.update_supervision([p_anchor, p_near], sup_cfg, cal, t_start + 0.2)
+    check("back within 0.7m -> SUPERVISED immediately",
+          tr.states[20].supervised is True and any(e.get("event") == "SUPERVISED" for e in ev_back))
+    ev_gone = tr.update_supervision([p_near], sup_cfg, cal, t_start + 0.3)
+    check("companion leaves view -> UNSUPERVISED immediately",
+          tr.states[20].supervised is False and [e.get("event") for e in ev_gone] == ["UNSUPERVISED"])
+    check("no repeat event while status unchanged",
+          tr.update_supervision([p_near], sup_cfg, cal, t_start + 0.4) == [])
 
-    # Check 6: Temporary Occlusion: supervisor dropped for 0.4s (< 1.2s grace) does NOT flip state
-    ev_occ = tracker_debounce.update_supervision([p_child_near], sup_cfg, cal, t_start + 0.5)
-    check("temporary occlusion within grace period does not emit alert", len(ev_occ) == 0 and tracker_debounce.states[20].supervised is True)
-
-    # Check 7: Sustained Separation (> 4 frames) confirms transition to UNSUPERVISED
-    for frame_idx in range(4):
-        p_child_sustained = dict(p_child_near, foot=pt3_px)
-        ev_sustained = tracker_debounce.update_supervision([p_adult, p_child_sustained], sup_cfg, cal, t_start + 2.0 + frame_idx * 0.1)
-    check("sustained separation triggers UNSUPERVISED alert", tracker_debounce.states[20].supervised is False and any(e.get("event") == "UNSUPERVISED" for e in ev_sustained))
-
-    # Check 8: Supervisor returns (3 frames <= 0.7m) confirms transition to SUPERVISED
-    for frame_idx in range(3):
-        ev_return = tracker_debounce.update_supervision([p_adult, p_child_near], sup_cfg, cal, t_start + 3.0 + frame_idx * 0.1)
-    check("supervisor return confirms transition to SUPERVISED", tracker_debounce.states[20].supervised is True and any(e.get("event") == "SUPERVISED" for e in ev_return))
-
-    # Check 9: Solo person (no supervisor in frame at all) → UNSUPERVISED after confirm frames
-    tracker_solo = PersonTracker(unsupervised_confirm_frames=4, supervised_confirm_frames=3)
+    # Check 9: Solo person entering the pool area is UNSUPERVISED on the first frame, alerted once
+    tracker_solo = PersonTracker()
     t_solo = time.time() + 100.0
     tracker_solo.update(99, "yellow", pt2_px, t_solo)
     p_solo = {'id': 99, 'foot': pt2_px, 'zone': 'yellow', 'xyxy': None}
     ev_solo_early = tracker_solo.update_supervision([p_solo], sup_cfg, cal, t_solo)
-    check("solo person: no alert before confirm frames", len(ev_solo_early) == 0)
-    # Run 4 consecutive frames and accumulate all events emitted
-    all_solo_events = []
-    for fi in range(4):
-        all_solo_events += tracker_solo.update_supervision([p_solo], sup_cfg, cal, t_solo + fi * 0.1 + 0.05)
-    check("solo person in pool zone flagged UNSUPERVISED after confirm frames",
+    check("solo person flagged UNSUPERVISED on pool entry (no 'SUPERVISED | alone')",
           tracker_solo.states[99].supervised is False and
-          any(e.get("event") == "UNSUPERVISED" for e in all_solo_events))
+          [e.get("event") for e in ev_solo_early] == ["UNSUPERVISED"])
+    later_solo = []
+    for fi in range(4):
+        later_solo += tracker_solo.update_supervision([p_solo], sup_cfg, cal, t_solo + fi * 0.1 + 0.05)
+    check("solo person stays UNSUPERVISED without duplicate alerts",
+          tracker_solo.states[99].supervised is False and later_solo == [])
+
+    # Check 9b: Entering beside a nearby person is SUPERVISED immediately
+    tracker_pair = PersonTracker()
+    p_a = {'id': 1, 'foot': pt2_px, 'zone': 'yellow', 'xyxy': None}
+    p_b = {'id': 2, 'foot': (pt2_px[0] + 2, pt2_px[1]), 'zone': 'clear', 'xyxy': None}
+    tracker_pair.update(1, "yellow", pt2_px, t_solo)
+    ev_pair = tracker_pair.update_supervision([p_a, p_b], sup_cfg, cal, t_solo)
+    check("pool entry next to someone is SUPERVISED with an info event, not an alert",
+          tracker_pair.states[1].supervised is True and
+          [(e["event"], e["is_alert"]) for e in ev_pair] == [("SUPERVISED", False)])
+
+    # --- After-hours schedule ---
+    week = {d: {"open": "06:00", "close": "21:00", "closed": False} for d in DAY_KEYS}
+    # No timezone name → uses the backend-supplied UTC offset (UTC+8). 2026-10-05 is a Monday.
+    hours = {"enabled": True, "timezone": None, "utcOffsetMinutes": 480, "schedule": week}
+    mon_2000 = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
+    mon_2200 = datetime(2026, 10, 5, 14, 0, tzinfo=timezone.utc)
+    check("site clock uses UTC offset fallback", site_clock(hours, mon_2000) == ("mon", 20 * 60))
+    check("inside operating hours is not after hours", is_after_hours(hours, mon_2000) is False)
+    check("after closing time is after hours", is_after_hours(hours, mon_2200) is True)
+    check("rule disabled is never after hours", is_after_hours({**hours, "enabled": False}, mon_2200) is False)
+    check("missing schedule data is never after hours", is_after_hours(None, mon_2200) is False)
+
+    overnight = dict(week, mon={"open": "18:00", "close": "02:00", "closed": False},
+                     tue={"open": "06:00", "close": "21:00", "closed": True})
+    tue_0100 = datetime(2026, 10, 5, 17, 0, tzinfo=timezone.utc)
+    tue_0300 = datetime(2026, 10, 5, 19, 0, tzinfo=timezone.utc)
+    check("overnight hours stay open past midnight",
+          is_after_hours({**hours, "schedule": overnight}, tue_0100) is False)
+    check("closed-all-day after overnight spill is after hours",
+          is_after_hours({**hours, "schedule": overnight}, tue_0300) is True)
+
+    # --- After-hours tracker: proximity is ignored, everyone is unsupervised immediately ---
+    tracker_ah = PersonTracker(supervision_cooldown_sec=10.0)
+    t_ah = time.time() + 500.0
+    a1 = {"id": 41, "foot": pt_c1, "zone": "clear"}
+    a2 = {"id": 42, "foot": pt_c2, "zone": "yellow"}  # 0.4m apart
+    ev_ah = tracker_ah.update_supervision([a1, a2], sup_cfg, cal, t_ah, after_hours=True)
+    check("after hours flags everyone at once, even close together and on the deck",
+          sorted(e["id"] for e in ev_ah) == [41, 42] and all(e["event"] == "AFTER_HOURS_PRESENCE" for e in ev_ah))
+    check("after-hours label shown", supervision_label(a1, tracker_ah)["status"] == "after_hours")
+    ev_ah2 = tracker_ah.update_supervision([a1, a2], sup_cfg, cal, t_ah + 1.0, after_hours=True)
+    check("after-hours alert not repeated within cooldown", len(ev_ah2) == 0)
+    ev_ah3 = tracker_ah.update_supervision([a1, a2], sup_cfg, cal, t_ah + 12.0, after_hours=True)
+    check("after-hours reminder after cooldown", len(ev_ah3) == 2)
+    tracker_ah.update_supervision([a1, a2], sup_cfg, cal, t_ah + 13.0, after_hours=False)
+    check("opening hours resume normal proximity labels",
+          supervision_label(a2, tracker_ah)["status"] != "after_hours")
 
 
     print("[self-test] failed" if failed else "[self-test] all checks passed")

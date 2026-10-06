@@ -99,6 +99,32 @@
   border-radius: 3px;
   background: var(--alarm);
 }
+.proximity-fill.is-safe {
+  background: var(--safe);
+}
+.alert-detail-card.is-clear .alert-status-icon {
+  background: var(--safe-tint, var(--bg-inset));
+  color: var(--safe);
+}
+.alert-detail-card.is-clear .alert-status-row {
+  margin-bottom: 0;
+}
+.alert-detail-card.is-clear .stitle {
+  color: var(--safe);
+}
+.rr-resolve {
+  margin-top: 12px;
+  justify-content: center;
+}
+.rr-resolve:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.rr-error {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--alarm);
+}
 .proximity-threshold {
   position: absolute;
   top: -3px;

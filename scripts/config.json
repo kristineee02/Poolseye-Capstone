@@ -10,10 +10,10 @@
         "confidence_threshold": 0.25,
         "keypoint_confidence": 0.3,
         "imgsz": 416,
-        "infer_every_n": 3,
+        "max_infer_fps": 6,
+        "stream_fps": 15,
         "max_width": 960,
-        "jpeg_quality": 65,
-        "rtsp_flush": 2
+        "jpeg_quality": 65
     },
     "TRACKING": {
         "alert_cooldown_sec": 3.0,
@@ -32,15 +32,7 @@
         "pool_real_length_meters": 25.0,
         "check_zones": ["yellow", "red", "orange"],
         "supervisor_zones": ["clear", "yellow", "red", "orange"],
-        "alert_cooldown_sec": 10.0,
-        "supervisor_role_required": true,
-        "adult_height_threshold_m": 1.40,
-        "adult_confidence_threshold": 0.55,
-        "occlusion_grace_sec": 1.2,
-        "unsupervised_confirm_frames": 4,
-        "supervised_confirm_frames": 3,
-        "distance_smoothing_alpha": 0.5,
-        "hysteresis_margin_meters": 0.05
+        "alert_cooldown_sec": 10.0
     },
     "CALIBRATION": {
         "enabled": true,
@@ -55,40 +47,25 @@
         "editor_size": [1000, 512],
         "orange_proximity": 0.02,
         "yellow": {
-            "enabled": true,
+            "enabled": false,
             "name": "Yellow Zone",
             "label": "monitor",
             "geometry": "polygon",
-            "points": [
-                [80, 70],
-                [920, 70],
-                [920, 460],
-                [80, 460]
-            ]
+            "points": []
         },
         "red": {
-            "enabled": true,
+            "enabled": false,
             "name": "Red Zone",
             "label": "intrusion",
             "geometry": "polygon",
-            "points": [
-                [220, 130],
-                [800, 130],
-                [800, 420],
-                [220, 420]
-            ]
+            "points": []
         },
         "orange": {
-            "enabled": true,
+            "enabled": false,
             "name": "Orange Zone",
             "label": "deep_pool",
             "geometry": "polygon",
-            "points": [
-                [380, 200],
-                [700, 200],
-                [700, 380],
-                [380, 380]
-            ]
+            "points": []
         }
     }
 }

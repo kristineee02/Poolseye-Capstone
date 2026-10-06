@@ -10,7 +10,7 @@
 
 .settings-tabs {
   display: flex;
-  gap: 4px;
+  gap: 20px;
   border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 2px;
 }
@@ -454,7 +454,171 @@
   border-color: var(--border-strong);
 }
 
+.settings-camera-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+}
+
+.settings-camera-status svg {
+  width: 14px;
+  height: 14px;
+}
+
+.settings-camera-status.is-online {
+  color: var(--safe);
+  border-color: var(--safe);
+}
+
+.settings-camera-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--alarm);
+  color: var(--alarm);
+  font-size: 12.5px;
+}
+
+.settings-camera-note {
+  margin-top: 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.settings-camera-note code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-inset);
+}
+
+.settings-camera-status.is-closed {
+  color: var(--alarm);
+  border-color: var(--alarm);
+}
+
+.settings-hours-rule {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--bg-raised);
+}
+
+.settings-hours-rule-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.settings-hours-rule-copy {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.settings-hours-table {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+.settings-hours-row {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 1fr 0.9fr;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.settings-hours-row:first-child {
+  border-top: none;
+}
+
+.settings-hours-row > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-hours-head {
+  background: var(--bg-inset);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.settings-hours-day {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-hours-row .field-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-hours-row .field-input:disabled {
+  background: var(--bg-inset);
+  color: var(--text-tertiary);
+}
+
+.settings-hours-hint {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--warn);
+  white-space: nowrap;
+}
+
+.settings-hours-check {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.settings-hours-row.is-invalid {
+  background: color-mix(in srgb, var(--alarm) 6%, transparent);
+}
+
+.settings-hours-error {
+  grid-column: 1 / -1;
+}
+
 @media (max-width: 960px) {
+  .settings-hours-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .settings-hours-head {
+    display: none;
+  }
+
   .settings-profile-layout {
     grid-template-columns: 1fr;
     justify-items: center;

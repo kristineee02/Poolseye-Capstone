@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS users (
   last_alert_acknowledged_at TEXT,
   on_duty_since TEXT,
   response_time TEXT,
+  position TEXT,
+  notification_prefs TEXT,
+  push_token TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -96,7 +99,26 @@ CREATE TABLE IF NOT EXISTS events (
   adult_confidence REAL,
   separation_distance REAL,
   supervision_threshold REAL,
-  boundary_direction TEXT
+  boundary_direction TEXT,
+  nearest_person_id INTEGER,
+  nearest_confidence REAL
+);
+
+CREATE TABLE IF NOT EXISTS camera_settings (
+  camera_id TEXT PRIMARY KEY,
+  ip_address TEXT NOT NULL,
+  rtsp_port INTEGER NOT NULL DEFAULT 554,
+  revision INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS operating_hours (
+  site_id TEXT PRIMARY KEY,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  timezone TEXT NOT NULL,
+  schedule TEXT NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts DESC);

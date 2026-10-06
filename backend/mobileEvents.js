@@ -1,6 +1,24 @@
 const { get, all, run } = require('./db')
 const { rowToEvent, setEventStatus } = require('./events')
 const { lifeguardAuthRequired } = require('./mobileAuth')
+const { parseNotificationPrefs, mutedCategories } = require('./lifeguards')
+
+async function mutedFilter(db, lifeguardId) {
+  const user = await get(db, 'SELECT notification_prefs FROM users WHERE id = ?', [lifeguardId])
+  const muted = mutedCategories(parseNotificationPrefs(user?.notification_prefs))
+  if (!muted.length) return { sql: null, params: [] }
+  return {
+    sql: `(category IS NULL OR category NOT IN (${muted.map(() => '?').join(', ')}))`,
+    params: muted,
+  }
+}
+
+async function pendingCount(db, muted) {
+  const where = ['is_alert = 1', "status = 'pending'"]
+  if (muted.sql) where.push(muted.sql)
+  const row = await get(db, `SELECT COUNT(*) AS count FROM events WHERE ${where.join(' AND ')}`, muted.params)
+  return Number(row?.count || 0)
+}
 
 function registerMobileEventRoutes(app, db) {
   app.get('/api/mobile/events', lifeguardAuthRequired, async (req, res) => {
@@ -8,6 +26,7 @@ function registerMobileEventRoutes(app, db) {
       const alertsOnly = String(req.query.alertsOnly || '1') !== '0'
       const status = String(req.query.status || 'all')
       const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 40))
+      const muted = await mutedFilter(db, req.lifeguard.id)
 
       const conditions = []
       const params = []
@@ -19,6 +38,10 @@ function registerMobileEventRoutes(app, db) {
         conditions.push('status = ?')
         params.push(status)
       }
+      if (muted.sql) {
+        conditions.push(muted.sql)
+        params.push(...muted.params)
+      }
 
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
       const rows = await all(
@@ -27,15 +50,10 @@ function registerMobileEventRoutes(app, db) {
         [...params, limit]
       )
 
-      const pendingRow = await get(
-        db,
-        `SELECT COUNT(*) AS count FROM events WHERE is_alert = 1 AND status = 'pending'`
-      )
-
       res.json({
         ok: true,
         events: rows.map(rowToEvent),
-        pendingCount: Number(pendingRow?.count || 0),
+        pendingCount: await pendingCount(db, muted),
       })
     } catch (err) {
       console.error(err)
@@ -71,15 +89,11 @@ function registerMobileEventRoutes(app, db) {
       }
 
       const updated = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
-      const pendingRow = await get(
-        db,
-        `SELECT COUNT(*) AS count FROM events WHERE is_alert = 1 AND status = 'pending'`
-      )
 
       res.json({
         ok: true,
         event: rowToEvent(updated),
-        pendingCount: Number(pendingRow?.count || 0),
+        pendingCount: await pendingCount(db, await mutedFilter(db, req.lifeguard.id)),
       })
     } catch (err) {
       console.error(err)

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../components/ui/Icon'
 import Toggle from '../components/ui/Toggle'
 import GeofenceStage from '../components/geofence/GeofenceStage'
-import { ZONE_TYPES, getZoneTypeMeta, initialZones } from '../data/geofence'
+import { ZONE_TYPES, getZoneTypeMeta } from '../data/geofence'
 import { useGeofence } from '../context/GeofenceContext'
 import { StatusModal, useStatusModal } from '../components/ui/Modal'
 import '../components/camera/CameraPanel.css'
@@ -32,7 +32,7 @@ const DEFAULT_NAMES = {
 export default function GeofenceEditorPage() {
   const { zones, setZones, dirty, saving, save, discard, syncError } = useGeofence()
   const { status, showStatus, closeStatus } = useStatusModal()
-  const [activeZoneId, setActiveZoneId] = useState(zones[0]?.id ?? initialZones[0].id)
+  const [activeZoneId, setActiveZoneId] = useState(zones[0]?.id ?? null)
   const [mode, setMode] = useState('add')
   const [savedNotice, setSavedNotice] = useState(false)
   const undoStackRef = useRef([])

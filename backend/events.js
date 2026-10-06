@@ -36,14 +36,14 @@ const DEMO_EVENTS = [
   {
     id: 'evt-3',
     type: 'warn',
-    code: 'CH',
-    title: 'Unsupervised Child',
+    code: 'SUP',
+    title: 'Unsupervised Person',
     meta: 'Yellow Zone · 1:58 PM · MEDIUM',
     event_time: '1:58 PM',
     event_date: 'Today',
     status: 'resolved',
     severity: 'MEDIUM',
-    category: 'child',
+    category: 'supervision',
     confidence: 0.87,
     camera: 'CAM-01',
     is_alert: 1,
@@ -108,11 +108,11 @@ function rowToEvent(row) {
     acknowledged_by: row.acknowledged_by ?? null,
     ts: row.ts,
     // Supervision-specific fields
-    child_confidence: row.child_confidence,
-    adult_confidence: row.adult_confidence,
     separation_distance: row.separation_distance,
     supervision_threshold: row.supervision_threshold,
     boundary_direction: row.boundary_direction,
+    nearest_person_id: row.nearest_person_id ?? null,
+    nearest_confidence: row.nearest_confidence ?? null,
   }
 }
 
@@ -159,11 +159,11 @@ function normalizeIngestPayload(body) {
     snapshot_uri: body?.snapshot_uri ? String(body.snapshot_uri) : null,
     ts,
     // Supervision-specific fields
-    child_confidence: body?.child_confidence != null ? Number(body.child_confidence) : null,
-    adult_confidence: body?.adult_confidence != null ? Number(body.adult_confidence) : null,
     separation_distance: body?.separation_distance != null ? Number(body.separation_distance) : null,
     supervision_threshold: body?.supervision_threshold != null ? Number(body.supervision_threshold) : null,
     boundary_direction: body?.boundary_direction ? String(body.boundary_direction) : null,
+    nearest_person_id: body?.nearest_person_id != null ? Number(body.nearest_person_id) : null,
+    nearest_confidence: body?.nearest_confidence != null ? Number(body.nearest_confidence) : null,
   }
 }
 
@@ -207,9 +207,9 @@ async function insertEvent(db, payload) {
       id, type, code, title, meta, event_time, event_date, status,
       severity, category, confidence, camera, person_id, zone, zone_label,
       event_name, is_alert, snapshot_uri, ts,
-      child_confidence, adult_confidence, separation_distance,
-      supervision_threshold, boundary_direction
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      separation_distance, supervision_threshold, boundary_direction,
+      nearest_person_id, nearest_confidence
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       status = excluded.status,
       meta = excluded.meta,
@@ -234,11 +234,11 @@ async function insertEvent(db, payload) {
       e.is_alert,
       e.snapshot_uri,
       e.ts,
-      e.child_confidence,
-      e.adult_confidence,
       e.separation_distance,
       e.supervision_threshold,
       e.boundary_direction,
+      e.nearest_person_id,
+      e.nearest_confidence,
     ]
   )
   const row = await get(db, 'SELECT * FROM events WHERE id = ?', [e.id])
@@ -378,30 +378,29 @@ function registerEventRoutes(app, db, adminRequired) {
 
   app.get('/api/events/summary', adminRequired, async (_req, res) => {
     try {
-      // Get today's summary statistics
       const todayStart = new Date()
       todayStart.setHours(0, 0, 0, 0)
       const todayTs = todayStart.getTime() / 1000
 
-      // Count intrusions flagged (alarms)
+      // Unsupervised and after-hours alerts raised today
       const intrusionRow = await get(
         db,
         `SELECT COUNT(*) as count FROM events
-         WHERE ts >= ? AND is_alert = 1 AND category = 'supervision'`
+         WHERE ts >= ? AND is_alert = 1 AND category = 'supervision'`,
+        [todayTs]
       )
-      const intrusionsFlagged = intrusionRow?.count || 0
-
-      // Count supervised visits (resolved supervision events)
+      // People who were in the pool area with someone within the threshold
       const supervisedRow = await get(
         db,
         `SELECT COUNT(*) as count FROM events
-         WHERE ts >= ? AND category = 'supervision' AND event_name = 'SUPERVISED'`
+         WHERE ts >= ? AND category = 'supervision' AND event_name = 'SUPERVISED'`,
+        [todayTs]
       )
-      const supervisedVisits = supervisedRow?.count || 0
 
       res.json({
-        intrusions_flagged: intrusionsFlagged,
-        supervised_visits: supervisedVisits,
+        intrusions_flagged: intrusionRow?.count || 0,
+        supervised_visits: supervisedRow?.count || 0,
+        since: todayTs,
       })
     } catch (err) {
       console.error(err)

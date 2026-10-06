@@ -11,6 +11,39 @@ const CODE_TTL_MS = 10 * 60 * 1000
 const DEFAULT_LIFEGUARD_ROLE = 'Lifeguard'
 const DEFAULT_ASSIGNED_ZONES = ['Main Pool']
 
+const NOTIFICATION_DEFAULTS = {
+  supervision: true,
+  boundary: true,
+  escalation: true,
+  system_health: false,
+}
+
+// Event categories muted by each preference. Drowning alerts are never muted.
+const NOTIFICATION_CATEGORIES = {
+  supervision: ['supervision'],
+  boundary: ['intrusion', 'deep-water', 'yellow', 'zone', 'clear'],
+}
+
+function parseNotificationPrefs(raw) {
+  let stored = {}
+  try {
+    stored = raw ? JSON.parse(raw) : {}
+  } catch {
+    stored = {}
+  }
+  const prefs = { ...NOTIFICATION_DEFAULTS }
+  for (const key of Object.keys(NOTIFICATION_DEFAULTS)) {
+    if (typeof stored[key] === 'boolean') prefs[key] = stored[key]
+  }
+  return prefs
+}
+
+function mutedCategories(prefs) {
+  return Object.entries(NOTIFICATION_CATEGORIES)
+    .filter(([key]) => prefs[key] === false)
+    .flatMap(([, categories]) => categories)
+}
+
 function initials(name) {
   return String(name || '')
     .split(/\s+/)
@@ -84,6 +117,7 @@ function rowToMobileUser(row) {
     shiftEnd: row.shift_end || '06:00 PM',
     mustChangePassword: Boolean(row.must_change_password),
     photoUri: row.photo_uri || null,
+    notificationPrefs: parseNotificationPrefs(row.notification_prefs),
   }
 }
 
@@ -395,4 +429,7 @@ module.exports = {
   getLifeguardByEmail,
   getLifeguardById,
   lifeguardId,
+  NOTIFICATION_DEFAULTS,
+  parseNotificationPrefs,
+  mutedCategories,
 }

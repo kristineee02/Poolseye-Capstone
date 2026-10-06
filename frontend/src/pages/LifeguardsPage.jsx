@@ -15,6 +15,7 @@ import {
   confirmVerificationCode,
   sendWelcomeEmail,
   isValidEmail,
+  broadcastAlert,
 } from '../api/lifeguards'
 import { getPasswordRuleChecks, validatePassword } from '../utils/password'
 import './LifeguardsPage.css'
@@ -25,7 +26,7 @@ const STATUS_OPTIONS = [
 ]
 const ALERT_PRIORITY_OPTIONS = [
   { value: 'high', label: 'High — Drowning / Immediate danger' },
-  { value: 'medium', label: 'Medium — Unsupervised child' },
+  { value: 'medium', label: 'Medium — Unsupervised person' },
   { value: 'low', label: 'Low — Informational' },
 ]
 const DEFAULT_ROLE = 'Lifeguard'
@@ -198,6 +199,7 @@ export default function LifeguardsPage() {
   const editPhotoInputRef = useRef(null)
   const [alertMsg, setAlertMsg] = useState('')
   const [alertPriority, setAlertPriority] = useState('high')
+  const [broadcasting, setBroadcasting] = useState(false)
   const [search, setSearch] = useState('')
   const [rosterView, setRosterView] = useState('active')
   const [page, setPage] = useState(1)
@@ -482,18 +484,29 @@ export default function LifeguardsPage() {
     showStatus({ tone: 'success', title: 'Account activated', message: `${guard.name} is active again.` })
   }
 
-  const handleSendAlert = () => {
+  const handleSendAlert = async () => {
     if (!alertMsg.trim()) {
       setFieldErrors((current) => ({ ...current, alert: 'Enter an alert message.' }))
       return
     }
-    const recipients = guards.filter((g) => g.status === 'active').length
+    setBroadcasting(true)
+    const result = await broadcastAlert({ message: alertMsg.trim(), priority: alertPriority })
+    setBroadcasting(false)
+    if (!result.ok) {
+      setFieldErrors((current) => ({ ...current, alert: result.error || 'Could not send the alert.' }))
+      return
+    }
     setShowAlertModal(false)
     setAlertMsg('')
+    const { recipients, pushed } = result
+    const plural = (n) => `${n} lifeguard${n !== 1 ? 's' : ''}`
+    const missing = recipients - pushed
     showStatus({
       tone: 'success',
       title: 'Alert sent',
-      message: `Alert dispatched to ${recipients} lifeguard${recipients !== 1 ? 's' : ''}.`,
+      message: missing > 0
+        ? `Alert sent to ${plural(recipients)}. ${pushed} got a push notification; ${missing} will see it next time they open the app.`
+        : `Push notification sent to ${plural(recipients)}.`,
     })
   }
 
@@ -925,6 +938,7 @@ export default function LifeguardsPage() {
         title="Broadcast Emergency Alert"
         onSubmit={handleSendAlert}
         submitText="Send to all active lifeguards"
+        submitting={broadcasting}
       >
         <div className="alert-broadcast-info">
           <Icon.Bell />

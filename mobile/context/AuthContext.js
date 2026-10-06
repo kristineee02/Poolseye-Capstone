@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { validateNewPassword } from '../auth/demoAuth';
 import { apiFetch, TOKEN_KEY, USER_KEY } from '../api/client';
+import { unregisterFromNotifications } from '../notifications';
 
 const AuthContext = createContext(null);
 
@@ -105,6 +106,19 @@ export function AuthProvider({ children }) {
 
   const updateAvatar = async (photoUri) => updateProfile({ photoUri });
 
+  const updateNotificationPrefs = async (changes) => {
+    if (!user || !token) return { ok: false, error: 'You must be signed in.' };
+    const result = await apiFetch('/api/mobile/notifications', {
+      method: 'PATCH',
+      token,
+      body: changes,
+    });
+    if (!result.ok) return { ok: false, error: result.error };
+
+    await persistSession(token, result.user);
+    return { ok: true };
+  };
+
   const verifyResetEmail = async (email) => {
     const result = await apiFetch('/api/mobile/auth/forgot-password/verify-email', {
       method: 'POST',
@@ -131,6 +145,8 @@ export function AuthProvider({ children }) {
   };
 
   const signOut = async () => {
+    // Stop broadcasts reaching this phone once nobody is signed in on it.
+    await unregisterFromNotifications(token).catch(() => {});
     setUser(null);
     setToken(null);
     await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
@@ -147,6 +163,7 @@ export function AuthProvider({ children }) {
         changePassword,
         updateProfile,
         updateAvatar,
+        updateNotificationPrefs,
         verifyResetEmail,
         resetPassword,
       }}

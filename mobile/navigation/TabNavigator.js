@@ -7,6 +7,8 @@ import {
 } from 'react-native';
 import { colors, radius, shadow, typography } from '../theme/tokens';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
+import { useAlertNotifications } from '../hooks/useAlertNotifications';
+import { useAuth } from '../context/AuthContext';
 
 import AlertsScreen  from '../screen/AlertsScreen';
 import LogScreen     from '../screen/LogScreen';
@@ -122,6 +124,11 @@ export default function TabNavigator() {
   const [active, setActive] = useState('home');
   const [alertBadgeCount, setAlertBadgeCount] = useState(0);
   const { tabBarPaddingBottom, horizontalInset } = useLayoutInsets();
+  const { token } = useAuth();
+  useAlertNotifications(token, {
+    onPendingCount: setAlertBadgeCount,
+    onOpenAlert: () => setActive('home'),
+  });
 
   const screens = {
     home: (

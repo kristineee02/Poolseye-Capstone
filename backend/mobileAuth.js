@@ -2,8 +2,14 @@ const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
 const { get, run } = require('./db')
 const { validatePassword } = require('./password')
-const { rowToMobileUser, getLifeguardByEmail } = require('./lifeguards')
+const {
+  rowToMobileUser,
+  getLifeguardByEmail,
+  NOTIFICATION_DEFAULTS,
+  parseNotificationPrefs,
+} = require('./lifeguards')
 const { sendPasswordResetCodeEmail } = require('./email')
+const { isExpoPushToken } = require('./push')
 
 const CODE_TTL_MS = 10 * 60 * 1000
 
@@ -279,6 +285,63 @@ function registerMobileAuthRoutes(app, db) {
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: 'Server error' })
+    }
+  })
+
+  app.patch('/api/mobile/notifications', lifeguardAuthRequired, async (req, res) => {
+    try {
+      const user = await get(
+        db,
+        `SELECT * FROM users WHERE id = ? AND role = 'lifeguard'`,
+        [req.lifeguard.id]
+      )
+      if (!user) return res.status(401).json({ error: 'Unauthorized' })
+
+      const body = req.body || {}
+      const prefs = parseNotificationPrefs(user.notification_prefs)
+      for (const [key, value] of Object.entries(body)) {
+        if (!(key in NOTIFICATION_DEFAULTS)) {
+          return res.status(400).json({ error: `Unknown notification setting: ${key}` })
+        }
+        if (typeof value !== 'boolean') {
+          return res.status(400).json({ error: `${key} must be true or false` })
+        }
+        prefs[key] = value
+      }
+
+      await run(db, 'UPDATE users SET notification_prefs = ? WHERE id = ?', [
+        JSON.stringify(prefs),
+        user.id,
+      ])
+      const updated = await get(db, 'SELECT * FROM users WHERE id = ?', [user.id])
+      res.json({ ok: true, user: rowToMobileUser(updated) })
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: 'Could not save notification settings' })
+    }
+  })
+
+  app.put('/api/mobile/push-token', lifeguardAuthRequired, async (req, res) => {
+    try {
+      const token = String(req.body?.token || '').trim()
+      if (!isExpoPushToken(token)) return res.status(400).json({ error: 'Invalid Expo push token' })
+      // A phone belongs to whoever signed in last, so drop it from any other account.
+      await run(db, 'UPDATE users SET push_token = NULL WHERE push_token = ? AND id != ?', [token, req.lifeguard.id])
+      await run(db, "UPDATE users SET push_token = ? WHERE id = ? AND role = 'lifeguard'", [token, req.lifeguard.id])
+      res.json({ ok: true })
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: 'Could not register for notifications' })
+    }
+  })
+
+  app.delete('/api/mobile/push-token', lifeguardAuthRequired, async (req, res) => {
+    try {
+      await run(db, 'UPDATE users SET push_token = NULL WHERE id = ?', [req.lifeguard.id])
+      res.json({ ok: true })
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: 'Could not unregister notifications' })
     }
   })
 }

@@ -5,11 +5,14 @@ const jwt = require('jsonwebtoken')
 const { initDb } = require('./db')
 const geofence = require('./geofence')
 const { registerLifeguardRoutes } = require('./lifeguards')
+const { registerBroadcastRoutes } = require('./broadcast')
 const { registerMobileAuthRoutes } = require('./mobileAuth')
 const { registerMobileEventRoutes } = require('./mobileEvents')
 const { registerEventRoutes, seedDemoEvents } = require('./events')
 const { registerAdminAuthRoutes } = require('./adminAuth')
 const { registerAnalyticsRoutes } = require('./analytics')
+const { registerCameraSettingsRoutes, seedCameraSettings } = require('./cameraSettings')
+const { registerOperatingHoursRoutes, seedOperatingHours } = require('./operatingHours')
 
 const app = express()
 const PORT = process.env.PORT || 4000
@@ -50,7 +53,8 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }))
-app.use(express.json({ limit: '2mb' }))
+// Profile photos are sent as base64 data URLs (2 MB image ≈ 2.7 MB encoded)
+app.use(express.json({ limit: '4mb' }))
 
 function authRequired(req, res, next) {
   try {
@@ -156,11 +160,16 @@ initDb()
     db = database
     registerAdminAuthRoutes(app, db)
     registerLifeguardRoutes(app, db, adminRequired)
+    registerBroadcastRoutes(app, db, adminRequired)
     registerMobileAuthRoutes(app, db)
     registerMobileEventRoutes(app, db)
     registerEventRoutes(app, db, adminRequired)
     registerAnalyticsRoutes(app, db, adminRequired)
+    registerCameraSettingsRoutes(app, db, adminRequired)
+    registerOperatingHoursRoutes(app, db, adminRequired)
     await geofence.seedGeofence(db)
+    await seedCameraSettings(db)
+    await seedOperatingHours(db)
     await seedDemoEvents(db)
     app.listen(PORT, HOST, () => {
       console.log(`Backend running on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`)

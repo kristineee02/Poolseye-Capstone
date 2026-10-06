@@ -10,7 +10,12 @@ const TYPE_TO_DETECTION = {
   transition: { key: 'orange', label: 'deep_pool', name: 'Orange Zone' },
 }
 
-const DEFAULT_ZONES = [
+// Zones are drawn manually in the Geofence Editor; a fresh install starts empty.
+const DEFAULT_ZONES = []
+
+// Placeholder rectangles seeded by earlier builds. Stored layouts that still
+// match these exactly are cleared on startup so only admin-drawn zones remain.
+const LEGACY_PLACEHOLDER_ZONES = [
   {
     id: 'zone-warning',
     name: 'Outer safety',
@@ -279,12 +284,27 @@ async function writeLayout(db, cameraId, zones, { persist } = { persist: true })
   return toPayload(layout, normalized, { persisted: Boolean(persist) })
 }
 
+function zoneSignature(zones) {
+  return JSON.stringify(
+    (zones || []).map((z) => [z.id, z.type, (z.points || []).map((p) => [p.x, p.y])])
+  )
+}
+
+function isLegacyPlaceholderLayout(zones) {
+  return zoneSignature(zones) === zoneSignature(LEGACY_PLACEHOLDER_ZONES)
+}
+
 async function seedGeofence(db) {
   const existing = await get(db, 'SELECT camera_id FROM geofence_layouts WHERE camera_id = ?', [DEFAULT_CAMERA])
   if (existing) {
-    const payload = await readLayout(db, DEFAULT_CAMERA)
+    let payload = await readLayout(db, DEFAULT_CAMERA)
+    if (isLegacyPlaceholderLayout(payload?.zones)) {
+      payload = await writeLayout(db, DEFAULT_CAMERA, [], { persist: true })
+      console.log('Cleared placeholder geofence layout for', DEFAULT_CAMERA)
+    } else {
+      console.log('Geofence layout loaded for', DEFAULT_CAMERA)
+    }
     setLiveState(payload)
-    console.log('Geofence layout loaded for', DEFAULT_CAMERA)
     return payload
   }
 

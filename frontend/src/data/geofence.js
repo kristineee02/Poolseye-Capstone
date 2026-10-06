@@ -38,44 +38,5 @@ export function getZoneTypeMeta(type) {
   return ZONE_TYPES[type] || ZONE_TYPES.warning
 }
 
-export const initialZones = [
-  {
-    id: 'zone-warning',
-    name: 'Outer safety',
-    type: 'warning',
-    direction: 'toward',
-    activeDuringStandby: true,
-    points: [
-      { x: 80, y: 70 },
-      { x: 920, y: 70 },
-      { x: 920, y: 460 },
-      { x: 80, y: 460 },
-    ],
-  },
-  {
-    id: 'zone-danger',
-    name: 'Warning boundary',
-    type: 'danger',
-    direction: 'toward',
-    activeDuringStandby: true,
-    points: [
-      { x: 220, y: 130 },
-      { x: 800, y: 130 },
-      { x: 800, y: 420 },
-      { x: 220, y: 420 },
-    ],
-  },
-  {
-    id: 'zone-transition',
-    name: 'Deep pool',
-    type: 'transition',
-    direction: 'toward',
-    activeDuringStandby: true,
-    points: [
-      { x: 380, y: 200 },
-      { x: 700, y: 200 },
-      { x: 700, y: 380 },
-      { x: 380, y: 380 },
-    ],
-  },
-]
+// Zones are drawn manually in the Geofence Editor; nothing is pre-seeded.
+export const initialZones = []

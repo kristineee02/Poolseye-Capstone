@@ -20,7 +20,7 @@ const FILTERS = [
   { key: 'drowning', label: 'Drowning' },
   { key: 'intrusion', label: 'Intrusion' },
   { key: 'deep-water', label: 'Deep-Water' },
-  { key: 'child', label: 'Child' },
+  { key: 'supervision', label: 'Supervision' },
 ];
 
 const TYPE_CONFIG = {

@@ -23,14 +23,22 @@ const LIFEGUARD_COLUMNS = [
   ['mobile_app_status', "TEXT DEFAULT 'disconnected'"],
   ['acknowledged_alerts', 'INTEGER NOT NULL DEFAULT 0'],
   ['missed_alerts', 'INTEGER NOT NULL DEFAULT 0'],
+  ['push_token', 'TEXT'],
   ['last_alert_acknowledged_at', 'TEXT'],
   ['on_duty_since', 'TEXT'],
   ['response_time', 'TEXT'],
+  ['position', 'TEXT'],
+  ['notification_prefs', 'TEXT'],
 ]
 
 const EVENT_COLUMNS = [
   ['acknowledged_at', 'REAL'],
   ['acknowledged_by', 'INTEGER'],
+  ['separation_distance', 'REAL'],
+  ['supervision_threshold', 'REAL'],
+  ['boundary_direction', 'TEXT'],
+  ['nearest_person_id', 'INTEGER'],
+  ['nearest_confidence', 'REAL'],
 ]
 
 function isLibsql(db) {
@@ -288,4 +296,4 @@ async function initDb() {
   return db
 }
 
-module.exports = { initDb, get, run, all, exec }
+module.exports = { initDb, get, run, all, exec, migrateEventsTable }

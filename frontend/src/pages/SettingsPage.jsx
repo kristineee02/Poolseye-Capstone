@@ -2,36 +2,19 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../components/ui/Icon'
 import { ConfirmModal, StatusModal, useStatusModal } from '../components/ui/Modal'
 import { useAuth } from '../auth/AuthContext'
+import CameraSettingsCard from '../components/settings/CameraSettingsCard'
+import OperatingHoursCard from '../components/settings/OperatingHoursCard'
 import './SettingsPage.css'
 
-const PROFILE_EXTRA_KEY = 'poolseye-admin-profile-extra'
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024
-
-function readProfileExtra(email) {
-  try {
-    const raw = localStorage.getItem(PROFILE_EXTRA_KEY)
-    const all = raw ? JSON.parse(raw) : {}
-    return all[email] || {}
-  } catch {
-    return {}
-  }
-}
-
-function writeProfileExtra(email, extra) {
-  try {
-    const raw = localStorage.getItem(PROFILE_EXTRA_KEY)
-    const all = raw ? JSON.parse(raw) : {}
-    all[email] = { ...all[email], ...extra }
-    localStorage.setItem(PROFILE_EXTRA_KEY, JSON.stringify(all))
-  } catch {
-    /* ignore */
-  }
-}
 
 function formatJoined(iso) {
   if (!iso) return '—'
+  // SQLite CURRENT_TIMESTAMP is "YYYY-MM-DD HH:MM:SS" in UTC
+  const date = new Date(/^\d{4}-\d{2}-\d{2} \d/.test(iso) ? `${iso.replace(' ', 'T')}Z` : iso)
+  if (Number.isNaN(date.getTime())) return '—'
   try {
-    return new Date(iso).toLocaleDateString('en-US', {
+    return date.toLocaleDateString('en-US', {
       month: 'short',
       day: '2-digit',
       year: 'numeric',
@@ -106,15 +89,15 @@ export default function SettingsPage() {
 
   const [confirmSave, setConfirmSave] = useState(false)
   const [confirmPasswordUpdate, setConfirmPasswordUpdate] = useState(false)
+  const [activeTab, setActiveTab] = useState('profile')
 
   useEffect(() => {
     if (!user) return
-    const extra = readProfileExtra(user.email)
     setName(user.name || '')
-    setPhone(extra.phone || '')
-    setPosition(extra.position || user.role || 'admin')
-    setDateJoined(extra.dateJoined || user.createdAt || new Date().toISOString())
-    setPhotoUri(user.photoUri || extra.photoUri || null)
+    setPhone(user.phone || '')
+    setPosition(user.position || 'admin')
+    setDateJoined(user.createdAt || '')
+    setPhotoUri(user.photoUri || null)
   }, [user])
 
   const initials =
@@ -190,18 +173,17 @@ export default function SettingsPage() {
     reader.readAsDataURL(file)
   }
 
-  const saveProfile = () => {
+  const saveProfile = async () => {
     if (!name.trim()) {
       setNameError('Name is required.')
       return
     }
     setNameError('')
     setSavingProfile(true)
-    const result = updateProfile?.({ name: name.trim(), photoUri })
-    writeProfileExtra(user.email, {
+    const result = await updateProfile({
+      name: name.trim(),
       phone: phone.trim(),
       position,
-      dateJoined,
       photoUri,
     })
     setSavingProfile(false)
@@ -252,17 +234,48 @@ export default function SettingsPage() {
       <div className="pagehead settings-pagehead">
         <div>
           <h1>Settings</h1>
-          <p className="sub">Manage your account</p>
+          <p className="sub">Manage your account, CCTV connection and operating hours</p>
         </div>
       </div>
 
       <div className="settings-tabs" role="tablist" aria-label="Settings sections">
-        <button type="button" className="settings-tab active" role="tab" aria-selected="true">
+        <button
+          type="button"
+          className={`settings-tab${activeTab === 'profile' ? ' active' : ''}`}
+          role="tab"
+          aria-selected={activeTab === 'profile'}
+          onClick={() => setActiveTab('profile')}
+        >
           <Icon.User />
           Personal Information
         </button>
+        <button
+          type="button"
+          className={`settings-tab${activeTab === 'camera' ? ' active' : ''}`}
+          role="tab"
+          aria-selected={activeTab === 'camera'}
+          onClick={() => setActiveTab('camera')}
+        >
+          <Icon.Camera />
+          CCTV Camera
+        </button>
+        <button
+          type="button"
+          className={`settings-tab${activeTab === 'hours' ? ' active' : ''}`}
+          role="tab"
+          aria-selected={activeTab === 'hours'}
+          onClick={() => setActiveTab('hours')}
+        >
+          <Icon.Clock />
+          Operating Hours
+        </button>
       </div>
 
+      {activeTab === 'camera' ? <CameraSettingsCard showStatus={showStatus} /> : null}
+      {activeTab === 'hours' ? <OperatingHoursCard showStatus={showStatus} /> : null}
+
+      {activeTab === 'profile' ? (
+      <>
       <section className="settings-card settings-profile-card">
         <div className="settings-profile-layout">
           <aside className="settings-identity">
@@ -495,6 +508,8 @@ export default function SettingsPage() {
           </aside>
         </div>
       </section>
+      </>
+      ) : null}
 
       <ConfirmModal
         isOpen={confirmSave}

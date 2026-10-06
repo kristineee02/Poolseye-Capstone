@@ -14,6 +14,7 @@ export default function LiveEventLogPanel({ onNewAlert }) {
   const [error, setError] = useState('')
   const [peopleCount, setPeopleCount] = useState(0)
   const seenIds = useRef(new Set())
+  const primed = useRef(false)
   const listRef = useRef(null)
 
   const poll = useCallback(async () => {
@@ -26,14 +27,15 @@ export default function LiveEventLogPanel({ onNewAlert }) {
       setPeopleCount(Array.isArray(data.people) ? data.people.length : 0)
       setError('')
 
-      // Notify parent of brand-new alert events
+      // Events already in the log when the page opens are history, not new alerts.
       for (const evt of next) {
         if (seenIds.current.has(evt.id)) continue
         seenIds.current.add(evt.id)
-        if (evt.is_alert && typeof onNewAlert === 'function') {
+        if (primed.current && evt.is_alert && typeof onNewAlert === 'function') {
           onNewAlert(evt)
         }
       }
+      primed.current = true
       // Cap memory of seen ids
       if (seenIds.current.size > 200) {
         const keep = next.map((e) => e.id)

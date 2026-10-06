@@ -84,11 +84,13 @@
   height: 100%;
 }
 
+/* Stretched (not cropped) so editor coordinates map onto the full frame,
+   matching how the stream server classifies zones. */
 .camera-stage-feed {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: fill;
 }
 
 .camera-stage.is-offline {
@@ -161,6 +163,26 @@
 .live-tag.is-offline .dot {
   background: var(--text-tertiary);
   animation: none;
+}
+
+.live-tag.is-video {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.live-tag.is-video .dot {
+  background: var(--accent);
+}
+
+.camera-video-name {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.camera-video-input {
+  display: none;
 }
 
 .camera-geofence-overlay {
