@@ -13,7 +13,7 @@ import ProfileHero from '../components/ProfileHero';
 import ConfirmModal from '../components/ConfirmModal';
 import StatusModal from '../components/StatusModal';
 import { useAuth } from '../context/AuthContext';
-import { fetchMobileEvents, updateMobileEventStatus } from '../api/events';
+import { fetchMobileEvents, respondToMobileEvent, updateMobileEventStatus } from '../api/events';
 
 const POLL_MS = 4000;
 
@@ -44,7 +44,7 @@ function formatDisplayTime(time) {
   return time;
 }
 
-function ActiveAlertCard({ alert, onOpen, onAcknowledge, onDismiss }) {
+function ActiveAlertCard({ alert, busy, onOpen, onRespond, onAcknowledge, onDismiss }) {
   if (!alert) {
     return (
       <View style={styles.clearCard}>
@@ -93,22 +93,42 @@ function ActiveAlertCard({ alert, onOpen, onAcknowledge, onDismiss }) {
         <Text style={styles.activeZone}>{alert.zone}</Text>
       </TouchableOpacity>
 
-      <View style={styles.activeActions}>
+      {!alert.respondingAt ? (
         <TouchableOpacity
-          style={[styles.ackBtn, { backgroundColor: m.accent }, ackShadow]}
-          onPress={() => onAcknowledge(alert.id)}
+          style={[styles.ackBtn, styles.respondBtn, { backgroundColor: m.accent }, ackShadow]}
+          onPress={() => onRespond(alert.id)}
+          disabled={busy}
           activeOpacity={0.85}
         >
-          <Text style={styles.ackText}>Acknowledge</Text>
+          <Text style={styles.ackText}>{busy ? 'Claiming…' : "I'm responding"}</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.dismissBtn, { borderColor: m.accent }]}
-          onPress={() => onDismiss(alert.id)}
-          activeOpacity={0.85}
-        >
-          <Text style={[styles.dismissText, { color: m.accent }]}>Dismiss</Text>
-        </TouchableOpacity>
-      </View>
+      ) : alert.respondingMine ? (
+        <>
+          <Text style={[styles.handoffText, { color: colors.safe }]}>You are responding to this alert</Text>
+          <View style={styles.activeActions}>
+            <TouchableOpacity
+              style={[styles.ackBtn, { backgroundColor: colors.safe }]}
+              onPress={() => onAcknowledge(alert.id)}
+              disabled={busy}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.ackText}>Resolve</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.dismissBtn, { borderColor: m.accent }]}
+              onPress={() => onDismiss(alert.id)}
+              disabled={busy}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.dismissText, { color: m.accent }]}>False alarm</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      ) : (
+        <Text style={styles.handoffText}>
+          {alert.responderName || 'Another lifeguard'} is responding
+        </Text>
+      )}
     </View>
   );
 }
@@ -201,6 +221,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [error, setError] = useState('');
   const [status, setStatus] = useState(null);
+  const [responding, setResponding] = useState(false);
 
   const loadAlerts = useCallback(async () => {
     if (!token) return;
@@ -236,6 +257,16 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
     setRefreshing(true);
     await loadAlerts();
     setRefreshing(false);
+  };
+
+  const handleRespond = async (id) => {
+    setResponding(true);
+    const result = await respondToMobileEvent(token, id);
+    setResponding(false);
+    if (!result.ok) {
+      setStatus({ tone: 'error', title: 'Could not respond', message: result.error || 'Failed to claim this alert.' });
+    }
+    await loadAlerts();
   };
 
   const handleAcknowledge = async (id) => {
@@ -301,7 +332,9 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
 
         <ActiveAlertCard
           alert={latest}
+          busy={responding}
           onOpen={() => {}}
+          onRespond={handleRespond}
           onAcknowledge={handleAcknowledge}
           onDismiss={handleDismiss}
         />
@@ -441,6 +474,16 @@ const styles = StyleSheet.create({
   activeActions: {
     flexDirection: 'row',
     gap: 10,
+  },
+  respondBtn: {
+    flex: 0,
+    alignSelf: 'stretch',
+  },
+  handoffText: {
+    fontSize: typography.sm,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    marginBottom: 10,
   },
   ackBtn: {
     flex: 1.55,

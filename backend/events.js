@@ -1,4 +1,5 @@
 const { get, all, run } = require('./db')
+const { dispatchEvent } = require('./dispatch')
 
 const DEMO_EVENTS = [
   {
@@ -106,6 +107,11 @@ function rowToEvent(row) {
     snapshot_uri: row.snapshot_uri,
     acknowledged_at: row.acknowledged_at ?? null,
     acknowledged_by: row.acknowledged_by ?? null,
+    dispatched_at: row.dispatched_at ?? null,
+    dispatched_by: row.dispatched_by ?? null,
+    responding_at: row.responding_at ?? null,
+    responding_by: row.responding_by ?? null,
+    escalated_at: row.escalated_at ?? null,
     ts: row.ts,
     // Supervision-specific fields
     separation_distance: row.separation_distance,
@@ -114,6 +120,23 @@ function rowToEvent(row) {
     nearest_person_id: row.nearest_person_id ?? null,
     nearest_confidence: row.nearest_confidence ?? null,
   }
+}
+
+/** rowToEvent for many rows, plus the name of the lifeguard responding to each. */
+async function eventsWithResponders(db, rows) {
+  const ids = [...new Set(rows.map((r) => r.responding_by).filter((v) => v != null))]
+  const names = new Map()
+  if (ids.length) {
+    const users = await all(db, `SELECT id, name FROM users WHERE id IN (${ids.map(() => '?').join(', ')})`, ids)
+    for (const u of users) names.set(u.id, u.name)
+  }
+  return rows.map((row) => ({ ...rowToEvent(row), responder_name: names.get(row.responding_by) ?? null }))
+}
+
+async function eventWithResponder(db, row) {
+  if (!row) return null
+  const [event] = await eventsWithResponders(db, [row])
+  return event
 }
 
 async function setEventStatus(db, id, status, userId) {
@@ -330,7 +353,7 @@ function registerEventRoutes(app, db, adminRequired) {
       )
 
       res.json({
-        events: rows.map(rowToEvent),
+        events: await eventsWithResponders(db, rows),
         total,
         page,
         pageSize,
@@ -369,7 +392,7 @@ function registerEventRoutes(app, db, adminRequired) {
       if (!row) {
         return res.json({ active: null })
       }
-      res.json({ active: rowToEvent(row) })
+      res.json({ active: await eventWithResponder(db, row) })
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: 'Failed to load active alert' })
@@ -412,7 +435,7 @@ function registerEventRoutes(app, db, adminRequired) {
     try {
       const row = await get(db, 'SELECT * FROM events WHERE id = ?', [req.params.id])
       if (!row) return res.status(404).json({ error: 'Event not found' })
-      res.json({ event: rowToEvent(row) })
+      res.json({ event: await eventWithResponder(db, row) })
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: 'Failed to load event' })
@@ -432,10 +455,29 @@ function registerEventRoutes(app, db, adminRequired) {
 
       await setEventStatus(db, req.params.id, status, req.user?.id)
       const updated = await get(db, 'SELECT * FROM events WHERE id = ?', [req.params.id])
-      res.json({ ok: true, event: rowToEvent(updated) })
+      res.json({ ok: true, event: await eventWithResponder(db, updated) })
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: 'Failed to update event' })
+    }
+  })
+
+  app.post('/api/events/:id/dispatch', adminRequired, async (req, res) => {
+    try {
+      const row = await get(db, 'SELECT * FROM events WHERE id = ?', [req.params.id])
+      if (!row) return res.status(404).json({ error: 'Event not found' })
+      if (row.status !== 'pending') {
+        return res.status(400).json({ error: 'Only active alerts can be sent to lifeguards.' })
+      }
+
+      const result = await dispatchEvent(db, row.id, { userId: req.user?.id })
+      if (!result) return res.status(409).json({ error: 'This alert was already sent to lifeguards.' })
+
+      const updated = await get(db, 'SELECT * FROM events WHERE id = ?', [row.id])
+      res.json({ ok: true, event: await eventWithResponder(db, updated), ...result })
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: 'Failed to send alert to lifeguards' })
     }
   })
 
@@ -451,6 +493,12 @@ function registerEventRoutes(app, db, adminRequired) {
 
       const event = await insertEvent(db, req.body)
       res.status(201).json({ ok: true, event })
+
+      // The detector only flags drowning after the distress posture holds past its time
+      // threshold, so lifeguards are paged right away instead of waiting on an admin.
+      if (event.category === 'drowning' && event.is_alert && event.status === 'pending') {
+        dispatchEvent(db, event.id).catch((err) => console.error('Auto-dispatch failed:', err))
+      }
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: 'Failed to ingest event' })
@@ -462,6 +510,7 @@ module.exports = {
   registerEventRoutes,
   seedDemoEvents,
   rowToEvent,
+  eventsWithResponders,
   insertEvent,
   setEventStatus,
 }

@@ -78,6 +78,10 @@ export async function fetchAnalytics(range = '7d') {
   return apiFetch(`/api/analytics?range=${encodeURIComponent(range)}`)
 }
 
+export async function dispatchEvent(id) {
+  return apiFetch(`/api/events/${encodeURIComponent(id)}/dispatch`, { method: 'POST' })
+}
+
 export async function updateEventStatus(id, status) {
   return apiFetch(`/api/events/${encodeURIComponent(id)}`, {
     method: 'PATCH',

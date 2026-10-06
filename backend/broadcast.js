@@ -1,4 +1,4 @@
-const { all, get } = require('./db')
+const { all, get, run } = require('./db')
 const { insertEvent } = require('./events')
 const { sendPush } = require('./push')
 
@@ -47,6 +47,12 @@ function registerBroadcastRoutes(app, db, adminRequired) {
         is_alert: true,
         ts: now.getTime() / 1000,
       })
+
+      await run(db, 'UPDATE events SET dispatched_at = ?, dispatched_by = ? WHERE id = ?', [
+        now.getTime() / 1000,
+        req.user?.id ?? null,
+        event.id,
+      ])
 
       const tokens = guards.map((g) => g.push_token).filter(Boolean)
       const pushed = await sendPush(db, tokens, {

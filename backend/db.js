@@ -39,6 +39,11 @@ const EVENT_COLUMNS = [
   ['boundary_direction', 'TEXT'],
   ['nearest_person_id', 'INTEGER'],
   ['nearest_confidence', 'REAL'],
+  ['dispatched_at', 'REAL'],
+  ['dispatched_by', 'INTEGER'],
+  ['responding_at', 'REAL'],
+  ['responding_by', 'INTEGER'],
+  ['escalated_at', 'REAL'],
 ]
 
 function isLibsql(db) {

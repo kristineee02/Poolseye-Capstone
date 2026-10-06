@@ -1,5 +1,5 @@
 const { get, all, run } = require('./db')
-const { rowToEvent, setEventStatus } = require('./events')
+const { eventsWithResponders, setEventStatus } = require('./events')
 const { lifeguardAuthRequired } = require('./mobileAuth')
 const { parseNotificationPrefs, mutedCategories } = require('./lifeguards')
 
@@ -18,6 +18,17 @@ async function pendingCount(db, muted) {
   if (muted.sql) where.push(muted.sql)
   const row = await get(db, `SELECT COUNT(*) AS count FROM events WHERE ${where.join(' AND ')}`, muted.params)
   return Number(row?.count || 0)
+}
+
+async function forLifeguard(db, rows, lifeguardId) {
+  const events = await eventsWithResponders(db, rows)
+  return events.map((e) => ({ ...e, responding_mine: e.responding_by != null && e.responding_by === lifeguardId }))
+}
+
+async function eventForLifeguard(db, id, lifeguardId) {
+  const row = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
+  const [event] = await forLifeguard(db, [row], lifeguardId)
+  return event
 }
 
 function registerMobileEventRoutes(app, db) {
@@ -52,12 +63,42 @@ function registerMobileEventRoutes(app, db) {
 
       res.json({
         ok: true,
-        events: rows.map(rowToEvent),
+        events: await forLifeguard(db, rows, req.lifeguard.id),
         pendingCount: await pendingCount(db, muted),
       })
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: 'Failed to load alerts' })
+    }
+  })
+
+  app.post('/api/mobile/events/:id/respond', lifeguardAuthRequired, async (req, res) => {
+    try {
+      const id = String(req.params.id || '')
+      const lifeguardId = req.lifeguard.id
+      const row = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
+      if (!row) return res.status(404).json({ error: 'Alert not found' })
+      if (row.status !== 'pending') return res.status(400).json({ error: 'This alert is already closed.' })
+
+      const now = Date.now() / 1000
+      await run(
+        db,
+        `UPDATE events SET responding_at = ?, responding_by = ?, dispatched_at = COALESCE(dispatched_at, ?)
+         WHERE id = ? AND responding_by IS NULL`,
+        [now, lifeguardId, now, id]
+      )
+
+      const event = await eventForLifeguard(db, id, lifeguardId)
+      if (!event.responding_mine) {
+        return res.status(409).json({
+          error: `${event.responder_name || 'Another lifeguard'} is already responding.`,
+          event,
+        })
+      }
+      res.json({ ok: true, event })
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: 'Failed to respond to alert' })
     }
   })
 
@@ -88,11 +129,9 @@ function registerMobileEventRoutes(app, db) {
         }
       }
 
-      const updated = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
-
       res.json({
         ok: true,
-        event: rowToEvent(updated),
+        event: await eventForLifeguard(db, id, req.lifeguard?.id),
         pendingCount: await pendingCount(db, await mutedFilter(db, req.lifeguard.id)),
       })
     } catch (err) {

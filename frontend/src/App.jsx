@@ -50,7 +50,7 @@ export default function App() {
           <main className="main">
             <ActivePageComponent />
           </main>
-          {showRightRail && <RightRail />}
+          {showRightRail && <RightRail onNavigate={setActivePage} />}
         </div>
       </div>
 

@@ -23,7 +23,19 @@ export function toMobileAlert(event) {
     zone,
     isAlert: Boolean(event.is_alert),
     ts: event.ts,
+    respondingAt: event.responding_at ?? null,
+    responderName: event.responder_name || null,
+    respondingMine: Boolean(event.responding_mine),
   }
+}
+
+export async function respondToMobileEvent(token, id) {
+  const result = await apiFetch(`/api/mobile/events/${encodeURIComponent(id)}/respond`, {
+    method: 'POST',
+    token,
+  })
+  if (!result.ok) return result
+  return { ok: true, event: toMobileAlert(result.event) }
 }
 
 export async function fetchMobileEvents(token, { alertsOnly = true, status = 'all', limit = 40 } = {}) {

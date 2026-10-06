@@ -1,124 +1,145 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '../ui/Icon'
-import { fetchActiveAlert, fetchEventSummary, updateEventStatus } from '../../api/events'
+import { dispatchEvent, fetchActiveAlert, fetchEventSummary, updateEventStatus } from '../../api/events'
+import { formatTime, zoneLabel } from '../history/eventKinds'
 import './RightRail.css'
 
 const POLL_MS = 5000
+// Mirrors LOOKBACK_SEC in backend/dispatch.js: older alerts are never auto-sent.
+const AUTO_SEND_WINDOW_SEC = 15 * 60
 
-const SUBTITLES = {
-  UNSUPERVISED: (t) => `No one within ${t ?? 0.7} m`,
-  AFTER_HOURS_PRESENCE: () => 'Detected outside operating hours',
+function describeAlert(alert) {
+  const person = alert.person_id != null ? `Person #${alert.person_id}` : 'A person'
+  const zone = zoneLabel(alert)
+  const where = zone ? ` in the ${zone.toLowerCase()}` : ''
+
+  if (alert.event === 'AFTER_HOURS_PRESENCE') return `${person} detected${where} outside operating hours.`
+  if (alert.category === 'supervision') {
+    const threshold = alert.supervision_threshold ?? 0.7
+    return `${person} inside restricted zone, no one else within ${threshold} m.`
+  }
+  if (alert.category === 'intrusion') return `${person} crossed into the restricted red zone.`
+  if (alert.category === 'deep-water') return `${person} entered the deep-pool area.`
+  if (alert.category === 'drowning') return `${person} may be in distress${where}. Respond immediately.`
+  return alert.meta || `${person} triggered an alert${where}.`
 }
 
-function formatConf(value) {
-  return value == null ? null : `conf ${Number(value).toFixed(2)}`
+function alertTime(alert) {
+  return alert.ts ? formatTime(alert.ts, true) : alert.time || '—'
 }
 
 function formatMeters(value) {
   return value == null ? null : `${Number(value).toFixed(2)} m`
 }
 
-function detectedAt(alert) {
-  if (alert.time) return alert.time
-  if (!alert.ts) return '—'
-  return new Date(alert.ts * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
-}
-
-function ProximityMeter({ distance, threshold }) {
-  const scale = Math.max(threshold * 2, distance ?? 0)
-  const fill = distance == null ? 100 : Math.min(100, (distance / scale) * 100)
-  const tooFar = distance == null || distance > threshold
+function HandoffStatus({ alert }) {
+  if (alert.responding_at) {
+    return (
+      <div className="rr-handoff is-responding">
+        <Icon.CheckCircle />
+        <span>
+          <b>{alert.responder_name || 'A lifeguard'}</b> is responding · since {formatTime(alert.responding_at)}
+        </span>
+      </div>
+    )
+  }
+  if (alert.escalated_at) {
+    return (
+      <div className="rr-handoff is-escalated">
+        <Icon.AlertTriangle />
+        <span>
+          <b>No response yet</b> — re-sent as urgent at {formatTime(alert.escalated_at)}
+        </span>
+      </div>
+    )
+  }
   return (
-    <div className="proximity-meter">
-      <div className="pm-label">
-        <span>Separation vs. threshold</span>
-        <span>{distance == null ? 'alone' : formatMeters(distance)} / {formatMeters(threshold)}</span>
-      </div>
-      <div className="proximity-track">
-        <div className={`proximity-fill${tooFar ? '' : ' is-safe'}`} style={{ width: `${fill}%` }} />
-        <div className="proximity-threshold" style={{ left: `${(threshold / scale) * 100}%` }} />
-      </div>
+    <div className="rr-handoff">
+      <Icon.Bell />
+      <span>
+        <b>{alert.dispatched_by == null ? 'Sent automatically' : 'Sent to lifeguards'}</b> ·{' '}
+        {formatTime(alert.dispatched_at)} — waiting for a lifeguard
+      </span>
     </div>
   )
 }
 
-function ActiveAlertCard({ alert, onResolve, resolving }) {
+function ActiveAlert({ alert, busy, onDispatch, onClose, onDismiss }) {
   if (!alert) {
     return (
-      <div className="alert-detail-card is-clear">
-        <div className="alert-status-row">
-          <div className="alert-status-icon">
-            <Icon.Check />
+      <div className="active-alert-item is-clear">
+        <span className="active-alert-icon"><Icon.Check /></span>
+        <div className="active-alert-body">
+          <div className="active-alert-row">
+            <span className="active-alert-title">No active alerts</span>
           </div>
-          <div>
-            <div className="stitle">No active alerts</div>
-            <div className="ssub">Everyone in view is accounted for</div>
-          </div>
+          <p className="active-alert-desc">Everyone in view is accounted for.</p>
         </div>
       </div>
     )
   }
 
-  const threshold = alert.supervision_threshold
-  const isSupervision = alert.category === 'supervision'
-  const subtitle = SUBTITLES[alert.event]?.(threshold) || alert.meta
-  const nearest = alert.nearest_person_id != null
-    ? `#${alert.nearest_person_id}${alert.nearest_confidence != null ? ` · ${formatConf(alert.nearest_confidence)}` : ''}`
-    : 'none in view'
+  const isSupervision = alert.category === 'supervision' && alert.event !== 'AFTER_HOURS_PRESENCE'
+  const zone = zoneLabel(alert)
 
   return (
-    <div className="alert-detail-card">
-      <div className="alert-status-row">
-        <div className="alert-status-icon">
-          <Icon.AlertTriangle />
-        </div>
-        <div>
-          <div className="stitle">{alert.title}</div>
-          {subtitle ? <div className="ssub">{subtitle}</div> : null}
+    <>
+      <div className="active-alert-item">
+        <span className="active-alert-icon"><Icon.AlertTriangle /></span>
+        <div className="active-alert-body">
+          <div className="active-alert-row">
+            <span className="active-alert-title">{alert.title}</span>
+            <span className="active-alert-time">{alertTime(alert)}</span>
+          </div>
+          <p className="active-alert-desc">{describeAlert(alert)}</p>
         </div>
       </div>
-      {alert.person_id != null ? (
-        <div className="det-row">
-          <span className="k">Person detected</span>
-          <span className="v v-child">
-            #{alert.person_id}{alert.confidence != null ? ` · ${formatConf(alert.confidence)}` : ''}
-          </span>
-        </div>
-      ) : null}
-      {isSupervision && alert.event !== 'AFTER_HOURS_PRESENCE' ? (
-        <>
-          <div className="det-row"><span className="k">Nearest person</span><span className="v v-adult">{nearest}</span></div>
+
+      <div className="rr-details">
+        {alert.person_id != null ? (
+          <div className="det-row"><span className="k">Person</span><span className="v">#{alert.person_id}</span></div>
+        ) : null}
+        {zone ? <div className="det-row"><span className="k">Detected in</span><span className="v">{zone}</span></div> : null}
+        {isSupervision ? (
           <div className="det-row">
-            <span className="k">Separation distance</span>
-            <span className="v v-dist">{formatMeters(alert.separation_distance) || 'alone'}</span>
+            <span className="k">Nearest person</span>
+            <span className="v v-dist">{formatMeters(alert.separation_distance) || 'none in view'}</span>
           </div>
-          {threshold != null ? (
-            <div className="det-row"><span className="k">Allowed threshold</span><span className="v">{formatMeters(threshold)}</span></div>
-          ) : null}
+        ) : null}
+      </div>
+
+      {alert.dispatched_at ? (
+        <>
+          <HandoffStatus alert={alert} />
+          <button type="button" className="rr-close-link" onClick={onClose} disabled={Boolean(busy)}>
+            {busy === 'resolved' ? 'Closing…' : 'Close alert without a lifeguard'}
+          </button>
         </>
-      ) : null}
-      {alert.zone_label ? (
-        <div className="det-row"><span className="k">Zone</span><span className="v">{alert.zone_label}</span></div>
-      ) : null}
-      <div className="det-row"><span className="k">Detected at</span><span className="v">{detectedAt(alert)}</span></div>
-
-      {isSupervision && threshold != null && alert.event !== 'AFTER_HOURS_PRESENCE' ? (
-        <ProximityMeter distance={alert.separation_distance} threshold={threshold} />
-      ) : null}
-
-      <button type="button" className="qa-btn rr-resolve" onClick={onResolve} disabled={resolving}>
-        <Icon.Check />
-        {resolving ? 'Resolving…' : 'Mark as resolved'}
-      </button>
-    </div>
+      ) : (
+        <div className="rr-actions">
+          <button type="button" className="qa-btn danger" onClick={onDispatch} disabled={Boolean(busy)}>
+            <Icon.Bell />
+            {busy === 'dispatch' ? 'Sending…' : 'Send to lifeguards'}
+          </button>
+          <button type="button" className="qa-btn" onClick={onDismiss} disabled={Boolean(busy)}>
+            <Icon.X />
+            {busy === 'dismissed' ? 'Dismissing…' : 'False alarm'}
+          </button>
+          {alert.ts && Date.now() / 1000 - alert.ts < AUTO_SEND_WINDOW_SEC ? (
+            <p className="rr-hint">Sent to lifeguards automatically if not reviewed within 1 minute.</p>
+          ) : null}
+        </div>
+      )}
+    </>
   )
 }
 
-export default function RightRail() {
+export default function RightRail({ onNavigate }) {
   const [alert, setAlert] = useState(null)
   const [summary, setSummary] = useState(null)
   const [error, setError] = useState('')
-  const [resolving, setResolving] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState(null)
 
   const load = useCallback(async () => {
     const [active, totals] = await Promise.all([fetchActiveAlert(), fetchEventSummary()])
@@ -137,13 +158,30 @@ export default function RightRail() {
     return () => clearInterval(id)
   }, [load])
 
-  const resolve = async () => {
+  useEffect(() => {
+    setNotice('')
+  }, [alert?.id])
+
+  const dispatch = async () => {
     if (!alert) return
-    setResolving(true)
-    const result = await updateEventStatus(alert.id, 'resolved')
-    setResolving(false)
+    setBusy('dispatch')
+    const result = await dispatchEvent(alert.id)
+    setBusy(null)
     if (!result.ok) {
-      setError(result.error || 'Could not resolve the alert.')
+      setError(result.error || 'Could not send the alert.')
+      return
+    }
+    setNotice(result.recipients ? `Sent to ${result.recipients} lifeguard${result.recipients === 1 ? '' : 's'}.` : 'No active lifeguards to notify.')
+    load()
+  }
+
+  const setStatus = async (status) => {
+    if (!alert) return
+    setBusy(status)
+    const result = await updateEventStatus(alert.id, status)
+    setBusy(null)
+    if (!result.ok) {
+      setError(result.error || 'Could not update the alert.')
       return
     }
     load()
@@ -156,9 +194,23 @@ export default function RightRail() {
 
   return (
     <aside className="rightrail">
-      <section>
-        <div className="rr-title">Active alert</div>
-        <ActiveAlertCard alert={alert} onResolve={resolve} resolving={resolving} />
+      <section className="active-alert-card">
+        <div className="active-alert-head">
+          <h2>Active Alert</h2>
+          {onNavigate ? (
+            <button type="button" className="active-alert-link" onClick={() => onNavigate('history')}>
+              View All
+            </button>
+          ) : null}
+        </div>
+        <ActiveAlert
+          alert={alert}
+          busy={busy}
+          onDispatch={dispatch}
+          onClose={() => setStatus('resolved')}
+          onDismiss={() => setStatus('dismissed')}
+        />
+        {notice ? <div className="rr-notice">{notice}</div> : null}
         {error ? <div className="rr-error">{error}</div> : null}
       </section>
 
@@ -174,15 +226,17 @@ export default function RightRail() {
         </div>
       </section>
 
-      <section>
-        <div className="rr-title">Quick actions</div>
-        <div className="quick-actions">
-          <button className="qa-btn danger">
-            <Icon.Power />
-            Trigger manual alarm
-          </button>
-        </div>
-      </section>
+      {onNavigate ? (
+        <section>
+          <div className="rr-title">Quick actions</div>
+          <div className="quick-actions">
+            <button type="button" className="qa-btn" onClick={() => onNavigate('lifeguards')}>
+              <Icon.Bell />
+              Send manual alert
+            </button>
+          </div>
+        </section>
+      ) : null}
     </aside>
   )
 }

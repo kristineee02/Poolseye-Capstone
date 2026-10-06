@@ -1,5 +1,4 @@
-import { useCallback, useEffect } from 'react'
-import AlertBar from '../components/layout/AlertBar'
+import { useEffect } from 'react'
 import CameraPanel from '../components/camera/CameraPanel'
 import LiveEventLogPanel from '../components/history/LiveEventLogPanel'
 import { useToast, ToastContainer } from '../components/ui/Toast'
@@ -9,14 +8,6 @@ import { Icon } from '../components/ui/Icon'
 
 export default function LiveMonitoringPage() {
   const { toasts, addToast, removeToast } = useToast()
-
-  const handleNewAlert = useCallback(
-    (evt) => {
-      const tone = evt.type === 'alarm' ? 'error' : evt.type === 'warn' ? 'warning' : 'info'
-      addToast(`${evt.title} — ${evt.meta}`, tone)
-    },
-    [addToast],
-  )
 
   useEffect(() => {
     // Soft reminder if stream server is not up yet (non-blocking)
@@ -31,7 +22,6 @@ export default function LiveMonitoringPage() {
   return (
     <div className="page">
       <ToastContainer toasts={toasts} removeToast={removeToast} />
-      <AlertBar />
 
       <div className="pagehead">
         <div>
@@ -53,7 +43,7 @@ export default function LiveMonitoringPage() {
 
       <CameraPanel onNotify={addToast} />
 
-      <LiveEventLogPanel onNewAlert={handleNewAlert} />
+      <LiveEventLogPanel />
     </div>
   )
 }
