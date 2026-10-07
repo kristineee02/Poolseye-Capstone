@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import Topbar from './components/layout/Topbar'
 import NavRail from './components/layout/NavRail'
-import RightRail from './components/layout/RightRail'
 import { ConfirmModal } from './components/ui/Modal'
 import { Icon } from './components/ui/Icon'
 import LoginPage from './pages/LoginPage'
@@ -31,7 +30,6 @@ export default function App() {
   if (!user) return <LoginPage />
 
   const ActivePageComponent = PAGES[activePage]
-  const showRightRail = activePage === 'live'
   const requestSignOut = () => setShowLogoutModal(true)
 
   return (
@@ -45,12 +43,11 @@ export default function App() {
       </aside>
 
       <div className="workspace">
-        <Topbar onRequestSignOut={requestSignOut} />
-        <div className={`workspace-body ${showRightRail ? '' : 'no-rail'}`}>
+        <Topbar onNavigate={setActivePage} onRequestSignOut={requestSignOut} />
+        <div className="workspace-body">
           <main className="main">
-            <ActivePageComponent />
+            <ActivePageComponent onNavigate={setActivePage} />
           </main>
-          {showRightRail && <RightRail onNavigate={setActivePage} />}
         </div>
       </div>
 

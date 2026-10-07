@@ -1,13 +1,16 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import CameraPanel from '../components/camera/CameraPanel'
 import LiveEventLogPanel from '../components/history/LiveEventLogPanel'
+import RightRail from '../components/layout/RightRail'
 import { useToast, ToastContainer } from '../components/ui/Toast'
 import { STREAM_BASE } from '../config'
 import './LiveMonitoringPage.css'
 import { Icon } from '../components/ui/Icon'
 
-export default function LiveMonitoringPage() {
+export default function LiveMonitoringPage({ onNavigate }) {
   const { toasts, addToast, removeToast } = useToast()
+  const cameraRef = useRef(null)
+  const [cameraBusy, setCameraBusy] = useState(false)
 
   useEffect(() => {
     // Soft reminder if stream server is not up yet (non-blocking)
@@ -23,27 +26,36 @@ export default function LiveMonitoringPage() {
     <div className="page">
       <ToastContainer toasts={toasts} removeToast={removeToast} />
 
-      <div className="pagehead">
+      <div className="pagehead live-pagehead">
         <div>
-          <h1>Live monitoring</h1>
-          <div className="sub">
-            Main Pool · live CCTV
-          </div>
+          <h1>Live Monitoring</h1>
+          <div className="sub">Main Pool · Live CCTV</div>
         </div>
         <div className="pagehead-right">
+          {onNavigate ? (
+            <button className="live-head-btn" type="button" onClick={() => onNavigate('history')}>
+              <Icon.FileSearch /> Event View
+            </button>
+          ) : null}
           <button
-            className="chip-btn"
+            className="btn-primary live-head-btn"
             type="button"
-            onClick={() => window.open(`${STREAM_BASE}/events`, '_blank')}
+            onClick={() => cameraRef.current?.openUpload()}
+            disabled={cameraBusy}
+            title="Upload a video to run through detection in place of the CCTV feed"
           >
-            <Icon.Refresh /> Events API
+            <Icon.Upload /> Upload Video
           </button>
         </div>
       </div>
 
-      <CameraPanel onNotify={addToast} />
-
-      <LiveEventLogPanel />
+      <div className="live-grid">
+        <div className="live-main">
+          <CameraPanel ref={cameraRef} onNotify={addToast} onUploadingChange={setCameraBusy} />
+          <LiveEventLogPanel />
+        </div>
+        <RightRail onNavigate={onNavigate} />
+      </div>
     </div>
   )
 }

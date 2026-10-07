@@ -1,3 +1,56 @@
+.live-pagehead {
+  align-items: center;
+}
+.live-pagehead h1 {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+}
+.live-pagehead .sub {
+  font-size: 13px;
+}
+.live-pagehead .pagehead-right {
+  gap: 10px;
+}
+.live-head-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 10px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.live-head-btn:not(.btn-primary) {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-primary);
+}
+.live-head-btn:not(.btn-primary):hover { border-color: var(--border-strong); }
+.live-head-btn svg { width: 16px; height: 16px; }
+.live-head-btn:disabled { opacity: 0.6; cursor: default; }
+
+.live-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--rail-w);
+  gap: 18px;
+  align-items: start;
+}
+.live-main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+@media (max-width: 1100px) {
+  .live-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
 .camera-selector {
   display: flex;
   gap: 8px;

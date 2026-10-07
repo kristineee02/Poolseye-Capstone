@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { Icon } from '../ui/Icon'
 import CameraFeedIllustration from './CameraFeedIllustration'
 import GeofenceOverlay from '../geofence/GeofenceOverlay'
@@ -19,10 +19,11 @@ function readGeofenceVisible() {
   }
 }
 
-export default function CameraPanel({ compact = false, onNotify }) {
+const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify, onUploadingChange }, ref) {
   const { zones, dirty, updatedAt } = useGeofence()
   const [showGeofences, setShowGeofences] = useState(readGeofenceVisible)
   const [streamStatus, setStreamStatus] = useState('connecting')
+  const [serverUp, setServerUp] = useState(false)
   const [reconnectToken, setReconnectToken] = useState(0)
   const [source, setSource] = useState(null)
   const [videoName, setVideoName] = useState(null)
@@ -34,15 +35,34 @@ export default function CameraPanel({ compact = false, onNotify }) {
   const playingVideo = source === 'video'
   const uploading = uploadProgress !== null
 
+  useImperativeHandle(ref, () => ({
+    openUpload: () => {
+      if (!serverUp) {
+        onNotify?.(
+          `Stream server not reachable at ${STREAM_BASE}. Run "python scripts/live_server.py" first, then upload again.`,
+          'error',
+        )
+        return
+      }
+      fileInputRef.current?.click()
+    },
+  }), [serverUp, onNotify])
+
+  useEffect(() => {
+    onUploadingChange?.(uploading || switchingToLive)
+  }, [uploading, switchingToLive, onUploadingChange])
+
   const checkStream = useCallback(() => {
     fetch(`${STREAM_BASE}/health`, { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : Promise.reject()))
       .then((data) => {
+        setServerUp(true)
         setStreamStatus(data?.has_frame ? 'online' : 'offline')
         setSource(data?.source || null)
         setVideoName(data?.video_name || null)
       })
       .catch(() => {
+        setServerUp(false)
         setStreamStatus('offline')
       })
   }, [])
@@ -137,12 +157,13 @@ export default function CameraPanel({ compact = false, onNotify }) {
           </>
         )}
         <div className="camera-head-right">
-          {!playingVideo ? (
-            <div className="telemetry-inline">
-              <div className="t-item">FPS <span>{telemetry.fps}</span></div>
-              <div className="t-item">Latency <span>{telemetry.latencyMs}ms</span></div>
-              <div className="t-item">Conf <span>{telemetry.confidence}</span></div>
-            </div>
+          {uploading ? <span className="t-pill">Uploading <b>{uploadProgress}%</b></span> : null}
+          {!playingVideo && !uploading ? (
+            <>
+              <span className="t-pill">FPS <b>{telemetry.fps}</b></span>
+              <span className="t-pill">Latency <b>{telemetry.latencyMs}ms</b></span>
+              <span className="t-pill">Conf <b>{telemetry.confidence}</b></span>
+            </>
           ) : null}
           {playingVideo ? (
             <button
@@ -157,13 +178,12 @@ export default function CameraPanel({ compact = false, onNotify }) {
           ) : null}
           <button
             type="button"
-            className="ctrl-btn ctrl-btn-labeled"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading || switchingToLive}
-            title="Upload a video to run through detection in place of the CCTV feed"
+            className="ctrl-btn"
+            onClick={reconnect}
+            disabled={streamStatus === 'connecting'}
+            title="Reconnect feed"
           >
-            <Icon.Download style={{ transform: 'rotate(180deg)' }} />
-            {uploading ? `Uploading ${uploadProgress}%` : playingVideo ? 'Replace video' : 'Upload video'}
+            <Icon.Refresh />
           </button>
           <input
             ref={fileInputRef}
@@ -258,4 +278,6 @@ export default function CameraPanel({ compact = false, onNotify }) {
       </div>
     </div>
   )
-}
+})
+
+export default CameraPanel

@@ -270,6 +270,17 @@ async function insertEvent(db, payload) {
 
 const ALERT_SQL = "(is_alert = 1 OR type = 'alarm')"
 
+const TEST_ALERTS = {
+  intrusion: {
+    type: 'alarm', code: 'INT', title: 'Red Zone Intrusion', severity: 'HIGH',
+    category: 'intrusion', zone: 'red', zone_label: 'Red zone', event: 'RED_ZONE_INTRUSION',
+  },
+  drowning: {
+    type: 'alarm', code: 'DRN', title: 'Possible Drowning', severity: 'HIGH',
+    category: 'drowning', zone: 'orange', zone_label: 'Deep pool', event: 'POSSIBLE_DROWNING',
+  },
+}
+
 function registerEventRoutes(app, db, adminRequired) {
   app.get('/api/events', adminRequired, async (req, res) => {
     try {
@@ -459,6 +470,34 @@ function registerEventRoutes(app, db, adminRequired) {
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: 'Failed to update event' })
+    }
+  })
+
+  app.post('/api/events/test', adminRequired, async (req, res) => {
+    try {
+      const preset = TEST_ALERTS[String(req.body?.kind || 'intrusion')]
+      if (!preset) return res.status(400).json({ error: 'Unknown test alert type.' })
+      const now = new Date()
+      const event = await insertEvent(db, {
+        ...preset,
+        id: `test-${now.getTime()}`,
+        meta: `${preset.zone_label} · Person #0 · Test alert`,
+        time: now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }),
+        date: 'Today',
+        status: 'pending',
+        camera: 'TEST',
+        person_id: 0,
+        is_alert: true,
+        ts: now.getTime() / 1000,
+      })
+      res.status(201).json({ ok: true, event })
+
+      if (event.category === 'drowning') {
+        dispatchEvent(db, event.id).catch((err) => console.error('Auto-dispatch failed:', err))
+      }
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: 'Failed to create test alert' })
     }
   })
 
