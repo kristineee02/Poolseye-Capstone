@@ -2,7 +2,7 @@ const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
 const { get, run } = require('./db')
 const { validatePassword } = require('./password')
-const { sendPasswordResetCodeEmail } = require('./email')
+const { isEmailConfigured, sendPasswordResetCodeEmail } = require('./email')
 
 const CODE_TTL_MS = 10 * 60 * 1000
 const ADMIN_POSITIONS = ['admin', 'Owner', 'Supervisor']
@@ -225,22 +225,21 @@ function registerAdminAuthRoutes(app, db) {
     try {
       const email = normalizeEmail(req.body?.email)
       if (!email) return res.status(400).json({ error: 'Email is required.' })
+      // Checked before the lookup so the reply never reveals whether the admin email exists
+      if (!isEmailConfigured()) {
+        return res.status(503).json({ error: 'Email is not set up on the server (BREVO_API_KEY is missing), so a reset code cannot be sent.' })
+      }
 
       const user = await get(db, 'SELECT * FROM users WHERE email = ? AND role = ?', [email, 'admin'])
-      const payload = {
-        ok: true,
-        message: 'If that admin email exists, a reset code was sent.',
-      }
       if (user) {
         const code = makeCode()
         await saveCode(db, email, 'admin_password_reset', code)
-        const sent = await sendPasswordResetCodeEmail(email, code, { audience: 'admin' })
-        if (sent.demo) payload.demoCode = code
+        await sendPasswordResetCodeEmail(email, code, { audience: 'admin' })
       }
-      res.json(payload)
+      res.json({ ok: true, message: 'If that admin email exists, a reset code was sent.' })
     } catch (err) {
       console.error(err)
-      res.status(500).json({ error: err.message || 'Failed to send reset code' })
+      res.status(err.status || 500).json({ error: err.message || 'Failed to send reset code' })
     }
   })
 

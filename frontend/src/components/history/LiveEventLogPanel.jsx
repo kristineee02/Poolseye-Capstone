@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import EventRow from './EventRow'
+import SnapshotModal from './SnapshotModal'
 import { Icon } from '../ui/Icon'
 import { STREAM_BASE } from '../../config'
 import './LiveEventLogPanel.css'
@@ -13,6 +14,7 @@ export default function LiveEventLogPanel({ onNewAlert }) {
   const [online, setOnline] = useState(false)
   const [error, setError] = useState('')
   const [peopleCount, setPeopleCount] = useState(0)
+  const [openId, setOpenId] = useState(null)
   const seenIds = useRef(new Set())
   const primed = useRef(false)
   const listRef = useRef(null)
@@ -55,6 +57,11 @@ export default function LiveEventLogPanel({ onNewAlert }) {
     return () => clearInterval(id)
   }, [poll])
 
+  // Looked up on every poll so the clip appears in the viewer once it finishes saving
+  const withMedia = events.filter((e) => e.snapshot_uri)
+  const openIndex = withMedia.findIndex((e) => e.id === openId)
+  const openEvent = openIndex >= 0 ? withMedia[openIndex] : null
+
   return (
     <div className="panel live-event-log">
       <div className="panel-head live-event-log-head">
@@ -82,10 +89,23 @@ export default function LiveEventLogPanel({ onNewAlert }) {
           </div>
         ) : (
           events.map((event) => (
-            <EventRow key={event.id} event={event} showStatus />
+            <EventRow key={event.id} event={event} showStatus onOpen={(e) => setOpenId(e.id)} />
           ))
         )}
       </div>
+
+      {openEvent ? (
+        <SnapshotModal
+          event={openEvent}
+          events={withMedia}
+          onClose={() => setOpenId(null)}
+          onSelect={(e) => setOpenId(e.id)}
+          onPrev={() => setOpenId(withMedia[openIndex - 1]?.id ?? openId)}
+          onNext={() => setOpenId(withMedia[openIndex + 1]?.id ?? openId)}
+          hasPrev={openIndex > 0}
+          hasNext={openIndex < withMedia.length - 1}
+        />
+      ) : null}
     </div>
   )
 }

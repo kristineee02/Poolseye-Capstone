@@ -1,88 +1,26 @@
+const crypto = require('crypto')
+const fs = require('fs')
+const path = require('path')
+const express = require('express')
 const { get, all, run } = require('./db')
 const { dispatchEvent } = require('./dispatch')
 
-const DEMO_EVENTS = [
-  {
-    id: 'evt-1',
-    type: 'alarm',
-    code: 'DRN',
-    title: 'Possible Drowning',
-    meta: 'Red Zone · 2:15 PM · HIGH',
-    event_time: '2:15 PM',
-    event_date: 'Today',
-    status: 'pending',
-    severity: 'HIGH',
-    category: 'drowning',
-    confidence: 0.94,
-    camera: 'CAM-01',
-    is_alert: 1,
-    ts: Date.now() / 1000 - 3600,
-  },
-  {
-    id: 'evt-2',
-    type: 'alarm',
-    code: 'INT',
-    title: 'Unauthorized Intrusion',
-    meta: 'Red Zone · 2:10 PM · HIGH',
-    event_time: '2:10 PM',
-    event_date: 'Today',
-    status: 'resolved',
-    severity: 'HIGH',
-    category: 'intrusion',
-    confidence: 0.91,
-    camera: 'CAM-01',
-    is_alert: 1,
-    ts: Date.now() / 1000 - 3900,
-  },
-  {
-    id: 'evt-3',
-    type: 'warn',
-    code: 'SUP',
-    title: 'Unsupervised Person',
-    meta: 'Yellow Zone · 1:58 PM · MEDIUM',
-    event_time: '1:58 PM',
-    event_date: 'Today',
-    status: 'resolved',
-    severity: 'MEDIUM',
-    category: 'supervision',
-    confidence: 0.87,
-    camera: 'CAM-01',
-    is_alert: 1,
-    ts: Date.now() / 1000 - 4620,
-  },
-  {
-    id: 'evt-4',
-    type: 'info',
-    code: 'DP',
-    title: 'Deep-Water Entry',
-    meta: 'Deep-Water Boundary · 1:55 PM · MEDIUM',
-    event_time: '1:55 PM',
-    event_date: 'Today',
-    status: 'resolved',
-    severity: 'MEDIUM',
-    category: 'deep-water',
-    confidence: 0.85,
-    camera: 'CAM-01',
-    is_alert: 0,
-    ts: Date.now() / 1000 - 4800,
-  },
-  {
-    id: 'evt-5',
-    type: 'warn',
-    code: 'YL',
-    title: 'Yellow Zone Warning',
-    meta: 'Yellow Zone · 1:40 PM · LOW',
-    event_time: '1:40 PM',
-    event_date: 'Today',
-    status: 'resolved',
-    severity: 'LOW',
-    category: 'yellow',
-    confidence: 0.78,
-    camera: 'CAM-01',
-    is_alert: 0,
-    ts: Date.now() / 1000 - 5700,
-  },
-]
+const MEDIA_DIR = path.join(__dirname, 'media')
+const MEDIA_ROUTE = '/media'
+const MEDIA_TYPES = {
+  'image/jpeg': { ext: 'jpg', column: 'snapshot_uri' },
+  'video/webm': { ext: 'webm', column: 'clip_uri' },
+}
+
+function ingestAuthorized(req) {
+  const secret = process.env.EVENTS_INGEST_SECRET
+  if (!secret) return true
+  return (req.headers['x-events-secret'] || req.body?.secret) === secret
+}
+
+// Ids of the sample events earlier builds seeded into every new database.
+// Live events use evt-<10 hex chars>, so these never match real detections.
+const LEGACY_DEMO_EVENT_IDS = ['evt-1', 'evt-2', 'evt-3', 'evt-4', 'evt-5']
 
 function rowToEvent(row) {
   if (!row) return null
@@ -105,6 +43,7 @@ function rowToEvent(row) {
     event: row.event_name,
     is_alert: Boolean(row.is_alert),
     snapshot_uri: row.snapshot_uri,
+    clip_uri: row.clip_uri ?? null,
     acknowledged_at: row.acknowledged_at ?? null,
     acknowledged_by: row.acknowledged_by ?? null,
     dispatched_at: row.dispatched_at ?? null,
@@ -190,36 +129,10 @@ function normalizeIngestPayload(body) {
   }
 }
 
-async function seedDemoEvents(db) {
-  const row = await get(db, 'SELECT COUNT(*) AS count FROM events')
-  if (row?.count > 0) return
-
-  for (const event of DEMO_EVENTS) {
-    await run(
-      db,
-      `INSERT INTO events (
-        id, type, code, title, meta, event_time, event_date, status,
-        severity, category, confidence, camera, is_alert, ts
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        event.id,
-        event.type,
-        event.code,
-        event.title,
-        event.meta,
-        event.event_time,
-        event.event_date,
-        event.status,
-        event.severity,
-        event.category,
-        event.confidence,
-        event.camera,
-        event.is_alert,
-        event.ts,
-      ]
-    )
-  }
-  console.log('Demo events seeded:', DEMO_EVENTS.length)
+async function removeLegacyDemoEvents(db) {
+  const placeholders = LEGACY_DEMO_EVENT_IDS.map(() => '?').join(', ')
+  const result = await run(db, `DELETE FROM events WHERE id IN (${placeholders})`, LEGACY_DEMO_EVENT_IDS)
+  if (result?.changes) console.log('Removed sample events from earlier builds:', result.changes)
 }
 
 async function insertEvent(db, payload) {
@@ -522,13 +435,7 @@ function registerEventRoutes(app, db, adminRequired) {
 
   app.post('/api/events/ingest', async (req, res) => {
     try {
-      const secret = process.env.EVENTS_INGEST_SECRET
-      if (secret) {
-        const provided = req.headers['x-events-secret'] || req.body?.secret
-        if (provided !== secret) {
-          return res.status(401).json({ error: 'Unauthorized' })
-        }
-      }
+      if (!ingestAuthorized(req)) return res.status(401).json({ error: 'Unauthorized' })
 
       const event = await insertEvent(db, req.body)
       res.status(201).json({ ok: true, event })
@@ -543,11 +450,45 @@ function registerEventRoutes(app, db, adminRequired) {
       res.status(500).json({ error: 'Failed to ingest event' })
     }
   })
+
+  // The live detector uploads the alert snapshot (JPEG) and the clip leading up to it (WebM)
+  app.post(
+    '/api/events/:id/media',
+    express.raw({ type: Object.keys(MEDIA_TYPES), limit: '25mb' }),
+    async (req, res) => {
+      try {
+        if (!ingestAuthorized(req)) return res.status(401).json({ error: 'Unauthorized' })
+        const media = MEDIA_TYPES[String(req.headers['content-type'] || '').split(';')[0].trim()]
+        if (!media || !Buffer.isBuffer(req.body) || !req.body.length) {
+          return res.status(400).json({ error: 'Send a JPEG snapshot or a WebM clip.' })
+        }
+        const row = await get(db, 'SELECT id, snapshot_uri, clip_uri FROM events WHERE id = ?', [req.params.id])
+        if (!row) return res.status(404).json({ error: 'Event not found' })
+
+        await fs.promises.mkdir(MEDIA_DIR, { recursive: true })
+        const name = `${crypto.randomUUID()}.${media.ext}`
+        await fs.promises.writeFile(path.join(MEDIA_DIR, name), req.body)
+        const uri = `${MEDIA_ROUTE}/${name}`
+        await run(db, `UPDATE events SET ${media.column} = ? WHERE id = ?`, [uri, row.id])
+
+        const previous = row[media.column]
+        if (previous && previous.startsWith(`${MEDIA_ROUTE}/`)) {
+          fs.promises.unlink(path.join(MEDIA_DIR, path.basename(previous))).catch(() => {})
+        }
+        res.status(201).json({ ok: true, uri })
+      } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Failed to save event media' })
+      }
+    }
+  )
 }
 
 module.exports = {
+  MEDIA_DIR,
+  MEDIA_ROUTE,
   registerEventRoutes,
-  seedDemoEvents,
+  removeLegacyDemoEvents,
   rowToEvent,
   eventsWithResponders,
   insertEvent,

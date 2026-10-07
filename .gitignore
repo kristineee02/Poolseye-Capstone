@@ -16,6 +16,9 @@ ai/models/*.pt
 # Videos uploaded from the Live Monitoring page
 scripts/uploads/
 
+# Alert snapshots and clips saved by the backend
+backend/media/
+
 # Python
 __pycache__/
 *.pyc

@@ -44,6 +44,7 @@ const EVENT_COLUMNS = [
   ['responding_at', 'REAL'],
   ['responding_by', 'INTEGER'],
   ['escalated_at', 'REAL'],
+  ['clip_uri', 'TEXT'],
 ]
 
 function isLibsql(db) {
@@ -228,32 +229,15 @@ async function migrateEventsTable(db) {
   }
 }
 
-async function seedDemoLifeguard(db) {
+// Earlier builds created this lifeguard with a published password. It is removed only
+// while that password is unchanged, so an account someone actually took over is kept.
+async function removeLegacyDemoLifeguard(db) {
   const email = 'jonas@poolseye.com'
-  const existing = await get(db, 'SELECT id FROM users WHERE email = ?', [email])
-  if (existing) return
-
-  const passwordHash = await bcrypt.hash('lifeguard123', 10)
-  await run(
-    db,
-    `INSERT INTO users (
-      email, password_hash, name, role, lifeguard_role, phone,
-      assigned_zones, certifications, status, must_change_password,
-      shift_start, shift_end, mobile_app_status
-    ) VALUES (?, ?, ?, 'lifeguard', ?, ?, ?, ?, 'active', 1, ?, ?, 'disconnected')`,
-    [
-      email,
-      passwordHash,
-      'Jonas Ramos',
-      'Lifeguard',
-      '',
-      JSON.stringify(['Main Pool']),
-      JSON.stringify(['CPR/AED', 'Lifeguard', 'First Aid']),
-      '06:00 AM',
-      '06:00 PM',
-    ]
-  )
-  console.log('Demo lifeguard created:', email)
+  const existing = await get(db, "SELECT id, password_hash FROM users WHERE email = ? AND role = 'lifeguard'", [email])
+  if (!existing) return
+  if (!(await bcrypt.compare('lifeguard123', existing.password_hash || ''))) return
+  await run(db, 'DELETE FROM users WHERE id = ?', [existing.id])
+  console.log('Removed demo lifeguard account:', email)
 }
 
 async function initDb() {
@@ -296,7 +280,7 @@ async function initDb() {
     console.log('Default admin already exists')
   }
 
-  await seedDemoLifeguard(db)
+  await removeLegacyDemoLifeguard(db)
 
   return db
 }

@@ -125,7 +125,7 @@ export function AuthProvider({ children }) {
       body: { email },
     });
     if (!result.ok) return { ok: false, error: result.error };
-    return { ok: true, email: result.email, demoCode: result.demoCode };
+    return { ok: true, email: result.email };
   };
 
   const resetPassword = async ({ email, newPassword, code }) => {

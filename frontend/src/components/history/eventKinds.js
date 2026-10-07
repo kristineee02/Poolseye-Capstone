@@ -21,6 +21,8 @@ export function isAlertEvent(event) {
 export const CAMERA_LABEL = 'Pool CCTV'
 
 export function zoneLabel(event) {
+  // Broadcasts store their priority in zone_label; they have no detection zone
+  if (event?.category === 'broadcast') return null
   const raw = String(event?.zone_label || event?.zone || '').trim().toLowerCase()
   if (!raw) return null
   if (raw === 'outside' || raw === 'clear') return 'Outside zones'

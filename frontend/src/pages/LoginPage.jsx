@@ -70,7 +70,6 @@ export default function LoginPage() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [challengeToken, setChallengeToken] = useState('')
-  const [demoCode, setDemoCode] = useState('')
   const [fields, setFields] = useState({})
   const [loading, setLoading] = useState(false)
   const [secondsLeft, setSecondsLeft] = useState(CODE_TTL_SEC)
@@ -138,16 +137,13 @@ export default function LoginPage() {
       showStatus({ tone: 'error', title: 'Code not sent', message: result.error || 'Could not send a reset code.' })
       return
     }
-    setDemoCode(result.demoCode || '')
     setCode('')
     setSecondsLeft(CODE_TTL_SEC)
     setStep('reset_code')
     showStatus({
       tone: 'success',
       title: 'Code sent',
-      message: result.demoCode
-        ? `A reset code was sent. Demo code: ${result.demoCode}`
-        : 'A 6-digit reset code was sent to your email.',
+      message: 'A 6-digit reset code was sent to your email.',
     })
   }
 
@@ -205,8 +201,6 @@ export default function LoginPage() {
         </div>
 
         {title ? <p className="login-step-title">{title}</p> : null}
-        {demoCode ? <p className="login-demo">Demo code: {demoCode}</p> : null}
-
         {step === 'login' ? (
           <form className="login-form" onSubmit={handleSignIn}>
             <label className={`login-field${fields.email ? ' is-invalid' : ''}`}>

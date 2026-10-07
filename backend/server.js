@@ -8,7 +8,7 @@ const { registerLifeguardRoutes } = require('./lifeguards')
 const { registerBroadcastRoutes } = require('./broadcast')
 const { registerMobileAuthRoutes } = require('./mobileAuth')
 const { registerMobileEventRoutes } = require('./mobileEvents')
-const { registerEventRoutes, seedDemoEvents } = require('./events')
+const { MEDIA_DIR, MEDIA_ROUTE, registerEventRoutes, removeLegacyDemoEvents } = require('./events')
 const { startEscalation } = require('./dispatch')
 const { registerAdminAuthRoutes } = require('./adminAuth')
 const { registerAnalyticsRoutes } = require('./analytics')
@@ -56,6 +56,8 @@ app.use(cors({
 }))
 // Profile photos are sent as base64 data URLs (2 MB image ≈ 2.7 MB encoded)
 app.use(express.json({ limit: '4mb' }))
+// Alert snapshots and clips; file names are random UUIDs, so they can't be guessed or listed
+app.use(MEDIA_ROUTE, express.static(MEDIA_DIR, { maxAge: '7d', index: false }))
 
 function authRequired(req, res, next) {
   try {
@@ -171,7 +173,7 @@ initDb()
     await geofence.seedGeofence(db)
     await seedCameraSettings(db)
     await seedOperatingHours(db)
-    await seedDemoEvents(db)
+    await removeLegacyDemoEvents(db)
     startEscalation(db)
     app.listen(PORT, HOST, () => {
       console.log(`Backend running on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`)

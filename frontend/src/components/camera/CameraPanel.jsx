@@ -2,7 +2,6 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { Icon } from '../ui/Icon'
 import CameraFeedIllustration from './CameraFeedIllustration'
 import GeofenceOverlay from '../geofence/GeofenceOverlay'
-import { telemetry } from '../../data/site'
 import { ZONE_TYPES } from '../../data/geofence'
 import { useGeofence } from '../../context/GeofenceContext'
 import { STREAM_BASE } from '../../config'
@@ -158,13 +157,6 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
         )}
         <div className="camera-head-right">
           {uploading ? <span className="t-pill">Uploading <b>{uploadProgress}%</b></span> : null}
-          {!playingVideo && !uploading ? (
-            <>
-              <span className="t-pill">FPS <b>{telemetry.fps}</b></span>
-              <span className="t-pill">Latency <b>{telemetry.latencyMs}ms</b></span>
-              <span className="t-pill">Conf <b>{telemetry.confidence}</b></span>
-            </>
-          ) : null}
           {playingVideo ? (
             <button
               type="button"

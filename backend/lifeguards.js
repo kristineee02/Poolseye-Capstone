@@ -207,13 +207,11 @@ function registerLifeguardRoutes(app, db, adminRequired) {
         [email, code, now + CODE_TTL_MS, now]
       )
 
-      const sent = await sendVerificationCodeEmail(email, code)
-      const payload = { ok: true, message: 'Verification code sent.' }
-      if (sent.demo) payload.demoCode = code
-      res.json(payload)
+      await sendVerificationCodeEmail(email, code)
+      res.json({ ok: true, message: 'Verification code sent.' })
     } catch (err) {
       console.error(err)
-      res.status(500).json({ error: err.message || 'Failed to send verification code' })
+      res.status(err.status || 500).json({ error: err.message || 'Failed to send verification code' })
     }
   })
 
@@ -266,11 +264,11 @@ function registerLifeguardRoutes(app, db, adminRequired) {
         return res.status(400).json({ error: 'Email and temporary password are required.' })
       }
 
-      const sent = await sendWelcomeEmail({ to: email, name, tempPassword })
-      res.json({ ok: true, message: 'Welcome email sent.', demo: Boolean(sent.demo) })
+      await sendWelcomeEmail({ to: email, name, tempPassword })
+      res.json({ ok: true, message: 'Welcome email sent.' })
     } catch (err) {
       console.error(err)
-      res.status(500).json({ error: err.message || 'Failed to send welcome email' })
+      res.status(err.status || 500).json({ error: err.message || 'Failed to send welcome email' })
     }
   })
 

@@ -80,7 +80,6 @@ export default function ForgotPasswordScreen({ onCancel }) {
   const [verifiedEmail, setVerifiedEmail] = useState(null);
   const [code, setCode] = useState('');
   const [codeReady, setCodeReady] = useState(false);
-  const [demoCode, setDemoCode] = useState('');
   const [secondsLeft, setSecondsLeft] = useState(CODE_TTL_SEC);
 
   const handleVerify = async () => {
@@ -104,15 +103,12 @@ export default function ForgotPasswordScreen({ onCancel }) {
       return;
     }
     setVerifiedEmail(trimmed);
-    setDemoCode(result.demoCode || '');
     setCode('');
     setSecondsLeft(CODE_TTL_SEC);
     setStatus({
       tone: 'success',
       title: 'Code sent',
-      message: result.demoCode
-        ? `A reset code was sent. Demo code: ${result.demoCode}`
-        : 'A 6-digit code was sent to your email.',
+      message: 'A 6-digit code was sent to your email.',
     });
   };
 
@@ -189,8 +185,6 @@ export default function ForgotPasswordScreen({ onCancel }) {
               ? 'Enter the 6-digit code sent to your email.'
               : 'Enter your account email to reset your password.'}
           </Text>
-          {demoCode ? <Text style={styles.subtitle}>Demo code: {demoCode}</Text> : null}
-
           {verifiedEmail ? (
             <CodeBoxes value={code} onChange={(value) => { setCode(value); setCodeError(''); }} />
           ) : (
