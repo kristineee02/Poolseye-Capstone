@@ -5,6 +5,7 @@ import React, { useRef, useState } from 'react';
 import {
   View, Text, Pressable, StyleSheet, Animated, Image,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors, radius, shadow, typography } from '../theme/tokens';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 import { useAlertNotifications } from '../hooks/useAlertNotifications';
@@ -84,9 +85,9 @@ function TabButton({ tab, isActive, onPress, renderIcon }) {
   };
 
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
+    <Animated.View style={[styles.tabItem, { transform: [{ scale }] }]}>
       <Pressable
-        style={[styles.tabButton, isActive && styles.tabSlotActive]}
+        style={styles.tabButton}
         onPress={onPress}
         onPressIn={pressIn}
         onPressOut={pressOut}
@@ -99,6 +100,15 @@ function TabButton({ tab, isActive, onPress, renderIcon }) {
         accessibilityLabel={tab.label}
         accessibilityState={{ selected: isActive }}
       >
+        {isActive ? (
+          <LinearGradient
+            colors={colors.buttonGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.activePill}
+            pointerEvents="none"
+          />
+        ) : null}
         {renderIcon(tab.key, isActive)}
         <Text
           style={[
@@ -144,7 +154,7 @@ export default function TabNavigator() {
   const activeTab = TABS.find((t) => t.key === active) || TABS[0];
 
   const renderIcon = (key, isActive) => {
-    const iconColor = isActive ? ACTIVE_ICON : IDLE_ICON;
+    const iconColor = isActive ? '#FFFFFF' : IDLE_ICON;
     switch (key) {
       case 'home':
         return <HomeIcon color={iconColor} />;
@@ -152,7 +162,7 @@ export default function TabNavigator() {
         return (
           <BellIcon
             color={iconColor}
-            hasBadge={!isActive && alertBadgeCount > 0}
+            hasBadge={alertBadgeCount > 0}
             badgeCount={alertBadgeCount}
           />
         );
@@ -246,29 +256,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-evenly',
     alignSelf: 'stretch',
-    marginHorizontal: 18,
-    height: 58,
-    paddingHorizontal: 6,
+    marginHorizontal: 12,
+    height: 64,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
     borderRadius: 999,
-    backgroundColor: colors.bgPanel,
+    backgroundColor: '#F7FAFF',
     borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    ...shadow.md,
+    borderColor: '#FFFFFF',
+    shadowColor: '#52749D',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    elevation: 5,
+  },
+  tabItem: {
+    flex: 1,
+    maxWidth: 112,
+    height: 50,
   },
   tabButton: {
-    minWidth: 88,
-    minHeight: 46,
-    paddingHorizontal: 18,
-    paddingVertical: 6,
+    flex: 1,
+    width: '100%',
+    minHeight: 48,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
+    overflow: 'hidden',
   },
-  tabSlotActive: {
-    backgroundColor: '#E8F1FF',
-    paddingHorizontal: 22,
-    minWidth: 96,
+  activePill: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: radius.full,
   },
   tabLabel: {
     fontSize: 11,
@@ -276,7 +297,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
   tabLabelActive: {
-    color: colors.accent,
+    color: '#FFFFFF',
     fontWeight: '700',
   },
   tabLabelIdle: {
