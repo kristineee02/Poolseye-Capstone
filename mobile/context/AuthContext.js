@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { validateNewPassword } from '../auth/demoAuth';
+import { validateNewPassword } from '../auth/passwordRules';
 import { apiFetch, TOKEN_KEY, USER_KEY } from '../api/client';
 import { unregisterFromNotifications } from '../notifications';
 

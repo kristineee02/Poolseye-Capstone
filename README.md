@@ -22,7 +22,7 @@ npm run dev             # http://localhost:4000
 
 Default admin (seeded on first run): see `backend/db.js`.
 
-Demo lifeguard for mobile testing: `jonas@poolseye.com` / `lifeguard123` (must change password on first login).
+Lifeguard accounts are created by the admin on the **Lifeguards** page; the mobile app signs in with those.
 
 ## Web (frontend)
 

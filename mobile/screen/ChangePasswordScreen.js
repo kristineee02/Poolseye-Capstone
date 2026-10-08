@@ -9,7 +9,7 @@ import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, radius, shadow, touch } from '../theme/tokens';
 import { GradientButton } from '../components/Primitives';
-import { getPasswordRuleChecks } from '../auth/demoAuth';
+import { getPasswordRuleChecks } from '../auth/passwordRules';
 import { useAuth } from '../context/AuthContext';
 import StatusModal from '../components/StatusModal';
 
