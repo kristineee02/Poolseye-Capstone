@@ -1,5 +1,6 @@
 require('dotenv').config()
 const { AsyncLocalStorage } = require('node:async_hooks')
+const crypto = require('crypto')
 const fs = require('fs')
 const path = require('path')
 const sqlite3 = require('sqlite3').verbose()
@@ -8,6 +9,7 @@ const bcrypt = require('bcrypt')
 
 const DB_PATH = path.join(__dirname, 'data', 'app.db')
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql')
+const LEGACY_ADMIN_PASSWORD = 'AdminPoolsEye@2026'
 const txStore = new AsyncLocalStorage()
 
 const LIFEGUARD_COLUMNS = [
@@ -256,7 +258,7 @@ async function initDb() {
   await migrateUsersTable(db)
   await migrateEventsTable(db)
 
-  const adminEmail = 'piapendergat275@gmail.com'
+  const adminEmail = (process.env.ADMIN_EMAIL || 'piapendergat275@gmail.com').trim().toLowerCase()
   const existingAdmin = await get(
     db,
     'SELECT id, password_hash FROM users WHERE email = ?',
@@ -264,7 +266,9 @@ async function initDb() {
   )
 
   if (!existingAdmin) {
-    const passwordHash = await bcrypt.hash('AdminPoolsEye@2026', 10)
+    // Without ADMIN_INITIAL_PASSWORD a one-time random password is printed once; it must be changed on first login.
+    const initialPassword = process.env.ADMIN_INITIAL_PASSWORD || `Pe-${crypto.randomBytes(9).toString('base64url')}1!`
+    const passwordHash = await bcrypt.hash(initialPassword, 10)
     await run(
       db,
       `INSERT INTO users (email, password_hash, name, role, must_change_password)
@@ -272,10 +276,15 @@ async function initDb() {
       [adminEmail, passwordHash, 'PoolsEye', 'admin']
     )
     console.log('Default admin created:', adminEmail)
+    if (!process.env.ADMIN_INITIAL_PASSWORD) {
+      console.log('Temporary admin password (shown once, change it after login):', initialPassword)
+    }
   } else {
-    const stillDefault = await bcrypt.compare('AdminPoolsEye@2026', existingAdmin.password_hash || '')
-    if (stillDefault) {
+    // This password was published in the repo, so an admin still using it is forced to change it.
+    const stillLegacyDefault = await bcrypt.compare(LEGACY_ADMIN_PASSWORD, existingAdmin.password_hash || '')
+    if (stillLegacyDefault) {
       await run(db, 'UPDATE users SET must_change_password = 1 WHERE id = ?', [existingAdmin.id])
+      console.warn('Admin still uses the old published default password - a password change is required at next login.')
     }
     console.log('Default admin already exists')
   }

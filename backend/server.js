@@ -59,18 +59,6 @@ app.use(express.json({ limit: '4mb' }))
 // Alert snapshots and clips; file names are random UUIDs, so they can't be guessed or listed
 app.use(MEDIA_ROUTE, express.static(MEDIA_DIR, { maxAge: '7d', index: false }))
 
-function authRequired(req, res, next) {
-  try {
-    const header = req.headers.authorization || ''
-    const token = header.startsWith('Bearer ') ? header.slice(7) : null
-    if (!token) return res.status(401).json({ error: 'Unauthorized' })
-    req.user = jwt.verify(token, process.env.JWT_SECRET)
-    next()
-  } catch {
-    res.status(401).json({ error: 'Unauthorized' })
-  }
-}
-
 function adminRequired(req, res, next) {
   try {
     const header = req.headers.authorization || ''
@@ -128,7 +116,7 @@ app.get('/api/geofence/stream', (req, res) => {
   })
 })
 
-app.put('/api/geofence/live', authRequired, async (req, res) => {
+app.put('/api/geofence/live', adminRequired, async (req, res) => {
   try {
     const cameraId = String(req.body?.cameraId || geofence.DEFAULT_CAMERA)
     const payload = await geofence.writeLayout(db, cameraId, req.body?.zones, { persist: false })
@@ -143,7 +131,7 @@ app.put('/api/geofence/live', authRequired, async (req, res) => {
   }
 })
 
-app.put('/api/geofence', authRequired, async (req, res) => {
+app.put('/api/geofence', adminRequired, async (req, res) => {
   try {
     const cameraId = String(req.body?.cameraId || geofence.DEFAULT_CAMERA)
     const payload = await geofence.writeLayout(db, cameraId, req.body?.zones, { persist: true })

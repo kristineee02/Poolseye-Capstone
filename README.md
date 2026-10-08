@@ -20,7 +20,8 @@ cp .env.example .env    # set JWT_SECRET and optional SMTP
 npm run dev             # http://localhost:4000
 ```
 
-Default admin (seeded on first run): see `backend/db.js`.
+First admin (created on first run): set `ADMIN_EMAIL` and `ADMIN_INITIAL_PASSWORD` in `backend/.env`.
+Without a password, a temporary one is printed once in the backend log. It must be changed at first login.
 
 Lifeguard accounts are created by the admin on the **Lifeguards** page; the mobile app signs in with those.
 
