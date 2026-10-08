@@ -293,9 +293,7 @@ export default function LifeguardsPage() {
       showStatus({
         tone: 'success',
         title: 'Code sent',
-        message: result.demoCode
-          ? `A verification code was sent. Demo code: ${result.demoCode}`
-          : (result.message || 'A verification code was sent to this email.'),
+        message: result.message || 'A verification code was sent to this email.',
       })
     } finally {
       setSendingCode(false)

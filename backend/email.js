@@ -25,8 +25,9 @@ async function sendEmail({ to, subject, text, html }) {
   }
 
   if (!brevoConfigured) {
-    console.info('[PoolsEye email demo]', JSON.stringify(payload, null, 2))
-    return { ok: true, demo: true }
+    const err = new Error('Email is not set up on the server (BREVO_API_KEY is missing), so the email could not be sent.')
+    err.status = 503
+    throw err
   }
 
   const sender = parseSenderFromEnv()
@@ -59,7 +60,7 @@ async function sendEmail({ to, subject, text, html }) {
   }
 
   const data = await res.json().catch(() => ({}))
-  return { ok: true, demo: false, messageId: data.messageId }
+  return { ok: true, messageId: data.messageId }
 }
 
 function escapeHtml(value) {

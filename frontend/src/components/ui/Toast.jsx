@@ -1,20 +1,15 @@
 import { Icon } from './Icon'
 import './Toast.css'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export function Toast({ message, type = 'info', duration = 4000, onClose }) {
-  const [isVisible, setIsVisible] = useState(true)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsVisible(false)
-      onClose?.()
-    }, duration)
-
+    const timer = setTimeout(() => onCloseRef.current?.(), duration)
     return () => clearTimeout(timer)
-  }, [duration, onClose])
-
-  if (!isVisible) return null
+  }, [duration])
 
   const icons = {
     success: Icon.Check,
@@ -29,7 +24,7 @@ export function Toast({ message, type = 'info', duration = 4000, onClose }) {
     <div className={`toast toast-${type}`} role="alert">
       <IconComponent />
       <span>{message}</span>
-      <button className="toast-close" onClick={() => setIsVisible(false)} aria-label="Close notification">
+      <button className="toast-close" onClick={() => onCloseRef.current?.()} aria-label="Close notification">
         <Icon.X />
       </button>
     </div>
@@ -47,18 +42,23 @@ export function ToastContainer({ toasts, removeToast }) {
 }
 
 // Hook for managing toasts
+let nextToastId = 1
+
 export function useToast() {
   const [toasts, setToasts] = useState([])
 
-  const addToast = (message, type = 'info', duration = 4000) => {
-    const id = Date.now()
-    setToasts((prev) => [...prev, { id, message, type, duration }])
+  const addToast = useCallback((message, type = 'info', duration = 4000) => {
+    const id = nextToastId++
+    setToasts((prev) => {
+      if (prev.some((t) => t.message === message && t.type === type)) return prev
+      return [...prev, { id, message, type, duration }]
+    })
     return id
-  }
+  }, [])
 
-  const removeToast = (id) => {
+  const removeToast = useCallback((id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id))
-  }
+  }, [])
 
   return { toasts, addToast, removeToast }
 }

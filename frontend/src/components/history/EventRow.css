@@ -8,6 +8,19 @@
 .event-row:last-child {
   border-bottom: none;
 }
+.event-row.is-openable {
+  width: 100%;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.event-row.is-openable:hover {
+  background: var(--bg-inset);
+}
 .event-icon {
   width: 32px;
   height: 32px;

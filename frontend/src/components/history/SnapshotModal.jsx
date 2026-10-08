@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '../ui/Icon'
 import EventThumb from './EventThumb'
+import { mediaUrl } from '../../config'
 import { CAMERA_LABEL, eventKind, isAlertEvent, zoneLabel, formatDate, formatTime, formatDateTime } from './eventKinds'
 import './SnapshotModal.css'
 
@@ -9,7 +10,7 @@ const SPEEDS = [0.5, 1, 1.5, 2]
 const SEEK_MARKERS = 6
 
 function clipOf(event) {
-  return event?.clip_uri || event?.video_uri || null
+  return mediaUrl(event?.clip_uri || event?.video_uri)
 }
 
 function statusInfo(event) {
@@ -65,7 +66,7 @@ function EventPlayer({ event, kind, videoRef, onTime, onDuration }) {
           ref={videoRef}
           className="review-player-media"
           src={clip}
-          poster={event.snapshot_uri || undefined}
+          poster={mediaUrl(event.snapshot_uri) || undefined}
           muted={muted}
           playsInline
           onClick={togglePlay}
@@ -80,8 +81,8 @@ function EventPlayer({ event, kind, videoRef, onTime, onDuration }) {
           {!event.snapshot_uri ? (
             <div className="review-player-empty">
               <Icon.VideoOff />
-              <span>No recording for this event yet</span>
-              <small>The clip will play here once CCTV recording is enabled.</small>
+              <span>No recording for this event</span>
+              <small>Clips are saved automatically for alerts detected on the live feed.</small>
             </div>
           ) : null}
         </div>
@@ -243,7 +244,7 @@ export default function SnapshotModal({
   const download = clip
     ? { href: clip, label: 'Download Video' }
     : event.snapshot_uri
-      ? { href: event.snapshot_uri, label: 'Download Snapshot' }
+      ? { href: mediaUrl(event.snapshot_uri), label: 'Download Snapshot' }
       : null
 
   const details = [

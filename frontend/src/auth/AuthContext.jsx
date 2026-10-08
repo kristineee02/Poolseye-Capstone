@@ -142,7 +142,6 @@ export function AuthProvider({ children }) {
           ok: true,
           step: data.step,
           challengeToken: data.challengeToken,
-          demoCode: data.demoCode,
         }
       }
 

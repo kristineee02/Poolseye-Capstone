@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import CameraPanel from '../components/camera/CameraPanel'
 import LiveEventLogPanel from '../components/history/LiveEventLogPanel'
 import { useToast, ToastContainer } from '../components/ui/Toast'
@@ -9,9 +9,13 @@ import { Icon } from '../components/ui/Icon'
 export default function LiveMonitoringPage() {
   const { toasts, addToast, removeToast } = useToast()
 
+  const healthChecked = useRef(false)
+
   useEffect(() => {
+    if (healthChecked.current) return
     // Soft reminder if stream server is not up yet (non-blocking)
     const timeout = setTimeout(() => {
+      healthChecked.current = true
       fetch(`${STREAM_BASE}/health`, { cache: 'no-store' }).catch(() => {
         addToast('CCTV event feed offline — start scripts/live_server.py', 'warning')
       })

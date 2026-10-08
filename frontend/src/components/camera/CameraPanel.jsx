@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../ui/Icon'
 import CameraFeedIllustration from './CameraFeedIllustration'
 import GeofenceOverlay from '../geofence/GeofenceOverlay'
-import { telemetry } from '../../data/site'
 import { ZONE_TYPES } from '../../data/geofence'
 import { useGeofence } from '../../context/GeofenceContext'
 import { STREAM_BASE } from '../../config'
@@ -137,13 +136,6 @@ export default function CameraPanel({ compact = false, onNotify }) {
           </>
         )}
         <div className="camera-head-right">
-          {!playingVideo ? (
-            <div className="telemetry-inline">
-              <div className="t-item">FPS <span>{telemetry.fps}</span></div>
-              <div className="t-item">Latency <span>{telemetry.latencyMs}ms</span></div>
-              <div className="t-item">Conf <span>{telemetry.confidence}</span></div>
-            </div>
-          ) : null}
           {playingVideo ? (
             <button
               type="button"

@@ -216,13 +216,11 @@ function registerMobileAuthRoutes(app, db) {
 
       const code = makeCode()
       await saveCode(db, email, 'password_reset', code)
-      const sent = await sendPasswordResetCodeEmail(user.email, code)
-      const payload = { ok: true, email }
-      if (sent.demo) payload.demoCode = code
-      res.json(payload)
+      await sendPasswordResetCodeEmail(user.email, code)
+      res.json({ ok: true, email })
     } catch (err) {
       console.error(err)
-      res.status(500).json({ error: 'Server error' })
+      res.status(err.status || 500).json({ error: err.status ? err.message : 'Server error' })
     }
   })
 

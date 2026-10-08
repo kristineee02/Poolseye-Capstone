@@ -174,19 +174,26 @@
 .det-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: baseline;
+  gap: 12px;
   padding: 8px 0;
   border-top: 1px solid var(--border-subtle);
   font-size: 12px;
 }
 .det-row .k {
+  flex-shrink: 0;
+  white-space: nowrap;
   color: var(--text-secondary);
 }
 .det-row .v {
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
   font-family: var(--font-mono);
   font-weight: 600;
   color: var(--text-primary);
 }
+.det-row .v-cap { text-transform: capitalize; }
 .det-row .v-dist { color: var(--alarm); }
 
 .rr-error {

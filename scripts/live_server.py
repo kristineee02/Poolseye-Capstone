@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -20,6 +21,7 @@ from urllib.request import Request, urlopen
 os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay")
 
 import cv2
+import numpy as np
 from flask import Flask, Response, jsonify, request
 from ultralytics import YOLO
 
@@ -86,6 +88,14 @@ _PERSON_MEMORY_SEC = 10.0
 _REID_MAX_DIST_FRAC = 0.12  # of frame width
 _person_alias: dict[int, int] = {}  # track id -> person id
 _person_memory: dict[int, dict] = {}  # person id -> {"events": set, "foot": (x, y), "last_seen": t}
+# The feed is shown this far behind capture (at most) so every frame is drawn with
+# detections from its own moment instead of boxes left over from an older frame.
+MAX_DISPLAY_DELAY_SEC = 2.5
+# With no fresh detections for this long, frames are shown without boxes rather than stale ones.
+STALE_RESULT_SEC = 3.0
+# Each alert saves the annotated frame plus this much of the feed leading up to it
+CLIP_SECONDS = 5.0
+CLIP_MAX_WIDTH = 640  # VP8 encoding competes with inference for the CPU
 
 # Crossing text from zone_check → dashboard event shape
 EVENT_CATALOG = {
@@ -167,6 +177,145 @@ def sync_event_to_backend(entry: dict):
         urlopen(req, timeout=2)
     except (URLError, TimeoutError, OSError):
         pass
+
+
+def upload_event_media(event_id: str, content_type: str, data: bytes) -> str | None:
+    """POST a snapshot or clip to the backend and return its /media path.
+
+    Retries while the event itself is still being ingested.
+    """
+    headers = {"Content-Type": content_type}
+    secret = os.environ.get("EVENTS_INGEST_SECRET")
+    if secret:
+        headers["X-Events-Secret"] = secret
+    url = f"{BACKEND_URL}/api/events/{event_id}/media"
+    for _ in range(5):
+        try:
+            with urlopen(Request(url, data=data, headers=headers, method="POST"), timeout=20) as resp:
+                return json.loads(resp.read().decode("utf-8")).get("uri")
+        except HTTPError as err:
+            if err.code != 404:
+                print(f"[media] upload for {event_id} rejected ({err.code})")
+                return None
+        except (URLError, TimeoutError, OSError, ValueError):
+            pass
+        time.sleep(1.5)
+    print(f"[media] could not upload {content_type} for {event_id}")
+    return None
+
+
+def attach_event_media(event_id: str, field: str, uri: str | None):
+    """Copy a saved media path onto the live event log so Live Monitoring can show it too."""
+    if not uri:
+        return
+    with _lock:
+        for entry in _event_log:
+            if entry["id"] == event_id:
+                entry[field] = uri
+                break
+
+
+def encode_clip(frames: list) -> bytes | None:
+    """WebM (VP8) from buffered (seq, ts, jpeg) frames, timed to match how they were captured."""
+    first = cv2.imdecode(np.frombuffer(frames[0][2], np.uint8), cv2.IMREAD_COLOR)
+    if first is None:
+        return None
+    h, w = first.shape[:2]
+    scale = min(1.0, CLIP_MAX_WIDTH / w)
+    size = (int(w * scale) // 2 * 2, int(h * scale) // 2 * 2)
+    span = frames[-1][1] - frames[0][1]
+    fps = (len(frames) - 1) / span if span > 0 else 15.0
+    fd, path = tempfile.mkstemp(suffix=".webm")
+    os.close(fd)
+    try:
+        writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"VP80"), fps, size)
+        if not writer.isOpened():
+            return None
+        for _, _, jpeg in frames:
+            frame = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+            if frame is None:
+                continue
+            if (frame.shape[1], frame.shape[0]) != size:
+                frame = cv2.resize(frame, size, interpolation=cv2.INTER_AREA)
+            writer.write(frame)
+        writer.release()
+        return Path(path).read_bytes()
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+class AlertMediaRecorder:
+    """Keeps the last few seconds of the annotated feed and saves evidence for each alert.
+
+    The feed is shown behind detection, so a request waits until the alert's own
+    frame has been published; the snapshot then shows exactly what triggered it.
+    """
+
+    def __init__(self):
+        self._frames: deque = deque()
+        self._pending: list[dict] = []
+        self._lock = threading.Lock()
+        self._wake = threading.Event()
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def add_frame(self, seq: int, ts: float, jpeg: bytes):
+        keep = CLIP_SECONDS + MAX_DISPLAY_DELAY_SEC + 3.0
+        with self._lock:
+            self._frames.append((seq, ts, jpeg))
+            while self._frames and ts - self._frames[0][1] > keep:
+                self._frames.popleft()
+            waiting = bool(self._pending)
+        if waiting:
+            self._wake.set()
+
+    def clear(self):
+        """Drop the previous source's frames and requests so its footage never lands in a new clip."""
+        with self._lock:
+            self._frames.clear()
+            self._pending.clear()
+
+    def request(self, event_id: str, seq: int, ts: float):
+        with self._lock:
+            self._pending.append({
+                "id": event_id, "seq": seq, "ts": ts,
+                "deadline": time.time() + MAX_DISPLAY_DELAY_SEC + 2.0,
+            })
+        self._wake.set()
+
+    def _run(self):
+        while True:
+            self._wake.wait(1.0)
+            self._wake.clear()
+            now = time.time()
+            ready = []
+            with self._lock:
+                newest_seq = self._frames[-1][0] if self._frames else 0
+                for job in list(self._pending):
+                    if newest_seq >= job["seq"] or now >= job["deadline"]:
+                        self._pending.remove(job)
+                        ready.append((job, [f for f in self._frames if f[1] >= job["ts"] - CLIP_SECONDS]))
+            for job, frames in ready:
+                try:
+                    self._save(job, frames)
+                except Exception as exc:
+                    print(f"[media] could not save evidence for {job['id']}: {exc}")
+
+    def _save(self, job: dict, frames: list):
+        at = next((f for f in frames if f[0] >= job["seq"]), None) or (frames[-1] if frames else None)
+        if at is None:
+            return
+        attach_event_media(job["id"], "snapshot_uri", upload_event_media(job["id"], "image/jpeg", at[2]))
+        clip = [f for f in frames if f[1] <= at[1]]
+        if len(clip) >= 2:
+            data = encode_clip(clip)
+            if data:
+                attach_event_media(job["id"], "clip_uri", upload_event_media(job["id"], "video/webm", data))
+
+
+_media = AlertMediaRecorder()
 
 
 def sync_people(reports: list, frame_width: int, now: float):
@@ -270,19 +419,26 @@ def resize_max_width(frame, max_width: int):
 
 
 class FrameGrabber:
-    """Reads a capture on its own thread and keeps only the newest frame.
+    """Reads a capture on its own thread and keeps a short history of recent frames.
 
     Inference is far slower than the camera on a CPU, so reading frames in the
     same loop lets FFmpeg's buffer grow and the dashboard drifts seconds behind.
+    Frames are kept at the stream rate only, so the display can hold them back
+    until the detections for that moment are ready.
     """
 
-    def __init__(self, cap, kind: str, max_width: int):
+    def __init__(self, cap, kind: str, max_width: int, publish_fps: float):
         self.cap = cap
         self.kind = kind
         self.max_width = max_width
         self.failed = False
+        self.loops = 0
         self._frame = None
+        self._ts = 0.0
         self._seq = 0
+        self._history: deque = deque(maxlen=max(10, int(publish_fps * (MAX_DISPLAY_DELAY_SEC + 1))))
+        self._publish_interval = 1.0 / publish_fps
+        self._last_publish = 0.0
         self._cond = threading.Condition()
         self._stop = False
         fps = cap.get(cv2.CAP_PROP_FPS) if kind == "video" else 0
@@ -304,6 +460,8 @@ class FrameGrabber:
             if (not ok or frame is None) and self.kind == "video":
                 self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 ok, frame = self.cap.read()
+                if ok and frame is not None:
+                    self.loops += 1
             if not ok or frame is None:
                 fail += 1
                 if fail > 30:
@@ -314,19 +472,30 @@ class FrameGrabber:
                 time.sleep(0.01)
                 continue
             fail = 0
+            now = time.time()
+            if now - self._last_publish < self._publish_interval * 0.9:
+                continue
+            self._last_publish = now
             frame = resize_max_width(frame, self.max_width)
             with self._cond:
-                self._frame = frame
                 self._seq += 1
+                self._frame = frame
+                self._ts = now
+                self._history.append((self._seq, now, frame))
                 self._cond.notify_all()
 
     def latest(self, after_seq: int, timeout: float = 1.0):
-        """Newest frame with a sequence number above after_seq, or (after_seq, None) on timeout."""
+        """Newest (seq, capture time, frame) above after_seq, or (after_seq, 0.0, None) on timeout."""
         with self._cond:
             self._cond.wait_for(lambda: self._seq > after_seq or self.failed or self._stop, timeout)
             if self._seq > after_seq:
-                return self._seq, self._frame
-            return after_seq, None
+                return self._seq, self._ts, self._frame
+            return after_seq, 0.0, None
+
+    def frames_between(self, after_seq: int, upto_seq: int) -> list:
+        """Buffered (seq, capture time, frame) with after_seq < seq <= upto_seq, oldest first."""
+        with self._cond:
+            return [item for item in self._history if after_seq < item[0] <= upto_seq]
 
     def stop(self):
         with self._cond:
@@ -419,6 +588,59 @@ def annotate_frame(frame, model, zcfg, tracker, conf, kpt_conf, imgsz: int,
         r["supervision_status"] = label["status"] if label else None
 
     return reports, {"people": draw_cache, "overlay": overlay}, supervision_events
+
+
+def _lerp_point(p, q, t: float):
+    if p is None or q is None:
+        return p if t < 0.5 else q
+    return tuple(float(a) + (float(b) - float(a)) * t for a, b in zip(p, q))
+
+
+def _blend_person(a: dict, b: dict, t: float, near: dict) -> dict:
+    out = {
+        **near,
+        "xyxy": np.asarray(a["xyxy"], float) + (np.asarray(b["xyxy"], float) - np.asarray(a["xyxy"], float)) * t,
+        "foot": _lerp_point(a["foot"], b["foot"], t),
+        "left": _lerp_point(a["left"], b["left"], t),
+        "right": _lerp_point(a["right"], b["right"], t),
+    }
+    if a["kxy"] is not None and b["kxy"] is not None:
+        ka, kb = np.asarray(a["kxy"], float), np.asarray(b["kxy"], float)
+        out["kxy"] = ka + (kb - ka) * t
+        if a["kcf"] is not None and b["kcf"] is not None:
+            # A joint missing in either frame sits at (0, 0); blending it would fling bones across the image.
+            out["kcf"] = np.minimum(a["kcf"], b["kcf"])
+    return out
+
+
+def scene_at(results: list, seq: int, ts: float) -> dict:
+    """Detections for a displayed frame, interpolated between the inferences on either side of it."""
+    before = [r for r in results if r["seq"] <= seq]
+    after = [r for r in results if r["seq"] >= seq]
+    a = before[-1] if before else after[0]
+    b = after[0] if after else a
+    if a is b or b["ts"] <= a["ts"]:
+        return a
+    t = min(1.0, max(0.0, (ts - a["ts"]) / (b["ts"] - a["ts"])))
+    if a.get("epoch") != b.get("epoch"):
+        # Track ids restart when a video loops; the same id on either side is a different person
+        return a if t < 0.5 else b
+    near, far = (a, b) if t < 0.5 else (b, a)
+    far_people = {p["track_id"]: p for p in far["people"]}
+    people = []
+    for person in near["people"]:
+        other = far_people.get(person["track_id"])
+        if other is None:
+            people.append(person)
+        else:
+            pa, pb = (person, other) if near is a else (other, person)
+            people.append(_blend_person(pa, pb, t, person))
+
+    overlay = near.get("overlay")
+    if overlay:
+        feet = {p["track_id"]: p["foot"] for p in people}
+        overlay = {**overlay, "people": [{**p, "foot": feet.get(p["id"], p["foot"])} for p in overlay["people"]]}
+    return {"people": people, "overlay": overlay}
 
 
 def render_scene(frame, scene: dict, kpt_conf):
@@ -711,8 +933,9 @@ def capture_loop(cfg: dict):
         supervision_cooldown_sec=float(sup_cfg_init.get("alert_cooldown_sec", 10.0)),
     )
 
-    # Calibrator is built lazily from the first frame's dimensions
-    calibrator_box: list[SpatialCalibrator | None] = [None]
+    # Rebuilt whenever the frame size or the pool polygon changes: an uploaded video rarely
+    # matches the CCTV resolution, and metres-per-pixel depends on both.
+    calibrator_box: dict = {"key": None, "calibrator": None}
 
     for warn in validate_nesting(current_zcfg(fallback_zcfg)):
         print(f"[stream] WARN {warn}")
@@ -724,22 +947,39 @@ def capture_loop(cfg: dict):
     print("[stream] nested Yellow ⊃ Red ⊃ Orange | pose + crossing alerts")
 
     def ensure_calibrator(frame, zcfg, supervision_cfg):
-        if calibrator_box[0] is not None:
-            return calibrator_box[0]
         fh, fw = frame.shape[:2]
+        key = json.dumps([
+            fw, fh, zcfg.get("coord_space"), zcfg.get("editor_size"),
+            (zcfg.get("red") or {}).get("points"), (zcfg.get("yellow") or {}).get("points"),
+        ], default=str)
+        if calibrator_box["key"] == key:
+            return calibrator_box["calibrator"]
         try:
-            calibrator_box[0] = SpatialCalibrator.from_config({**cfg, "ZONES": zcfg}, fw, fh)
+            calibrator = SpatialCalibrator.from_config({**cfg, "ZONES": zcfg}, fw, fh)
             print(f"[stream] SpatialCalibrator initialized ({fw}x{fh}) — 0.7m proximity using perspective projection")
         except Exception as cal_err:
             print(f"[stream] Calibrator init warning: {cal_err} — falling back to linear scale")
-            calibrator_box[0] = SpatialCalibrator(
+            calibrator = SpatialCalibrator(
                 pool_width_m=float(supervision_cfg.get('pool_real_width_meters', 15.0)),
                 pool_length_m=float(supervision_cfg.get('pool_real_length_meters', 25.0)),
                 frame_size=(fw, fh),
             )
-        return calibrator_box[0]
+        calibrator_box.update(key=key, calibrator=calibrator)
+        return calibrator
 
-    def log_events(supervision_events, reports):
+    def reset_tracking():
+        """Forget every track so a new source (or a video replay) raises its own alerts."""
+        tracker.states.clear()
+        for yolo_tracker in getattr(getattr(model, "predictor", None), "trackers", None) or []:
+            yolo_tracker.reset()
+        reset_people()
+
+    def log_events(supervision_events, reports, seq: int, ts: float):
+        def logged(entry):
+            if entry and entry["is_alert"]:
+                _media.request(entry["id"], seq, ts)
+            return entry
+
         conf_by_id = {r["id"]: r.get("conf") for r in reports}
         for sev in supervision_events:
             supervision_data = dict(sev.get('supervision_data') or {})
@@ -749,7 +989,7 @@ def capture_loop(cfg: dict):
             if nearest is not None:
                 with _lock:
                     supervision_data['nearest_person_id'] = _person_alias.get(nearest, nearest)
-            if push_event(sev['id'], sev['zone'], sev['event'], bool(sev['is_alert']), supervision_data):
+            if logged(push_event(sev['id'], sev['zone'], sev['event'], bool(sev['is_alert']), supervision_data)):
                 sep = supervision_data.get('separation_distance')
                 thr = supervision_data.get('supervision_threshold', 0.7)
                 sep_str = f"{sep:.2f}m" if sep is not None else "N/A"
@@ -758,22 +998,27 @@ def capture_loop(cfg: dict):
                     f"| Zone: {sev['zone']} | Dist: {sep_str} vs {thr}m threshold"
                 )
         for r in reports:
-            if r.get("event") and push_event(r["id"], r["zone"], r["event"], bool(r.get("is_alert"))):
+            if r.get("event") and logged(push_event(r["id"], r["zone"], r["event"], bool(r.get("is_alert")))):
                 print(
                     f"  Person #{r['id']} | Zone: {ZONE_LABEL.get(r['zone'], r['zone'])} "
                     f"| Event: {r['event']}"
                 )
 
-    def inference_worker(grabber: FrameGrabber, scene_box: dict, scene_lock: threading.Lock,
+    def inference_worker(grabber: FrameGrabber, results: deque, scene_lock: threading.Lock,
                          stop: threading.Event):
         global _latest_reports
         seq = 0
+        loops = grabber.loops
         min_interval = 1.0 / max_infer_fps
         stats_at, runs, busy = time.time(), 0, 0.0
         while not stop.is_set():
-            seq, frame = grabber.latest(seq, timeout=0.5)
+            seq, ts, frame = grabber.latest(seq, timeout=0.5)
             if frame is None:
                 continue
+            if grabber.loops != loops:
+                loops = grabber.loops
+                reset_tracking()
+                print("[stream] uploaded video restarted — re-detecting from the beginning")
             started = time.time()
             try:
                 zcfg = current_zcfg(fallback_zcfg)
@@ -782,14 +1027,16 @@ def capture_loop(cfg: dict):
                     frame, model, zcfg, tracker, conf, kpt_conf, imgsz,
                     supervision_cfg=supervision_cfg,
                     calibrator=ensure_calibrator(frame, zcfg, supervision_cfg),
-                    after_hours=after_hours_now(),
+                    # Uploaded footage was not recorded now, so the live clock's closing time doesn't apply
+                    after_hours=grabber.kind != "video" and after_hours_now(),
                 )
                 sync_people(reports, frame.shape[1], time.time())
+                scene.update(seq=seq, ts=ts, ready_at=time.time(), epoch=loops)
                 with scene_lock:
-                    scene_box["scene"] = scene
+                    results.append(scene)
                 with _lock:
                     _latest_reports = [{**r, "event": None, "is_alert": False} for r in reports]
-                log_events(supervision_events, reports)
+                log_events(supervision_events, reports, seq, ts)
             except Exception as exc:
                 print(f"[stream] annotate error: {exc}")
             elapsed = time.time() - started
@@ -836,20 +1083,33 @@ def capture_loop(cfg: dict):
             _camera_changed.wait(5)
             continue
 
-        reset_people()
+        reset_tracking()
+        _media.clear()
         print(f"[stream] connected ({kind}) — annotating frames for dashboard")
-        grabber = FrameGrabber(cap, kind, max_width)
-        scene_box = {"scene": {"people": [], "overlay": None}}
+        grabber = FrameGrabber(cap, kind, max_width, stream_fps)
+        results: deque = deque(maxlen=8)
         scene_lock = threading.Lock()
         stop_inference = threading.Event()
         worker = threading.Thread(
-            target=inference_worker, args=(grabber, scene_box, scene_lock, stop_inference), daemon=True,
+            target=inference_worker, args=(grabber, results, scene_lock, stop_inference), daemon=True,
         )
         worker.start()
 
-        seq = 0
+        def publish_frame(frame, scene, seq: int, ts: float):
+            annotated = render_scene(frame, scene, kpt_conf) if scene else frame
+            ok, buf = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])
+            if ok:
+                jpeg = buf.tobytes()
+                publish_jpeg(jpeg)
+                _media.add_frame(seq, ts, jpeg)
+
+        # Each frame is published once detections exist on both sides of it, `delay` seconds
+        # after capture; delay tracks how long inference currently takes to catch up.
+        shown_seq = 0
         publish_interval = 1.0 / stream_fps
-        next_publish = 0.0
+        delay = 0.5
+        newest_result_seq = 0
+        connected_at = delay_logged_at = time.time()
         while _running:
             if _camera_changed.is_set():
                 with _lock:
@@ -858,20 +1118,44 @@ def capture_loop(cfg: dict):
             if grabber.failed:
                 print("[stream] lost stream — reconnecting...")
                 break
-            seq, frame = grabber.latest(seq, timeout=1.0)
-            if frame is None:
-                continue
-            now = time.time()
-            if now < next_publish:
-                continue
-            next_publish = max(next_publish + publish_interval, now - publish_interval)
 
             with scene_lock:
-                scene = scene_box["scene"]
-            annotated = render_scene(frame, scene, kpt_conf)
-            ok, buf = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])
-            if ok:
-                publish_jpeg(buf.tobytes())
+                snapshot = list(results)
+            now = time.time()
+            if not snapshot and now - connected_at < STALE_RESULT_SEC:
+                # Hold the first frames for the first detections, so an alert in the
+                # opening second of a video still gets an annotated snapshot.
+                time.sleep(0.01)
+                continue
+            if not snapshot or now - snapshot[-1]["ready_at"] > STALE_RESULT_SEC:
+                seq, ts, frame = grabber.latest(shown_seq, timeout=0.2)
+                if frame is not None:
+                    shown_seq = seq
+                    publish_frame(frame, None, seq, ts)
+                continue
+
+            if len(snapshot) >= 2 and snapshot[-1]["seq"] != newest_result_seq:
+                newest_result_seq = snapshot[-1]["seq"]
+                needed = snapshot[-1]["ready_at"] - snapshot[-2]["ts"] + publish_interval
+                delay = min(MAX_DISPLAY_DELAY_SEC, max(needed, 0.95 * delay + 0.05 * needed))
+                if now - delay_logged_at >= 30:
+                    print(f"[stream] feed shown {delay * 1000:.0f} ms behind capture so boxes match each frame")
+                    delay_logged_at = now
+
+            pending = grabber.frames_between(shown_seq, snapshot[-1]["seq"])
+            # Skip frames already too late to show so playback keeps pace with the camera
+            while len(pending) > 1 and pending[0][1] + delay < now - publish_interval:
+                pending.pop(0)
+            if not pending:
+                time.sleep(0.01)
+                continue
+            seq, ts, frame = pending[0]
+            wait = ts + delay - now
+            if wait > 0:
+                time.sleep(min(wait, 0.02))
+                continue
+            shown_seq = seq
+            publish_frame(frame, scene_at(snapshot, seq, ts), seq, ts)
 
         stop_inference.set()
         worker.join(timeout=5)

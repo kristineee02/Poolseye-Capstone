@@ -80,7 +80,11 @@ function ActiveAlert({ alert, busy, onDispatch, onClose, onDismiss }) {
   }
 
   const isSupervision = alert.category === 'supervision' && alert.event !== 'AFTER_HOURS_PRESENCE'
-  const zone = zoneLabel(alert)
+  const isBroadcast = alert.category === 'broadcast'
+  const zone = isBroadcast ? null : zoneLabel(alert)
+  const priority = isBroadcast
+    ? String(alert.zone_label || '').replace(/^Broadcast\s*·\s*/i, '').replace(/\s*priority$/i, '') || alert.severity
+    : null
 
   return (
     <>
@@ -100,6 +104,9 @@ function ActiveAlert({ alert, busy, onDispatch, onClose, onDismiss }) {
           <div className="det-row"><span className="k">Person</span><span className="v">#{alert.person_id}</span></div>
         ) : null}
         {zone ? <div className="det-row"><span className="k">Detected in</span><span className="v">{zone}</span></div> : null}
+        {priority ? (
+          <div className="det-row"><span className="k">Priority</span><span className="v v-cap">{priority}</span></div>
+        ) : null}
         {isSupervision ? (
           <div className="det-row">
             <span className="k">Nearest person</span>
