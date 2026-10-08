@@ -464,6 +464,13 @@ export const Icon = {
       <line x1="4" y1="17" x2="20" y2="17" />
     </svg>
   ),
+  MoreVertical: (p) => (
+    <svg {...base} {...p}>
+      <circle cx="12" cy="5" r="1.4" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" />
+      <circle cx="12" cy="19" r="1.4" fill="currentColor" />
+    </svg>
+  ),
   LogOut: (p) => (
     <svg {...base} {...p}>
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

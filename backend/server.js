@@ -9,6 +9,7 @@ const { registerBroadcastRoutes } = require('./broadcast')
 const { registerMobileAuthRoutes } = require('./mobileAuth')
 const { registerMobileEventRoutes } = require('./mobileEvents')
 const { MEDIA_DIR, MEDIA_ROUTE, registerEventRoutes, removeLegacyDemoEvents } = require('./events')
+const { useCloudinary } = require('./mediaStorage')
 const { startEscalation } = require('./dispatch')
 const { registerAdminAuthRoutes } = require('./adminAuth')
 const { registerAnalyticsRoutes } = require('./analytics')
@@ -167,6 +168,9 @@ initDb()
       console.log(`Backend running on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`)
       if (HOST === '0.0.0.0') {
         console.log('Mobile devices: use your PC LAN IP, e.g. http://192.168.x.x:' + PORT)
+      }
+      if (!useCloudinary()) {
+        console.log(`[media] CLOUDINARY_URL not set — event snapshots and clips are saved to ${MEDIA_DIR}`)
       }
     })
   })

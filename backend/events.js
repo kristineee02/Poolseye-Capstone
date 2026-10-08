@@ -1,15 +1,11 @@
-const crypto = require('crypto')
-const fs = require('fs')
-const path = require('path')
 const express = require('express')
 const { get, all, run } = require('./db')
 const { dispatchEvent } = require('./dispatch')
+const { MEDIA_DIR, MEDIA_ROUTE, saveMedia, removeMedia } = require('./mediaStorage')
 
-const MEDIA_DIR = path.join(__dirname, 'media')
-const MEDIA_ROUTE = '/media'
 const MEDIA_TYPES = {
-  'image/jpeg': { ext: 'jpg', column: 'snapshot_uri' },
-  'video/webm': { ext: 'webm', column: 'clip_uri' },
+  'image/jpeg': { ext: 'jpg', column: 'snapshot_uri', resourceType: 'image' },
+  'video/webm': { ext: 'webm', column: 'clip_uri', resourceType: 'video' },
 }
 
 function ingestAuthorized(req) {
@@ -465,16 +461,10 @@ function registerEventRoutes(app, db, adminRequired) {
         const row = await get(db, 'SELECT id, snapshot_uri, clip_uri FROM events WHERE id = ?', [req.params.id])
         if (!row) return res.status(404).json({ error: 'Event not found' })
 
-        await fs.promises.mkdir(MEDIA_DIR, { recursive: true })
-        const name = `${crypto.randomUUID()}.${media.ext}`
-        await fs.promises.writeFile(path.join(MEDIA_DIR, name), req.body)
-        const uri = `${MEDIA_ROUTE}/${name}`
+        const uri = await saveMedia(req.body, media)
         await run(db, `UPDATE events SET ${media.column} = ? WHERE id = ?`, [uri, row.id])
 
-        const previous = row[media.column]
-        if (previous && previous.startsWith(`${MEDIA_ROUTE}/`)) {
-          fs.promises.unlink(path.join(MEDIA_DIR, path.basename(previous))).catch(() => {})
-        }
+        removeMedia(row[media.column]).catch(() => {})
         res.status(201).json({ ok: true, uri })
       } catch (err) {
         console.error(err)

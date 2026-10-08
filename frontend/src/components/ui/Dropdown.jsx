@@ -102,7 +102,13 @@ export function MenuDropdown({
         {trigger}
       </button>
       {open ? (
-        <div className={`ui-dropdown-menu ui-dropdown-align-${align}`} role="menu">
+        <div
+          className={`ui-dropdown-menu ui-dropdown-align-${align}`}
+          role="menu"
+          onClick={(e) => {
+            if (e.target.closest('.ui-dropdown-item')) setOpen(false)
+          }}
+        >
           {children}
         </div>
       ) : null}

@@ -13,6 +13,29 @@ function clipOf(event) {
   return mediaUrl(event?.clip_uri || event?.video_uri)
 }
 
+function extensionOf(url, fallback) {
+  const match = /\.([a-z0-9]+)(?:$|\?)/i.exec(url || '')
+  return match ? match[1].toLowerCase() : fallback
+}
+
+// The `download` attribute is ignored for cross-origin links (Render / Cloudinary), so fetch the file first.
+async function downloadFile(url, filename) {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const objectUrl = URL.createObjectURL(await res.blob())
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+  } catch {
+    window.open(url, '_blank', 'noopener')
+  }
+}
+
 function statusInfo(event) {
   if (event.status === 'resolved') return { label: 'Acknowledged', tone: 'safe' }
   if (event.status === 'dismissed') return { label: 'Dismissed', tone: 'muted' }
@@ -242,9 +265,13 @@ export default function SnapshotModal({
   const status = statusInfo(event)
   const clip = clipOf(event)
   const download = clip
-    ? { href: clip, label: 'Download Video' }
+    ? { href: clip, label: 'Download Video', filename: `poolseye-${event.id}.${extensionOf(clip, 'webm')}` }
     : event.snapshot_uri
-      ? { href: mediaUrl(event.snapshot_uri), label: 'Download Snapshot' }
+      ? {
+          href: mediaUrl(event.snapshot_uri),
+          label: 'Download Snapshot',
+          filename: `poolseye-${event.id}.${extensionOf(event.snapshot_uri, 'jpg')}`,
+        }
       : null
 
   const details = [
@@ -334,7 +361,17 @@ export default function SnapshotModal({
 
         <footer className="review-foot">
           {download ? (
-            <a className="review-btn is-outline" href={download.href} download target="_blank" rel="noreferrer">
+            <a
+              className="review-btn is-outline"
+              href={download.href}
+              download={download.filename}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => {
+                e.preventDefault()
+                downloadFile(download.href, download.filename)
+              }}
+            >
               <Icon.Download />
               {download.label}
             </a>

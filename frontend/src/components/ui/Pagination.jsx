@@ -10,6 +10,7 @@ export default function Pagination({
   onPageChange,
   summary,
   className = '',
+  showSinglePage = false,
 }) {
   const safeTotal = Math.max(1, totalPages)
   const current = Math.min(Math.max(1, page), safeTotal)
@@ -37,7 +38,7 @@ export default function Pagination({
   return (
     <div className={`ui-pagination ${className}`.trim()} aria-label="Pagination">
       {summary ? <span className="ui-pagination-summary">{summary}</span> : <span />}
-      {safeTotal > 1 ? (
+      {safeTotal > 1 || showSinglePage ? (
         <div className="ui-page-btns">
           <button
             type="button"

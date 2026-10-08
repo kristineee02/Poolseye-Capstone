@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../components/ui/Icon'
 import { FormModal, ConfirmModal, StatusModal, useStatusModal } from '../components/ui/Modal'
 import { SelectDropdown } from '../components/ui/Dropdown'
-import { StatusBadge } from '../components/ui/Badge'
 import { EmptyState } from '../components/ui/EmptyState'
 import Pagination from '../components/ui/Pagination'
 import {
@@ -33,6 +32,18 @@ const DEFAULT_ROLE = 'Lifeguard'
 const DEFAULT_ASSIGNED_ZONES = ['Main Pool']
 const PAGE_SIZE = 4
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024
+
+const STATUS_LABELS = { active: 'Active', inactive: 'Inactive', archived: 'Archived' }
+
+function formatShiftTime(value) {
+  return String(value || '').trim().replace(/^0(\d)/, '$1')
+}
+
+function formatShift(guard) {
+  const start = formatShiftTime(guard.shiftStart || '06:00 AM')
+  const end = formatShiftTime(guard.shiftEnd || '06:00 PM')
+  return `${start} – ${end}`
+}
 
 const emptyAddForm = {
   firstName: '',
@@ -181,6 +192,7 @@ export default function LifeguardsPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showArchiveModal, setShowArchiveModal] = useState(false)
+  const [showRestoreModal, setShowRestoreModal] = useState(false)
   const [showAlertModal, setShowAlertModal] = useState(false)
   const [selected, setSelected] = useState(null)
   const [formData, setFormData] = useState(emptyAddForm)
@@ -463,13 +475,15 @@ export default function LifeguardsPage() {
   }
 
   const handleDeactivate = async () => {
-    const result = await archiveLifeguard(selected.id)
+    const guard = selected
+    if (!guard) return
+    const result = await archiveLifeguard(guard.id)
     if (!result.ok) {
       showStatus({ tone: 'error', title: 'Could not deactivate', message: result.error || 'Could not archive this account.' })
       return
     }
     setGuards(await fetchLifeguards())
-    showStatus({ tone: 'success', title: 'Account archived', message: `${selected.name} was deactivated and moved to Archived.` })
+    showStatus({ tone: 'success', title: 'Account archived', message: `${guard.name} was deactivated and moved to Archived.` })
   }
 
   const handleRestore = async (guard) => {
@@ -515,7 +529,7 @@ export default function LifeguardsPage() {
       <div className="pagehead">
         <div>
           <h1>Lifeguard accounts</h1>
-          <div className="sub">Managing accounts</div>
+          <div className="sub">Managing lifeguard accounts and their assigned shifts.</div>
         </div>
         <div className="pagehead-right">
           <button type="button" className="btn-warning" onClick={() => setShowAlertModal(true)}>
@@ -594,89 +608,95 @@ export default function LifeguardsPage() {
             />
           </div>
         ) : (
-          <div className="lg-card-list">
-            {pageItems.map((guard) => (
-              <article
-                key={guard.id}
-                className={`lg-card ${guard.status === 'inactive' ? 'is-inactive' : ''}`}
-              >
-                <div className="lg-avatar">
-                  {guard.photoUri ? (
-                    <img src={guard.photoUri} alt="" className="lg-avatar-img" />
-                  ) : (
-                    guard.initials
-                  )}
-                </div>
-
-                <div className="lg-info">
-                  <div className="lg-name-row">
-                    <span className="lg-name-text">{guard.name}</span>
-                    <StatusBadge status={guard.status === 'archived' ? 'inactive' : guard.status} />
-                    {guard.mobileAppStatus === 'connected' && guard.status !== 'archived' ? (
-                      <span className="app-connected-pill">
-                        <Icon.Phone /> App
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="lg-role">{guard.role}</div>
-                  <div className="lg-meta">
-                    <span><Icon.Mail /> {guard.email}</span>
-                    <span><Icon.Phone /> {guard.phone}</span>
-                    {guard.assignedZones.length > 0 ? (
-                      <span><Icon.Fence /> {guard.assignedZones.join(', ')}</span>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="lg-stats">
-                  <div className="lg-stat">
-                    <span className="lg-stat-val">{guard.acknowledgedAlerts}</span>
-                    <span className="lg-stat-lbl">Acknowledged</span>
-                  </div>
-                  <div className="lg-stat">
-                    <span className={`lg-stat-val ${guard.missedAlerts > 0 ? 'alarm' : ''}`}>
-                      {guard.missedAlerts}
-                    </span>
-                    <span className="lg-stat-lbl">Missed</span>
-                  </div>
-                </div>
-
-                <div className="lg-actions">
-                  {rosterView === 'archived' ? (
-                    <button
-                      type="button"
-                      className="btn-icon-secondary"
-                      title="Activate account"
-                      onClick={() => handleRestore(guard)}
-                    >
-                      <Icon.Power />
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="btn-icon-secondary"
-                        title="Edit account"
-                        onClick={() => openEdit(guard)}
-                      >
-                        <Icon.Edit />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-icon-secondary"
-                        title="Deactivate"
-                        onClick={() => {
-                          setSelected(guard)
-                          setShowArchiveModal(true)
-                        }}
-                      >
-                        <Icon.Power />
-                      </button>
-                    </>
-                  )}
-                </div>
-              </article>
-            ))}
+          <div className="lg-table-wrap">
+            <table className="lg-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>Contact</th>
+                  <th>Assigned Shift</th>
+                  <th>Zone</th>
+                  <th>Status</th>
+                  <th className="lg-col-actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageItems.map((guard) => {
+                  const isArchived = guard.status === 'archived'
+                  const appConnected = guard.mobileAppStatus === 'connected' && !isArchived
+                  return (
+                    <tr key={guard.id} className={guard.status !== 'active' ? 'is-inactive' : ''}>
+                      <td>
+                        <div
+                          className="lg-name-cell"
+                          title={`${guard.acknowledgedAlerts} acknowledged · ${guard.missedAlerts} missed alerts`}
+                        >
+                          <div className="lg-avatar">
+                            {guard.photoUri ? (
+                              <img src={guard.photoUri} alt="" className="lg-avatar-img" />
+                            ) : (
+                              guard.initials
+                            )}
+                          </div>
+                          <div className="lg-name-info">
+                            <div className="lg-name-row">
+                              <span className="lg-name-text">{guard.name}</span>
+                              {appConnected ? (
+                                <span className="app-connected-pill" title="Mobile app connected">
+                                  <Icon.Phone /> App
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="lg-email">{guard.email}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td data-label="Role">{guard.role}</td>
+                      <td data-label="Contact" className="lg-nowrap">{guard.phone || '—'}</td>
+                      <td data-label="Assigned Shift" className="lg-nowrap">{formatShift(guard)}</td>
+                      <td data-label="Zone">
+                        {guard.assignedZones.length ? guard.assignedZones.join(', ') : '—'}
+                      </td>
+                      <td data-label="Status">
+                        <span className={`lg-status-pill is-${guard.status}`}>
+                          <span className="lg-status-dot" aria-hidden="true" />
+                          {STATUS_LABELS[guard.status] || guard.status}
+                        </span>
+                      </td>
+                      <td className="lg-col-actions">
+                        <div className="lg-actions">
+                          {isArchived ? null : (
+                            <button
+                              type="button"
+                              className="lg-action-btn"
+                              title="Edit account"
+                              aria-label={`Edit ${guard.name}`}
+                              onClick={() => openEdit(guard)}
+                            >
+                              <Icon.Edit />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="lg-action-btn"
+                            title={isArchived ? 'Activate account' : 'Deactivate account'}
+                            aria-label={isArchived ? `Activate ${guard.name}` : `Deactivate ${guard.name}`}
+                            onClick={() => {
+                              setSelected(guard)
+                              if (isArchived) setShowRestoreModal(true)
+                              else setShowArchiveModal(true)
+                            }}
+                          >
+                            <Icon.MoreVertical />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
 
@@ -686,7 +706,12 @@ export default function LifeguardsPage() {
             page={currentPage}
             totalPages={totalPages}
             onPageChange={setPage}
-            summary={`Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filtered.length)} of ${filtered.length}`}
+            showSinglePage
+            summary={
+              totalPages > 1
+                ? `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filtered.length)} of ${filtered.length} lifeguards`
+                : `Showing ${filtered.length} of ${filtered.length} lifeguard${filtered.length === 1 ? '' : 's'}`
+            }
           />
         ) : null}
       </div>
@@ -977,6 +1002,19 @@ export default function LifeguardsPage() {
         onConfirm={handleDeactivate}
         icon={Icon.Archive}
         confirmText="Deactivate"
+        cancelText="Cancel"
+        isDangerous
+      />
+
+      <ConfirmModal
+        isOpen={showRestoreModal}
+        onClose={() => setShowRestoreModal(false)}
+        title="Activate Lifeguard Account"
+        message={`Activate ${selected?.name}'s account? They will be moved back to the active roster and can sign in again.`}
+        onConfirm={() => selected && handleRestore(selected)}
+        icon={Icon.Power}
+        tone="info"
+        confirmText="Activate"
         cancelText="Cancel"
       />
     </div>

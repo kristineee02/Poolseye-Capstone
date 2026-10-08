@@ -25,6 +25,9 @@ Without a password, a temporary one is printed once in the backend log. It must 
 
 Lifeguard accounts are created by the admin on the **Lifeguards** page; the mobile app signs in with those.
 
+Alert snapshots and clips: set `CLOUDINARY_URL` (free Cloudinary account → Settings → API Keys) in `backend/.env`
+and on Render so Event history playback survives restarts. Without it, media is saved to `backend/media`.
+
 ## Web (frontend)
 
 ```bash
