@@ -87,3 +87,11 @@ export async function createTestAlert(kind) {
 export async function dispatchEvent(id) {
   return apiFetch(`/api/events/${encodeURIComponent(id)}/dispatch`, { method: 'POST' })
 }
+
+export async function fetchAlarm() {
+  return apiFetch('/api/alarm')
+}
+
+export async function setManualAlarm(active) {
+  return apiFetch('/api/alarm/manual', { method: 'POST', body: JSON.stringify({ active }) })
+}

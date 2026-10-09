@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '../ui/Icon'
-import { createTestAlert, dispatchEvent, fetchActiveAlert, fetchEventSummary } from '../../api/events'
+import {
+  createTestAlert,
+  dispatchEvent,
+  fetchActiveAlert,
+  fetchAlarm,
+  fetchEventSummary,
+  setManualAlarm,
+} from '../../api/events'
 import { formatTime, zoneLabel } from '../history/eventKinds'
 import './RightRail.css'
 
@@ -139,9 +146,11 @@ export default function RightRail({ onNavigate }) {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(null)
+  const [alarm, setAlarm] = useState(null)
 
   const load = useCallback(async () => {
-    const [active, totals] = await Promise.all([fetchActiveAlert(), fetchEventSummary()])
+    const [active, totals, alarmState] = await Promise.all([fetchActiveAlert(), fetchEventSummary(), fetchAlarm()])
+    if (alarmState.ok) setAlarm(alarmState)
     if (!active.ok || !totals.ok) {
       setError(active.error || totals.error || 'Could not load alerts.')
       return
@@ -191,6 +200,19 @@ export default function RightRail({ onNavigate }) {
     load()
   }
 
+  const toggleAlarm = async () => {
+    const turnOn = !alarm?.manualActive
+    setBusy('alarm')
+    const result = await setManualAlarm(turnOn)
+    setBusy(null)
+    if (!result.ok) {
+      setError(result.error || 'Could not update the alarm.')
+      return
+    }
+    setAlarm(result)
+    setNotice(turnOn ? 'Pool alarm activated.' : 'Manual alarm silenced.')
+  }
+
   const stats = [
     { label: 'Intrusions flagged', value: summary?.intrusions_flagged },
     { label: 'Supervised visits', value: summary?.supervised_visits },
@@ -215,6 +237,33 @@ export default function RightRail({ onNavigate }) {
         />
         {notice ? <div className="rr-notice">{notice}</div> : null}
         {error ? <div className="rr-error">{error}</div> : null}
+      </section>
+
+      <section className="rr-card">
+        <div className="active-alert-head">
+          <h2>Alarm Speaker</h2>
+          <span className={`rr-node-status ${alarm?.nodeOnline ? 'is-online' : 'is-offline'}`}>
+            {alarm?.nodeOnline ? 'Node online' : 'Node offline'}
+          </span>
+        </div>
+        <p className={`rr-alarm-state ${alarm?.alarm ? 'is-sounding' : ''}`}>
+          {!alarm?.alarm
+            ? 'Silent'
+            : alarm.reason === 'drowning'
+              ? 'Sounding — possible drowning. Stops once a lifeguard acknowledges or dismisses it.'
+              : 'Sounding — manual alarm.'}
+        </p>
+        <div className="quick-actions">
+          <button
+            type="button"
+            className={alarm?.manualActive ? 'qa-btn' : 'qa-btn danger'}
+            onClick={toggleAlarm}
+            disabled={Boolean(busy)}
+          >
+            <Icon.Bell />
+            {busy === 'alarm' ? 'Updating…' : alarm?.manualActive ? 'Silence manual alarm' : 'Activate pool alarm'}
+          </button>
+        </div>
       </section>
 
       <section className="rr-card">
