@@ -60,3 +60,38 @@
 .review-strip .event-thumb-badge { width: 16px; height: 16px; top: 4px; right: 4px; }
 .review-strip .event-thumb-badge svg { width: 10px; height: 10px; }
 .review-strip .event-thumb-cam { width: 16px; height: 16px; }
+
+.event-thumb-play {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.72);
+  color: #fff;
+}
+.event-thumb-play svg { width: 9px; height: 9px; margin-left: 1px; fill: currentColor; }
+.review-strip .event-thumb-play { display: none; }
+
+.event-thumb-missing {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 3px;
+  padding: 0 4px;
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+.event-thumb-sm .event-thumb-missing { font-size: 8px; }
+.review-player .event-thumb-missing { display: none; }

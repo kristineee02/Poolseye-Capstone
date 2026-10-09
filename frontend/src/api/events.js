@@ -71,7 +71,9 @@ export async function fetchActiveAlert() {
 }
 
 export async function fetchEventSummary() {
-  return apiFetch('/api/events/summary')
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  return apiFetch(`/api/events/summary?since=${todayStart.getTime() / 1000}`)
 }
 
 export async function fetchAnalytics(range = '7d') {
@@ -84,11 +86,4 @@ export async function createTestAlert(kind) {
 
 export async function dispatchEvent(id) {
   return apiFetch(`/api/events/${encodeURIComponent(id)}/dispatch`, { method: 'POST' })
-}
-
-export async function updateEventStatus(id, status) {
-  return apiFetch(`/api/events/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status }),
-  })
 }

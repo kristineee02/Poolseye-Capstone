@@ -16,6 +16,13 @@ import { useAuth } from '../context/AuthContext';
 import { fetchMobileEvents, respondToMobileEvent, updateMobileEventStatus } from '../api/events';
 
 const POLL_MS = 4000;
+const ZONE_CATEGORIES = ['intrusion', 'deep-water', 'supervision'];
+
+function localMidnightTs() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime() / 1000;
+}
 
 function getAlertMeta(alert) {
   const isAlarm = alert.type === 'alarm';
@@ -142,7 +149,7 @@ function OverviewSection({ stats }) {
           style={[styles.overviewCell, index < stats.length - 1 && styles.overviewCellGap]}
         >
           <Text style={[styles.overviewValue, { color: s.color }]}>{s.value}</Text>
-          <Text style={styles.overviewLabel}>{s.label}</Text>
+          <Text style={styles.overviewLabel} numberOfLines={1} adjustsFontSizeToFit>{s.label}</Text>
         </View>
       ))}
     </View>
@@ -227,7 +234,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
   const loadAlerts = useCallback(async () => {
     if (!token) return;
     const [pendingRes, recentRes] = await Promise.all([
-      fetchMobileEvents(token, { alertsOnly: true, status: 'pending', limit: 20 }),
+      fetchMobileEvents(token, { alertsOnly: true, status: 'pending', limit: 50, ackSince: localMidnightTs() }),
       fetchMobileEvents(token, { alertsOnly: true, status: 'all', limit: 8 }),
     ]);
 
@@ -240,12 +247,11 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
     setConnected(true);
     setError('');
     setActiveAlerts(pendingRes.events || []);
+    setAckCount(pendingRes.acknowledgedToday ?? 0);
     onPendingCountChange?.(pendingRes.pendingCount ?? pendingRes.events?.length ?? 0);
 
     if (recentRes.ok) {
       setRecentAlerts(recentRes.events || []);
-      const cleared = (recentRes.events || []).filter((e) => e.status === 'ack').length;
-      setAckCount(cleared);
     }
   }, [token, onPendingCountChange]);
 
@@ -308,14 +314,14 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
   const recent = (recentAlerts.length ? recentAlerts : activeAlerts).slice(0, 4);
 
   const stats = useMemo(() => {
-    const alarms = activeAlerts.filter((a) => a.type === 'alarm').length;
-    const warnings = activeAlerts.filter((a) => a.type === 'warn').length;
-    const active = activeAlerts.length;
+    const intrusion = activeAlerts.filter((a) => ZONE_CATEGORIES.includes(a.category)).length;
+    const drowning = activeAlerts.filter((a) => a.category === 'drowning').length;
+    const responding = activeAlerts.filter((a) => a.respondingAt).length;
     return [
-      { key: 'intrusion', label: 'Intrusion', value: String(active), color: active > 0 ? colors.alarm : colors.textPrimary },
-      { key: 'alarms', label: 'Alarms', value: String(alarms), color: alarms > 0 ? colors.alarm : colors.textPrimary },
-      { key: 'warnings', label: 'Warnings', value: String(warnings), color: warnings > 0 ? colors.warn : colors.textPrimary },
-      { key: 'ack', label: 'Acknowledge', value: String(ackCount), color: colors.safe },
+      { key: 'intrusion', label: 'Intrusion', value: String(intrusion), color: intrusion > 0 ? colors.alarm : colors.textPrimary },
+      { key: 'drowning', label: 'Drowning', value: String(drowning), color: drowning > 0 ? colors.alarm : colors.textPrimary },
+      { key: 'responding', label: 'Responding', value: String(responding), color: responding > 0 ? colors.warn : colors.textPrimary },
+      { key: 'ack', label: 'Acknowledged', value: String(ackCount), color: colors.safe },
     ];
   }, [activeAlerts, ackCount]);
 

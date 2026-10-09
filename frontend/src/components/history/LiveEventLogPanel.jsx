@@ -58,7 +58,7 @@ export default function LiveEventLogPanel({ onNewAlert }) {
   }, [poll])
 
   // Looked up on every poll so the clip appears in the viewer once it finishes saving
-  const withMedia = events.filter((e) => e.snapshot_uri)
+  const withMedia = events.filter((e) => e.snapshot_uri || e.clip_uri)
   const openIndex = withMedia.findIndex((e) => e.id === openId)
   const openEvent = openIndex >= 0 ? withMedia[openIndex] : null
 

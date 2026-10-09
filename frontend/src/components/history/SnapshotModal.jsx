@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { Icon } from '../ui/Icon'
 import EventThumb from './EventThumb'
 import { mediaUrl } from '../../config'
-import { CAMERA_LABEL, eventKind, isAlertEvent, zoneLabel, formatDate, formatTime, formatDateTime } from './eventKinds'
+import { cameraName, eventKind, handlingNote, isAlertEvent, sourceLabel, zoneLabel, formatDate, formatTime, formatDateTime } from './eventKinds'
 import './SnapshotModal.css'
 
 const SPEEDS = [0.5, 1, 1.5, 2]
@@ -57,7 +57,9 @@ function toggleFullscreen(el) {
 
 function EventPlayer({ event, kind, videoRef, onTime, onDuration }) {
   const frameRef = useRef(null)
-  const clip = clipOf(event)
+  const [clipFailed, setClipFailed] = useState(false)
+  const [snapshotFailed, setSnapshotFailed] = useState(false)
+  const clip = clipFailed ? null : clipOf(event)
   const [playing, setPlaying] = useState(false)
   const [muted, setMuted] = useState(true)
   const [time, setTime] = useState(0)
@@ -91,28 +93,48 @@ function EventPlayer({ event, kind, videoRef, onTime, onDuration }) {
           src={clip}
           poster={mediaUrl(event.snapshot_uri) || undefined}
           muted={muted}
+          autoPlay
           playsInline
           onClick={togglePlay}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
           onTimeUpdate={(e) => { setTime(e.currentTarget.currentTime); onTime?.(e.currentTarget.currentTime) }}
           onLoadedMetadata={(e) => { setDuration(e.currentTarget.duration); onDuration?.(e.currentTarget.duration) }}
+          onError={() => {
+            setClipFailed(true)
+            setPlaying(false)
+            onDuration?.(0)
+          }}
         />
       ) : (
         <div className="review-player-media">
-          <EventThumb event={event} kind={kind} size="fill" />
-          {!event.snapshot_uri ? (
+          <EventThumb event={event} kind={kind} size="fill" onMissing={() => setSnapshotFailed(true)} />
+          {clipFailed ? (
+            <div className="review-player-empty">
+              <Icon.VideoOff />
+              <span>Video no longer available</span>
+              <small>The recording for this event was removed or could not be loaded.</small>
+            </div>
+          ) : snapshotFailed ? (
+            <div className="review-player-empty">
+              <Icon.VideoOff />
+              <span>Snapshot unavailable</span>
+              <small>The saved image for this event was removed or could not be loaded.</small>
+            </div>
+          ) : !event.snapshot_uri ? (
             <div className="review-player-empty">
               <Icon.VideoOff />
               <span>No recording for this event</span>
               <small>Clips are saved automatically for alerts detected on the live feed.</small>
             </div>
-          ) : null}
+          ) : (
+            <div className="review-player-note">Snapshot only — no video was saved for this event</div>
+          )}
         </div>
       )}
 
       <div className="review-player-chip">
-        <strong>{event.camera || 'CAM-01'} · {CAMERA_LABEL}</strong>
+        <strong>{sourceLabel(event)}</strong>
         <span>{formatDate(event.ts)} · {formatTime(event.ts, true)}</span>
       </div>
 
@@ -230,7 +252,6 @@ export default function SnapshotModal({
   event,
   events = [],
   onClose,
-  onAcknowledge,
   onSelect,
   onPrev,
   onNext,
@@ -276,7 +297,7 @@ export default function SnapshotModal({
 
   const details = [
     { icon: Icon.Calendar, label: 'Timestamp', value: `${formatDate(event.ts)}   ·   ${formatTime(event.ts, true)}` },
-    { icon: Icon.Camera, label: 'Camera', value: event.camera || '—' },
+    { icon: Icon.Camera, label: 'Camera', value: cameraName(event) },
     { icon: Icon.MapPin, label: 'Detected in', value: zoneLabel(event) || '—' },
     { icon: Icon.Users, label: 'Person', value: event.person_id != null ? `#${event.person_id}` : '—' },
   ]
@@ -294,7 +315,7 @@ export default function SnapshotModal({
           <span className={`review-head-icon kind-${kind.id}`}><Icon.Camera /></span>
           <div className="review-head-text">
             <h2 id="review-modal-title">{event.title}</h2>
-            <p>{event.camera || 'CAM-01'} · {CAMERA_LABEL}</p>
+            <p>{sourceLabel(event)}</p>
           </div>
           <button type="button" className="review-close" onClick={onClose} aria-label="Close">
             <Icon.X />
@@ -343,19 +364,16 @@ export default function SnapshotModal({
               <div>
                 <span className="k">Status</span>
                 <span className={`review-status tone-${status.tone}`}>{status.label}</span>
+                {handlingNote(event) ? <span className="review-detail-note">{handlingNote(event)}</span> : null}
                 {event.acknowledged_at ? (
-                  <span className="review-detail-note">Acknowledged {formatDateTime(event.acknowledged_at)}</span>
+                  <span className="review-detail-note">
+                    {event.status === 'dismissed' ? 'Dismissed' : 'Acknowledged'} {formatDateTime(event.acknowledged_at)}
+                  </span>
+                ) : event.responding_at ? (
+                  <span className="review-detail-note">Responding since {formatDateTime(event.responding_at)}</span>
                 ) : null}
               </div>
             </div>
-            {onAcknowledge ? (
-              <div className="review-details-action">
-                <button type="button" className="review-btn is-safe" onClick={onAcknowledge}>
-                  <Icon.CheckCircle />
-                  Acknowledge event
-                </button>
-              </div>
-            ) : null}
           </aside>
         </div>
 

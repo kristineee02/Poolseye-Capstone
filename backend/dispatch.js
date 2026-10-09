@@ -63,6 +63,12 @@ async function escalateEvent(db, eventId) {
   )
   if (!claimed?.changes) return null
 
+  // Every active lifeguard was paged and nobody claimed it in time.
+  await run(
+    db,
+    "UPDATE users SET missed_alerts = COALESCE(missed_alerts, 0) + 1 WHERE role = 'lifeguard' AND COALESCE(status, 'active') = 'active'"
+  )
+
   const event = await get(db, 'SELECT * FROM events WHERE id = ?', [eventId])
   return pushToLifeguards(db, event, `URGENT — no response yet: ${PUSH_TITLES[event.category] || event.title}`)
 }

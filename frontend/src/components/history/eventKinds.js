@@ -20,6 +20,31 @@ export function isAlertEvent(event) {
 
 export const CAMERA_LABEL = 'Pool CCTV'
 
+/** Detections from a video the admin uploaded to the feed are stored with camera = 'UPLOAD'. */
+export function isUploadedVideo(event) {
+  return event?.camera === 'UPLOAD'
+}
+
+export function cameraName(event) {
+  if (isUploadedVideo(event)) return 'Uploaded video'
+  return event?.camera || '—'
+}
+
+export function sourceLabel(event) {
+  return isUploadedVideo(event) ? 'Uploaded video' : `${event?.camera || 'CAM-01'} · ${CAMERA_LABEL}`
+}
+
+/** Who handled an alert, as shown to the admin (only lifeguards can close alerts). */
+export function handlingNote(event) {
+  if (!isAlertEvent(event)) return null
+  if (event.status === 'resolved') return event.acknowledged_by_name ? `by ${event.acknowledged_by_name}` : null
+  if (event.status === 'dismissed') return event.acknowledged_by_name ? `False alarm · ${event.acknowledged_by_name}` : 'False alarm'
+  if (event.responding_at) return `${event.responder_name || 'A lifeguard'} responding`
+  if (event.escalated_at) return 'No response yet'
+  if (event.dispatched_at) return 'Sent to lifeguards'
+  return 'Not sent yet'
+}
+
 export function zoneLabel(event) {
   // Broadcasts store their priority in zone_label; they have no detection zone
   if (event?.category === 'broadcast') return null

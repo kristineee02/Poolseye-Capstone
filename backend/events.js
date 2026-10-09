@@ -17,6 +17,10 @@ function ingestAuthorized(req) {
 // Ids of the sample events earlier builds seeded into every new database.
 // Live events use evt-<10 hex chars>, so these never match real detections.
 const LEGACY_DEMO_EVENT_IDS = ['evt-1', 'evt-2', 'evt-3', 'evt-4', 'evt-5']
+// Test alerts only exist to exercise the lifeguard app; they are cleared on the next start after a day.
+const TEST_EVENT_TTL_SEC = 24 * 60 * 60
+// Event history and its counts only cover detections, not test alerts or admin broadcasts.
+const REAL_EVENTS_SQL = "COALESCE(camera, '') <> 'TEST' AND COALESCE(category, '') <> 'broadcast'"
 
 function rowToEvent(row) {
   if (!row) return null
@@ -57,15 +61,20 @@ function rowToEvent(row) {
   }
 }
 
-/** rowToEvent for many rows, plus the name of the lifeguard responding to each. */
+/** rowToEvent for many rows, plus who is responding to and who closed each one. */
 async function eventsWithResponders(db, rows) {
-  const ids = [...new Set(rows.map((r) => r.responding_by).filter((v) => v != null))]
-  const names = new Map()
+  const ids = [...new Set(rows.flatMap((r) => [r.responding_by, r.acknowledged_by]).filter((v) => v != null))]
+  const users = new Map()
   if (ids.length) {
-    const users = await all(db, `SELECT id, name FROM users WHERE id IN (${ids.map(() => '?').join(', ')})`, ids)
-    for (const u of users) names.set(u.id, u.name)
+    const found = await all(db, `SELECT id, name, role FROM users WHERE id IN (${ids.map(() => '?').join(', ')})`, ids)
+    for (const u of found) users.set(u.id, u)
   }
-  return rows.map((row) => ({ ...rowToEvent(row), responder_name: names.get(row.responding_by) ?? null }))
+  return rows.map((row) => ({
+    ...rowToEvent(row),
+    responder_name: users.get(row.responding_by)?.name ?? null,
+    acknowledged_by_name: users.get(row.acknowledged_by)?.name ?? null,
+    acknowledged_by_role: users.get(row.acknowledged_by)?.role ?? null,
+  }))
 }
 
 async function eventWithResponder(db, row) {
@@ -129,6 +138,9 @@ async function removeLegacyDemoEvents(db) {
   const placeholders = LEGACY_DEMO_EVENT_IDS.map(() => '?').join(', ')
   const result = await run(db, `DELETE FROM events WHERE id IN (${placeholders})`, LEGACY_DEMO_EVENT_IDS)
   if (result?.changes) console.log('Removed sample events from earlier builds:', result.changes)
+
+  const tests = await run(db, "DELETE FROM events WHERE camera = 'TEST' AND ts < ?", [Date.now() / 1000 - TEST_EVENT_TTL_SEC])
+  if (tests?.changes) console.log('Removed old test alerts:', tests.changes)
 }
 
 async function insertEvent(db, payload) {
@@ -178,6 +190,10 @@ async function insertEvent(db, payload) {
 }
 
 const ALERT_SQL = "(is_alert = 1 OR type = 'alarm')"
+const DETECTION_CATEGORIES = ['intrusion', 'deep-water', 'supervision', 'drowning']
+// Matches LOOKBACK_SEC in dispatch.js: alerts older than this are no longer auto-sent either.
+const ACTIVE_ALERT_WINDOW_SEC = 15 * 60
+const SUPERVISED_WINDOW_SEC = 5 * 60
 
 const TEST_ALERTS = {
   intrusion: {
@@ -202,7 +218,7 @@ function registerEventRoutes(app, db, adminRequired) {
       const page = Math.max(1, Number(req.query.page) || 1)
       const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 4))
 
-      const conditions = []
+      const conditions = [REAL_EVENTS_SQL]
       const params = []
 
       if (Number.isFinite(since) && since > 0) {
@@ -290,7 +306,7 @@ function registerEventRoutes(app, db, adminRequired) {
     try {
       const rows = await all(
         db,
-        'SELECT DISTINCT camera FROM events ORDER BY camera ASC'
+        `SELECT DISTINCT camera FROM events WHERE ${REAL_EVENTS_SQL} ORDER BY camera ASC`
       )
       res.json({ cameras: rows.map((r) => r.camera) })
     } catch (err) {
@@ -301,35 +317,55 @@ function registerEventRoutes(app, db, adminRequired) {
 
   app.get('/api/events/active', adminRequired, async (_req, res) => {
     try {
-      // Get the most recent pending alarm event
+      const now = Date.now() / 1000
+      // Only detector alerts (and test alerts of the same kinds) that are still current;
+      // manual broadcasts and older unreviewed alerts stay in Event history.
       const row = await get(
         db,
         `SELECT * FROM events
          WHERE status = 'pending' AND is_alert = 1
+           AND category IN (${DETECTION_CATEGORIES.map(() => '?').join(', ')})
+           AND ts >= ?
          ORDER BY ts DESC
-         LIMIT 1`
+         LIMIT 1`,
+        [...DETECTION_CATEGORIES, now - ACTIVE_ALERT_WINDOW_SEC]
       )
-      if (!row) {
-        return res.json({ active: null })
-      }
-      res.json({ active: await eventWithResponder(db, row) })
+      const supervisedRow = row
+        ? null
+        : await get(
+            db,
+            `SELECT * FROM events
+             WHERE event_name = 'SUPERVISED' AND ts >= ?
+             ORDER BY ts DESC
+             LIMIT 1`,
+            [now - SUPERVISED_WINDOW_SEC]
+          )
+      res.json({
+        active: row ? await eventWithResponder(db, row) : null,
+        supervised: rowToEvent(supervisedRow),
+      })
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: 'Failed to load active alert' })
     }
   })
 
-  app.get('/api/events/summary', adminRequired, async (_req, res) => {
+  app.get('/api/events/summary', adminRequired, async (req, res) => {
     try {
-      const todayStart = new Date()
-      todayStart.setHours(0, 0, 0, 0)
-      const todayTs = todayStart.getTime() / 1000
+      // The browser sends its own local midnight; the server clock may be UTC (e.g. Render).
+      let todayTs = Number(req.query.since)
+      if (!Number.isFinite(todayTs) || todayTs <= 0) {
+        const todayStart = new Date()
+        todayStart.setHours(0, 0, 0, 0)
+        todayTs = todayStart.getTime() / 1000
+      }
 
-      // Unsupervised and after-hours alerts raised today
+      // Red-zone, deep-pool, unsupervised and after-hours alerts raised today
       const intrusionRow = await get(
         db,
         `SELECT COUNT(*) as count FROM events
-         WHERE ts >= ? AND is_alert = 1 AND category = 'supervision' AND COALESCE(camera, '') <> 'TEST'`,
+         WHERE ts >= ? AND is_alert = 1 AND category IN ('intrusion', 'deep-water', 'supervision')
+           AND COALESCE(camera, '') <> 'TEST'`,
         [todayTs]
       )
       // People who were in the pool area with someone within the threshold
@@ -359,26 +395,6 @@ function registerEventRoutes(app, db, adminRequired) {
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: 'Failed to load event' })
-    }
-  })
-
-  app.patch('/api/events/:id', adminRequired, async (req, res) => {
-    try {
-      const row = await get(db, 'SELECT * FROM events WHERE id = ?', [req.params.id])
-      if (!row) return res.status(404).json({ error: 'Event not found' })
-
-      const status = req.body?.status
-      const allowed = ['pending', 'resolved', 'dismissed']
-      if (!status || !allowed.includes(status)) {
-        return res.status(400).json({ error: 'Invalid status' })
-      }
-
-      await setEventStatus(db, req.params.id, status, req.user?.id)
-      const updated = await get(db, 'SELECT * FROM events WHERE id = ?', [req.params.id])
-      res.json({ ok: true, event: await eventWithResponder(db, updated) })
-    } catch (err) {
-      console.error(err)
-      res.status(500).json({ error: 'Failed to update event' })
     }
   })
 

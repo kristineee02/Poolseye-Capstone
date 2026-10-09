@@ -95,6 +95,8 @@ MAX_DISPLAY_DELAY_SEC = 2.5
 STALE_RESULT_SEC = 3.0
 # Each alert saves the annotated frame plus this much of the feed leading up to it
 CLIP_SECONDS = 5.0
+# ...plus this much after it, so playback shows what happened next
+CLIP_AFTER_SECONDS = 5.0
 CLIP_MAX_WIDTH = 640  # VP8 encoding competes with inference for the CPU
 
 # Crossing text from zone_check → dashboard event shape
@@ -252,6 +254,8 @@ class AlertMediaRecorder:
 
     The feed is shown behind detection, so a request waits until the alert's own
     frame has been published; the snapshot then shows exactly what triggered it.
+    The clip waits a little longer so it covers CLIP_SECONDS before that frame and
+    CLIP_AFTER_SECONDS after it.
     """
 
     def __init__(self):
@@ -262,7 +266,7 @@ class AlertMediaRecorder:
         threading.Thread(target=self._run, daemon=True).start()
 
     def add_frame(self, seq: int, ts: float, jpeg: bytes):
-        keep = CLIP_SECONDS + MAX_DISPLAY_DELAY_SEC + 3.0
+        keep = CLIP_SECONDS + CLIP_AFTER_SECONDS + MAX_DISPLAY_DELAY_SEC + 3.0
         with self._lock:
             self._frames.append((seq, ts, jpeg))
             while self._frames and ts - self._frames[0][1] > keep:
@@ -278,51 +282,84 @@ class AlertMediaRecorder:
             self._pending = []
             self._frames.clear()
         for job in jobs:
-            clip = [f for f in frames if f[1] >= job["ts"] - CLIP_SECONDS]
-            threading.Thread(target=self._save_quietly, args=(job, clip), daemon=True).start()
-
-    def _save_quietly(self, job: dict, frames: list):
-        try:
-            self._save(job, frames)
-        except Exception as exc:
-            print(f"[media] could not save evidence for {job['id']}: {exc}")
+            at = job.get("at") or self._alert_frame(job, frames)
+            if at is None:
+                continue
+            if job.get("at") is None:
+                self._spawn(self._save_snapshot, job, at)
+            self._spawn(self._save_clip, job, self._clip_frames(at, frames))
 
     def request(self, event_id: str, seq: int, ts: float):
+        now = time.time()
         with self._lock:
             self._pending.append({
-                "id": event_id, "seq": seq, "ts": ts,
-                "deadline": time.time() + MAX_DISPLAY_DELAY_SEC + 2.0,
+                "id": event_id, "seq": seq, "ts": ts, "at": None,
+                "deadline": now + MAX_DISPLAY_DELAY_SEC + 2.0,
+                "clip_deadline": now + MAX_DISPLAY_DELAY_SEC + CLIP_AFTER_SECONDS + 4.0,
             })
         self._wake.set()
+
+    @staticmethod
+    def _alert_frame(job: dict, frames: list):
+        return next((f for f in frames if f[0] >= job["seq"]), None) or (frames[-1] if frames else None)
+
+    @staticmethod
+    def _clip_frames(at, frames: list) -> list:
+        return [f for f in frames if at[1] - CLIP_SECONDS <= f[1] <= at[1] + CLIP_AFTER_SECONDS]
+
+    @staticmethod
+    def _spawn(target, *args):
+        threading.Thread(target=target, args=args, daemon=True).start()
 
     def _run(self):
         while True:
             self._wake.wait(1.0)
             self._wake.clear()
             now = time.time()
-            ready = []
+            snapshots, clips = [], []
             with self._lock:
-                newest_seq = self._frames[-1][0] if self._frames else 0
+                frames = list(self._frames)
+                newest_seq = frames[-1][0] if frames else 0
+                newest_ts = frames[-1][1] if frames else 0.0
                 for job in list(self._pending):
-                    if newest_seq >= job["seq"] or now >= job["deadline"]:
+                    if job["at"] is None and (newest_seq >= job["seq"] or now >= job["deadline"]):
+                        job["at"] = self._alert_frame(job, frames)
+                        if job["at"] is None:
+                            self._pending.remove(job)
+                            continue
+                        snapshots.append((job, job["at"]))
+                    if job["at"] is not None and (
+                        newest_ts >= job["at"][1] + CLIP_AFTER_SECONDS or now >= job["clip_deadline"]
+                    ):
                         self._pending.remove(job)
-                        ready.append((job, [f for f in self._frames if f[1] >= job["ts"] - CLIP_SECONDS]))
-            for job, frames in ready:
-                try:
-                    self._save(job, frames)
-                except Exception as exc:
-                    print(f"[media] could not save evidence for {job['id']}: {exc}")
+                        clips.append((job, self._clip_frames(job["at"], frames)))
+            for job, at in snapshots:
+                self._spawn(self._save_snapshot, job, at)
+            for job, clip in clips:
+                self._spawn(self._save_clip, job, clip)
 
-    def _save(self, job: dict, frames: list):
-        at = next((f for f in frames if f[0] >= job["seq"]), None) or (frames[-1] if frames else None)
-        if at is None:
+    def _save_snapshot(self, job: dict, at):
+        try:
+            attach_event_media(job["id"], "snapshot_uri", upload_event_media(job["id"], "image/jpeg", at[2]))
+        except Exception as exc:
+            print(f"[media] could not save the snapshot for {job['id']}: {exc}")
+
+    def _save_clip(self, job: dict, clip: list):
+        if len(clip) < 2:
+            print(f"[media] not enough frames to record a clip for {job['id']}")
             return
-        attach_event_media(job["id"], "snapshot_uri", upload_event_media(job["id"], "image/jpeg", at[2]))
-        clip = [f for f in frames if f[1] <= at[1]]
-        if len(clip) >= 2:
+        try:
             data = encode_clip(clip)
-            if data:
-                attach_event_media(job["id"], "clip_uri", upload_event_media(job["id"], "video/webm", data))
+            if not data:
+                print(f"[media] could not encode the clip for {job['id']}")
+                return
+            uri = upload_event_media(job["id"], "video/webm", data)
+            attach_event_media(job["id"], "clip_uri", uri)
+            if uri:
+                span = clip[-1][1] - clip[0][1]
+                print(f"[media] saved {span:.1f}s clip for {job['id']} ({len(data) // 1024} KB)")
+        except Exception as exc:
+            print(f"[media] could not save the clip for {job['id']}: {exc}")
 
 
 _media = AlertMediaRecorder()

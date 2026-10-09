@@ -17,11 +17,11 @@ const STATUS_TAG = {
 
 export default function EventRow({ event, showStatus = true, onOpen }) {
   const RowIcon = ICONS[event.type] || Icon.Clock
-  const openable = Boolean(onOpen && event.snapshot_uri)
+  const openable = Boolean(onOpen && (event.snapshot_uri || event.clip_uri))
 
   const content = (
     <>
-      {event.snapshot_uri ? (
+      {event.snapshot_uri || event.clip_uri ? (
         <EventThumb event={event} size="sm" />
       ) : (
         <div className={`event-icon ${event.type}`}>

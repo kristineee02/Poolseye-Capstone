@@ -38,18 +38,20 @@ export async function respondToMobileEvent(token, id) {
   return { ok: true, event: toMobileAlert(result.event) }
 }
 
-export async function fetchMobileEvents(token, { alertsOnly = true, status = 'all', limit = 40 } = {}) {
+export async function fetchMobileEvents(token, { alertsOnly = true, status = 'all', limit = 40, ackSince } = {}) {
   const params = new URLSearchParams({
     alertsOnly: alertsOnly ? '1' : '0',
     status,
     limit: String(limit),
   })
+  if (ackSince) params.set('ackSince', String(ackSince))
   const result = await apiFetch(`/api/mobile/events?${params}`, { token })
   if (!result.ok) return result
   return {
     ok: true,
     events: (result.events || []).map(toMobileAlert),
     pendingCount: Number(result.pendingCount || 0),
+    acknowledgedToday: result.acknowledgedToday ?? null,
   }
 }
 

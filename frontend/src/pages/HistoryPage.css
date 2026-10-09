@@ -104,6 +104,13 @@
 .history-status.tone-alarm { --status-tone: var(--alarm); }
 .history-status.tone-safe { --status-tone: var(--safe); }
 .history-status.tone-warn { --status-tone: var(--warn); }
+.history-status-note {
+  margin-top: 4px;
+  padding-left: 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
 .history-status-dot {
   width: 7px;
   height: 7px;

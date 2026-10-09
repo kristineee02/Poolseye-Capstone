@@ -7,8 +7,8 @@ import { StatusModal, useStatusModal } from '../components/ui/Modal'
 import StatCard from '../components/analytics/StatCard'
 import EventThumb from '../components/history/EventThumb'
 import SnapshotModal from '../components/history/SnapshotModal'
-import { eventKind, isAlertEvent, zoneLabel, formatDate, formatTime } from '../components/history/eventKinds'
-import { fetchEvents, updateEventStatus } from '../api/events'
+import { eventKind, isAlertEvent, zoneLabel, formatDate, formatTime, cameraName, handlingNote } from '../components/history/eventKinds'
+import { fetchEvents } from '../api/events'
 import '../components/history/HistoryTable.css'
 import './HistoryPage.css'
 
@@ -58,7 +58,7 @@ const SUMMARY_CARDS = [
     label: 'Acknowledged',
     tone: 'safe',
     icon: Icon.CheckCircle,
-    hint: () => 'Reviewed by a lifeguard or admin',
+    hint: () => 'Resolved by a lifeguard',
   },
   {
     status: 'dismissed',
@@ -66,7 +66,7 @@ const SUMMARY_CARDS = [
     label: 'Dismissed',
     tone: 'warn',
     icon: Icon.X,
-    hint: () => 'Marked as false alarm',
+    hint: () => 'Marked as false alarm by a lifeguard',
   },
 ]
 
@@ -102,7 +102,7 @@ export default function HistoryPage() {
   const [dateRange, setDateRange] = useState('30d')
   const [summary, setSummary] = useState(null)
   const [search, setSearch] = useState('')
-  const [kind, setKind] = useState('all')
+  const [kind, setKind] = useState('alerts')
   const [statusFilter, setStatusFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [events, setEvents] = useState([])
@@ -111,7 +111,6 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
   const [reviewing, setReviewing] = useState(null)
-  const [refreshKey, setRefreshKey] = useState(0)
   const { status, showStatus, closeStatus } = useStatusModal()
   const pendingPick = useRef(null)
 
@@ -148,18 +147,7 @@ export default function HistoryPage() {
     return () => {
       cancelled = true
     }
-  }, [search, kind, statusFilter, since, page, refreshKey, showStatus])
-
-  const handleAcknowledge = async (event) => {
-    const result = await updateEventStatus(event.id, 'resolved')
-    if (!result.ok) {
-      showStatus({ tone: 'error', title: 'Update failed', message: result.error || 'Failed to update this event.' })
-      return
-    }
-    setReviewing((prev) => (prev?.id === event.id ? { ...prev, ...result.event } : prev))
-    setRefreshKey((n) => n + 1)
-    showStatus({ tone: 'success', title: 'Event acknowledged', message: 'This event was marked as resolved.' })
-  }
+  }, [search, kind, statusFilter, since, page, showStatus])
 
   const exportCsv = useCallback(async () => {
     if (exporting) return
@@ -186,17 +174,18 @@ export default function HistoryPage() {
       showStatus({ tone: 'notfound', title: 'Nothing to export', message: 'No events match your selected filters.' })
       return
     }
-    const header = ['ID', 'Event', 'Kind', 'Camera', 'Zone', 'Person', 'Date', 'Time', 'Status', 'Acknowledged at']
+    const header = ['ID', 'Event', 'Kind', 'Camera', 'Zone', 'Person', 'Date', 'Time', 'Status', 'Handled by', 'Acknowledged at']
     const lines = rows.map((e) => [
       e.id,
       e.title,
       eventKind(e).label,
-      e.camera,
+      cameraName(e),
       zoneLabel(e) || '',
       e.person_id != null ? `#${e.person_id}` : '',
       formatDate(e.ts),
       formatTime(e.ts, true),
       statusInfo(e).label,
+      e.acknowledged_by_name || e.responder_name || '',
       e.acknowledged_at ? new Date(e.acknowledged_at * 1000).toLocaleString() : '',
     ])
     const csv = [header, ...lines].map((row) => row.map(csvCell).join(',')).join('\n')
@@ -339,7 +328,7 @@ export default function HistoryPage() {
                     <td>
                       <span className="history-camera">
                         <Icon.Camera />
-                        {e.camera || '—'}
+                        {cameraName(e)}
                       </span>
                     </td>
                     <td>
@@ -351,6 +340,7 @@ export default function HistoryPage() {
                         <span className="history-status-dot" />
                         {st.label}
                       </span>
+                      {handlingNote(e) ? <div className="history-status-note">{handlingNote(e)}</div> : null}
                     </td>
                     <td className="col-action">
                       <button type="button" className="history-review-btn" onClick={() => setReviewing(e)}>
@@ -393,7 +383,6 @@ export default function HistoryPage() {
         hasPrev={hasPrevEvent}
         hasNext={hasNextEvent}
         onClose={() => setReviewing(null)}
-        onAcknowledge={reviewing?.status === 'pending' ? () => handleAcknowledge(reviewing) : undefined}
       />
     </div>
   )

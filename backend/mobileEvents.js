@@ -20,6 +20,17 @@ async function pendingCount(db, muted) {
   return Number(row?.count || 0)
 }
 
+async function acknowledgedSince(db, lifeguardId, since) {
+  if (!Number.isFinite(since) || since <= 0) return null
+  const row = await get(
+    db,
+    `SELECT COUNT(*) AS count FROM events
+     WHERE is_alert = 1 AND status = 'resolved' AND acknowledged_by = ? AND acknowledged_at >= ?`,
+    [lifeguardId, since]
+  )
+  return Number(row?.count || 0)
+}
+
 async function forLifeguard(db, rows, lifeguardId) {
   const events = await eventsWithResponders(db, rows)
   return events.map((e) => ({ ...e, responding_mine: e.responding_by != null && e.responding_by === lifeguardId }))
@@ -65,6 +76,7 @@ function registerMobileEventRoutes(app, db) {
         ok: true,
         events: await forLifeguard(db, rows, req.lifeguard.id),
         pendingCount: await pendingCount(db, muted),
+        acknowledgedToday: await acknowledgedSince(db, req.lifeguard.id, Number(req.query.ackSince)),
       })
     } catch (err) {
       console.error(err)
@@ -110,23 +122,33 @@ function registerMobileEventRoutes(app, db) {
         return res.status(400).json({ error: 'status must be pending, resolved, or dismissed' })
       }
 
+      const lifeguardId = req.lifeguard?.id
       const row = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
       if (!row) return res.status(404).json({ error: 'Alert not found' })
 
-      await setEventStatus(db, id, status, req.lifeguard?.id)
+      if (row.responding_by != null && row.responding_by !== lifeguardId) {
+        const [event] = await forLifeguard(db, [row], lifeguardId)
+        return res.status(409).json({
+          error: `${event.responder_name || 'Another lifeguard'} is responding to this alert.`,
+          event,
+        })
+      }
+      const closing = status === 'resolved' || status === 'dismissed'
+      if (closing && row.status !== 'pending') {
+        return res.status(400).json({ error: 'This alert is already closed.' })
+      }
 
-      if (status === 'resolved' || status === 'dismissed') {
-        const lifeguardId = req.lifeguard?.id
-        if (lifeguardId) {
-          await run(
-            db,
-            `UPDATE users SET
-              acknowledged_alerts = COALESCE(acknowledged_alerts, 0) + 1,
-              last_alert_acknowledged_at = ?
-             WHERE id = ? AND role = 'lifeguard'`,
-            [new Date().toISOString(), lifeguardId]
-          )
-        }
+      await setEventStatus(db, id, status, lifeguardId)
+
+      if (status === 'resolved' && lifeguardId) {
+        await run(
+          db,
+          `UPDATE users SET
+            acknowledged_alerts = COALESCE(acknowledged_alerts, 0) + 1,
+            last_alert_acknowledged_at = ?
+           WHERE id = ? AND role = 'lifeguard'`,
+          [new Date().toISOString(), lifeguardId]
+        )
       }
 
       res.json({

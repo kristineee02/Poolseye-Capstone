@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '../ui/Icon'
-import { createTestAlert, dispatchEvent, fetchActiveAlert, fetchEventSummary, updateEventStatus } from '../../api/events'
+import { createTestAlert, dispatchEvent, fetchActiveAlert, fetchEventSummary } from '../../api/events'
 import { formatTime, zoneLabel } from '../history/eventKinds'
 import './RightRail.css'
 
@@ -69,7 +69,15 @@ function HandoffStatus({ alert }) {
   )
 }
 
-function ActiveAlert({ alert, busy, onDispatch, onClose, onDismiss }) {
+function describeSupervised(event) {
+  const person = event.person_id != null ? `Person #${event.person_id}` : 'A person'
+  const zone = zoneLabel(event)
+  const where = zone ? ` in the ${zone.toLowerCase()}` : ''
+  const distance = event.separation_distance != null ? ` · ${Number(event.separation_distance).toFixed(1)} m from Person #${event.nearest_person_id ?? '?'}` : ''
+  return `${person} supervised${where}${distance}`
+}
+
+function ActiveAlert({ alert, supervised, busy, onDispatch }) {
   if (!alert) {
     return (
       <div className="active-alert-item is-clear">
@@ -77,13 +85,20 @@ function ActiveAlert({ alert, busy, onDispatch, onClose, onDismiss }) {
           <span className="active-alert-icon"><Icon.Check /></span>
           <span className="active-alert-title">No active alerts</span>
         </div>
-        <p className="active-alert-desc">Everyone in view is accounted for.</p>
+        <p className="active-alert-desc">No intrusion, unsupervised swimmer or possible drowning detected.</p>
+        {supervised ? (
+          <div className="active-alert-meta">
+            <span>{describeSupervised(supervised)}</span>
+            <span>{timeAgo(supervised.ts)}</span>
+          </div>
+        ) : null}
       </div>
     )
   }
 
   const zone = zoneLabel(alert)
   const age = timeAgo(alert.ts)
+  const isTest = alert.camera === 'TEST'
 
   return (
     <>
@@ -91,6 +106,7 @@ function ActiveAlert({ alert, busy, onDispatch, onClose, onDismiss }) {
         <div className="active-alert-top">
           <span className="active-alert-icon"><Icon.AlertTriangle /></span>
           <span className="active-alert-title">{alert.title}</span>
+          {isTest ? <span className="active-alert-test">TEST</span> : null}
         </div>
         <p className="active-alert-desc">{describeAlert(alert)}</p>
         <div className="active-alert-meta">
@@ -100,23 +116,15 @@ function ActiveAlert({ alert, busy, onDispatch, onClose, onDismiss }) {
       </div>
 
       {alert.dispatched_at ? (
-        <>
-          <HandoffStatus alert={alert} />
-          <button type="button" className="rr-text-btn" onClick={onClose} disabled={Boolean(busy)}>
-            {busy === 'resolved' ? 'Closing…' : 'Close alert without a lifeguard'}
-          </button>
-        </>
+        <HandoffStatus alert={alert} />
       ) : (
         <div className="rr-actions">
           <button type="button" className="qa-btn danger" onClick={onDispatch} disabled={Boolean(busy)}>
             <Icon.Bell />
             {busy === 'dispatch' ? 'Sending…' : 'Send to lifeguards'}
           </button>
-          <button type="button" className="rr-text-btn" onClick={onDismiss} disabled={Boolean(busy)}>
-            {busy === 'dismissed' ? 'Dismissing…' : 'Mark as false alarm'}
-          </button>
           {alert.ts && Date.now() / 1000 - alert.ts < AUTO_SEND_WINDOW_SEC ? (
-            <p className="rr-hint">Auto-sends to lifeguards if not reviewed within 1 minute.</p>
+            <p className="rr-hint">Auto-sends to lifeguards if not sent within 1 minute. Only a lifeguard can acknowledge or dismiss it.</p>
           ) : null}
         </div>
       )}
@@ -126,6 +134,7 @@ function ActiveAlert({ alert, busy, onDispatch, onClose, onDismiss }) {
 
 export default function RightRail({ onNavigate }) {
   const [alert, setAlert] = useState(null)
+  const [supervised, setSupervised] = useState(null)
   const [summary, setSummary] = useState(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -139,6 +148,7 @@ export default function RightRail({ onNavigate }) {
     }
     setError('')
     setAlert(active.active)
+    setSupervised(active.supervised || null)
     setSummary(totals)
   }, [])
 
@@ -175,19 +185,9 @@ export default function RightRail({ onNavigate }) {
       setError(result.error || 'Could not create the test alert.')
       return
     }
-    setNotice(kind === 'drowning' ? 'Test drowning alert created and sent to lifeguards.' : 'Test alert created — review it above.')
-    load()
-  }
-
-  const setStatus = async (status) => {
-    if (!alert) return
-    setBusy(status)
-    const result = await updateEventStatus(alert.id, status)
-    setBusy(null)
-    if (!result.ok) {
-      setError(result.error || 'Could not update the alert.')
-      return
-    }
+    setNotice(kind === 'drowning'
+      ? 'Test drowning alert created and sent to lifeguards. It is not saved to Event history.'
+      : 'Test alert created — send it to lifeguards above. It is not saved to Event history.')
     load()
   }
 
@@ -209,10 +209,9 @@ export default function RightRail({ onNavigate }) {
         </div>
         <ActiveAlert
           alert={alert}
+          supervised={supervised}
           busy={busy}
           onDispatch={dispatch}
-          onClose={() => setStatus('resolved')}
-          onDismiss={() => setStatus('dismissed')}
         />
         {notice ? <div className="rr-notice">{notice}</div> : null}
         {error ? <div className="rr-error">{error}</div> : null}
