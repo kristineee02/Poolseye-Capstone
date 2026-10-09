@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity,
-  Image, Alert, KeyboardAvoidingView, Platform,
+  Image, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
@@ -53,10 +53,11 @@ export default function EditProfileScreen({ onCancel }) {
   const pickPhoto = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert(
-        'Permission needed',
-        'Allow photo library access so you can update your profile picture.',
-      );
+      setStatus({
+        tone: 'warning',
+        title: 'Permission needed',
+        message: 'Allow photo library access so you can update your profile picture.',
+      });
       return;
     }
 

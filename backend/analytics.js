@@ -7,6 +7,8 @@ const RANGES = {
 }
 
 const SEVERITIES = ['HIGH', 'MEDIUM', 'LOW']
+// Alerts from the dashboard's "Test alert" buttons are tagged camera = 'TEST' and kept out of the stats.
+const REAL_EVENTS_SQL = "COALESCE(e.camera, '') <> 'TEST'"
 
 function severityOf(row) {
   const sev = String(row.severity || '').toUpperCase()
@@ -104,7 +106,7 @@ async function buildAnalytics(db, rangeKey) {
     `SELECT e.*, u.name AS acknowledged_by_name, u.role AS acknowledged_by_role
      FROM events e
      LEFT JOIN users u ON u.id = e.acknowledged_by
-     WHERE e.ts >= ?
+     WHERE e.ts >= ? AND ${REAL_EVENTS_SQL}
      ORDER BY e.ts ASC`,
     [sinceTs]
   )
@@ -112,7 +114,8 @@ async function buildAnalytics(db, rangeKey) {
   const prevSinceTs = sinceTs - range.days * 86400
   const prevRows = await all(
     db,
-    'SELECT type, severity, is_alert, status, ts, acknowledged_at FROM events WHERE ts >= ? AND ts < ?',
+    `SELECT type, severity, is_alert, status, ts, acknowledged_at FROM events e
+     WHERE e.ts >= ? AND e.ts < ? AND ${REAL_EVENTS_SQL}`,
     [prevSinceTs, sinceTs]
   )
   const prevAlerts = prevRows.filter(isAlert)

@@ -220,6 +220,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
   const [refreshing, setRefreshing] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [error, setError] = useState('');
+  const [connected, setConnected] = useState(true);
   const [status, setStatus] = useState(null);
   const [responding, setResponding] = useState(false);
 
@@ -231,10 +232,12 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
     ]);
 
     if (!pendingRes.ok) {
+      setConnected(false);
       setError(pendingRes.error || 'Could not load alerts');
       return;
     }
 
+    setConnected(true);
     setError('');
     setActiveAlerts(pendingRes.events || []);
     onPendingCountChange?.(pendingRes.pendingCount ?? pendingRes.events?.length ?? 0);
@@ -326,7 +329,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
         }
       >
-        <ProfileHero online />
+        <ProfileHero online={connected} />
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -352,6 +355,8 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
         visible={Boolean(selectedAlert)}
         onClose={closeRecentAlert}
         title={selectedAlert?.title || 'Alert'}
+        tone="info"
+        icon="bell"
         message={
           selectedAlert
             ? `${selectedAlert.zone} · ${formatDisplayTime(selectedAlert.time)}\n\n${selectedAlert.detail || selectedAlert.meta || ''}`

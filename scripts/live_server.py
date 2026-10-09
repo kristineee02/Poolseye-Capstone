@@ -272,10 +272,20 @@ class AlertMediaRecorder:
             self._wake.set()
 
     def clear(self):
-        """Drop the previous source's frames and requests so its footage never lands in a new clip."""
+        """Save evidence still owed to the previous source, then drop its frames so they never land in a new clip."""
         with self._lock:
+            jobs, frames = self._pending, list(self._frames)
+            self._pending = []
             self._frames.clear()
-            self._pending.clear()
+        for job in jobs:
+            clip = [f for f in frames if f[1] >= job["ts"] - CLIP_SECONDS]
+            threading.Thread(target=self._save_quietly, args=(job, clip), daemon=True).start()
+
+    def _save_quietly(self, job: dict, frames: list):
+        try:
+            self._save(job, frames)
+        except Exception as exc:
+            print(f"[media] could not save evidence for {job['id']}: {exc}")
 
     def request(self, event_id: str, seq: int, ts: float):
         with self._lock:
@@ -432,6 +442,8 @@ class FrameGrabber:
         self.kind = kind
         self.max_width = max_width
         self.failed = False
+        # An uploaded video plays once; replaying it would log every alert again.
+        self.ended = False
         self.loops = 0
         self._frame = None
         self._ts = 0.0
@@ -458,10 +470,10 @@ class FrameGrabber:
                 next_frame_at = max(next_frame_at + self._frame_interval, time.time() - self._frame_interval)
             ok, frame = self.cap.read()
             if (not ok or frame is None) and self.kind == "video":
-                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                ok, frame = self.cap.read()
-                if ok and frame is not None:
-                    self.loops += 1
+                with self._cond:
+                    self.ended = True
+                    self._cond.notify_all()
+                return
             if not ok or frame is None:
                 fail += 1
                 if fail > 30:
@@ -487,10 +499,15 @@ class FrameGrabber:
     def latest(self, after_seq: int, timeout: float = 1.0):
         """Newest (seq, capture time, frame) above after_seq, or (after_seq, 0.0, None) on timeout."""
         with self._cond:
-            self._cond.wait_for(lambda: self._seq > after_seq or self.failed or self._stop, timeout)
+            self._cond.wait_for(lambda: self._seq > after_seq or self.failed or self.ended or self._stop, timeout)
             if self._seq > after_seq:
                 return self._seq, self._ts, self._frame
             return after_seq, 0.0, None
+
+    @property
+    def newest_seq(self) -> int:
+        with self._cond:
+            return self._seq
 
     def frames_between(self, after_seq: int, upto_seq: int) -> list:
         """Buffered (seq, capture time, frame) with after_seq < seq <= upto_seq, oldest first."""
@@ -1014,6 +1031,8 @@ def capture_loop(cfg: dict):
         while not stop.is_set():
             seq, ts, frame = grabber.latest(seq, timeout=0.5)
             if frame is None:
+                if grabber.ended:
+                    stop.wait(0.1)
                 continue
             if grabber.loops != loops:
                 loops = grabber.loops
@@ -1110,6 +1129,7 @@ def capture_loop(cfg: dict):
         delay = 0.5
         newest_result_seq = 0
         connected_at = delay_logged_at = time.time()
+        ended_at = None
         while _running:
             if _camera_changed.is_set():
                 with _lock:
@@ -1118,6 +1138,15 @@ def capture_loop(cfg: dict):
             if grabber.failed:
                 print("[stream] lost stream — reconnecting...")
                 break
+            if grabber.ended:
+                ended_at = ended_at or time.time()
+                # Show the last frames (and let their alerts save evidence) before switching back
+                if shown_seq >= grabber.newest_seq or time.time() - ended_at > MAX_DISPLAY_DELAY_SEC + 1.0:
+                    print("[stream] uploaded video finished — returning to live CCTV")
+                    with _lock:
+                        _latest_jpeg = None
+                    clear_video()
+                    break
 
             with scene_lock:
                 snapshot = list(results)
@@ -1132,6 +1161,8 @@ def capture_loop(cfg: dict):
                 if frame is not None:
                     shown_seq = seq
                     publish_frame(frame, None, seq, ts)
+                elif grabber.ended:
+                    time.sleep(0.02)
                 continue
 
             if len(snapshot) >= 2 and snapshot[-1]["seq"] != newest_result_seq:

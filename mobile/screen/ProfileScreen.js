@@ -252,9 +252,10 @@ export default function ProfileScreen() {
         onClose={() => setShowSignOut(false)}
         title="Sign out"
         message="Leave the lifeguard app? You’ll need to sign in again to continue."
-        confirmText="Sign out"
+        confirmText="Log out"
         cancelText="Cancel"
         isDangerous
+        icon="logOut"
         onConfirm={signOut}
       />
     </>

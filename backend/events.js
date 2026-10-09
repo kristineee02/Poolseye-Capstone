@@ -329,7 +329,7 @@ function registerEventRoutes(app, db, adminRequired) {
       const intrusionRow = await get(
         db,
         `SELECT COUNT(*) as count FROM events
-         WHERE ts >= ? AND is_alert = 1 AND category = 'supervision'`,
+         WHERE ts >= ? AND is_alert = 1 AND category = 'supervision' AND COALESCE(camera, '') <> 'TEST'`,
         [todayTs]
       )
       // People who were in the pool area with someone within the threshold
