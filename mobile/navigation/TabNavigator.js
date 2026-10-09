@@ -1,12 +1,12 @@
 // PoolsEye — Tab Navigator
-// Floating white bar — soft blue active pill (matches dashboard reference)
+// Floating light bar — bright blue active pill with persistent alert badge
 
 import React, { useRef, useState } from 'react';
 import {
   View, Text, Pressable, StyleSheet, Animated, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, radius, shadow, typography } from '../theme/tokens';
+import { colors, radius } from '../theme/tokens';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 import { useAlertNotifications } from '../hooks/useAlertNotifications';
 import { useAuth } from '../context/AuthContext';
@@ -17,8 +17,6 @@ import ProfileScreen from '../screen/ProfileScreen';
 import AppShell      from '../components/AppShell';
 
 const IDLE_ICON = '#8FA3B8';
-const ACTIVE_ICON = colors.accent;
-
 const TAB_ICONS = {
   home: require('../assets/icons/nav-home.png'),
   alerts: require('../assets/icons/nav-alerts.png'),
@@ -65,6 +63,7 @@ function PersonIcon({ color }) {
 
 function TabButton({ tab, isActive, onPress, renderIcon }) {
   const scale = useRef(new Animated.Value(1)).current;
+  const [isHovered, setIsHovered] = useState(false);
 
   const pressIn = () => {
     Animated.spring(scale, {
@@ -91,8 +90,12 @@ function TabButton({ tab, isActive, onPress, renderIcon }) {
         onPress={onPress}
         onPressIn={pressIn}
         onPressOut={pressOut}
+        onHoverIn={() => setIsHovered(true)}
+        onHoverOut={() => setIsHovered(false)}
         android_ripple={{
-          color: 'rgba(30, 111, 255, 0.12)',
+          color: isActive
+            ? 'rgba(255, 255, 255, 0.18)'
+            : 'rgba(30, 111, 255, 0.10)',
           borderless: false,
           radius: 28,
         }}
@@ -102,18 +105,24 @@ function TabButton({ tab, isActive, onPress, renderIcon }) {
       >
         {isActive ? (
           <LinearGradient
-            colors={colors.buttonGradient}
+            colors={['#4DA3FF', '#347CFF']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.activePill}
             pointerEvents="none"
           />
+        ) : isHovered ? (
+          <View style={styles.hoverPill} pointerEvents="none" />
         ) : null}
-        {renderIcon(tab.key, isActive)}
+        {renderIcon(tab.key, isActive, isHovered)}
         <Text
           style={[
             styles.tabLabel,
-            isActive ? styles.tabLabelActive : styles.tabLabelIdle,
+            isActive
+              ? styles.tabLabelActive
+              : isHovered
+                ? styles.tabLabelHovered
+                : styles.tabLabelIdle,
           ]}
           numberOfLines={1}
         >
@@ -153,8 +162,12 @@ export default function TabNavigator() {
 
   const activeTab = TABS.find((t) => t.key === active) || TABS[0];
 
-  const renderIcon = (key, isActive) => {
-    const iconColor = isActive ? '#FFFFFF' : IDLE_ICON;
+  const renderIcon = (key, isActive, isHovered) => {
+    const iconColor = isActive
+      ? '#FFFFFF'
+      : isHovered
+        ? colors.accent
+        : IDLE_ICON;
     switch (key) {
       case 'home':
         return <HomeIcon color={iconColor} />;
@@ -288,8 +301,21 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   activePill: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 4,
+    right: 8,
+    bottom: 4,
+    left: 8,
     borderRadius: radius.full,
+  },
+  hoverPill: {
+    position: 'absolute',
+    top: 4,
+    right: 8,
+    bottom: 4,
+    left: 8,
+    borderRadius: radius.full,
+    backgroundColor: '#E7F1FF',
   },
   tabLabel: {
     fontSize: 11,
@@ -302,5 +328,9 @@ const styles = StyleSheet.create({
   },
   tabLabelIdle: {
     color: IDLE_ICON,
+  },
+  tabLabelHovered: {
+    color: colors.accent,
+    fontWeight: '700',
   },
 });

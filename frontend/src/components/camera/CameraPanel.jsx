@@ -6,9 +6,60 @@ import { ZONE_TYPES } from '../../data/geofence'
 import { useGeofence } from '../../context/GeofenceContext'
 import { STREAM_BASE } from '../../config'
 import { ACCEPTED_VIDEO_TYPES, returnToLiveFeed, uploadVideo } from '../../api/videoSource'
+import { StatusModal, useStatusModal } from '../ui/Modal'
 import './CameraPanel.css'
 
 const GEOFENCE_VISIBLE_KEY = 'poolseye.live.showGeofences'
+const PROBE_TIMEOUT_MS = 8000
+const MIN_RECONNECT_MS = 900
+const STREAM_IS_LOCAL = /\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(STREAM_BASE)
+
+/** Ask live_server.py for its health and classify why the feed is (not) available. */
+async function probeStream() {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS)
+  try {
+    const res = await fetch(`${STREAM_BASE}/health`, { cache: 'no-store', signal: controller.signal })
+    if (!res.ok) return { kind: 'http', status: res.status }
+    const data = await res.json().catch(() => ({}))
+    return { kind: data?.has_frame ? 'ok' : 'no-frame', data }
+  } catch (err) {
+    return { kind: err?.name === 'AbortError' ? 'timeout' : 'unreachable' }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function reconnectFailure(result) {
+  switch (result.kind) {
+    case 'timeout':
+      return {
+        title: 'Stream server is not responding',
+        message: `${STREAM_BASE} did not answer within ${PROBE_TIMEOUT_MS / 1000} seconds. The CCTV computer may be busy or its internet connection slow. Try again in a moment.`,
+      }
+    case 'http':
+      return {
+        title: `Stream server error (HTTP ${result.status})`,
+        message: STREAM_IS_LOCAL
+          ? 'live_server.py answered with an error. Check its terminal for messages and restart it.'
+          : 'The tunnel answered but live_server.py did not. Make sure live_server.py is still running on the CCTV computer, then try again.',
+      }
+    case 'no-frame': {
+      const host = result.data?.camera_host
+      return {
+        title: 'Connected, but no camera picture',
+        message: `live_server.py is running but is not receiving video from the camera${host ? ` at ${host}` : ''}. Check that the CCTV is powered on and on the same Wi-Fi as the computer, and that the camera IP in Settings is correct.`,
+      }
+    }
+    default:
+      return {
+        title: 'Could not reach the stream server',
+        message: STREAM_IS_LOCAL
+          ? `Nothing is answering at ${STREAM_BASE}. Start it on this computer with "python scripts/live_server.py", then try again.`
+          : `Nothing is answering at ${STREAM_BASE}. Make sure live_server.py and the Cloudflare tunnel are running on the CCTV computer. Quick-tunnel addresses change every restart, so the site's VITE_STREAM_URL may need the new address.`,
+      }
+  }
+}
 
 function readGeofenceVisible() {
   try {
@@ -28,6 +79,8 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
   const [videoName, setVideoName] = useState(null)
   const [uploadProgress, setUploadProgress] = useState(null)
   const [switchingToLive, setSwitchingToLive] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
+  const { status: failure, showStatus: showFailure, closeStatus: closeFailure } = useStatusModal()
   const fileInputRef = useRef(null)
   const streamSrc = `${STREAM_BASE}/stream`
   const online = streamStatus === 'online'
@@ -51,31 +104,44 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
     onUploadingChange?.(uploading || switchingToLive)
   }, [uploading, switchingToLive, onUploadingChange])
 
-  const checkStream = useCallback(() => {
-    fetch(`${STREAM_BASE}/health`, { cache: 'no-store' })
-      .then((res) => (res.ok ? res.json() : Promise.reject()))
-      .then((data) => {
-        setServerUp(true)
-        setStreamStatus(data?.has_frame ? 'online' : 'offline')
-        setSource(data?.source || null)
-        setVideoName(data?.video_name || null)
-      })
-      .catch(() => {
-        setServerUp(false)
-        setStreamStatus('offline')
-      })
+  const applyProbe = useCallback((result) => {
+    const reachable = result.kind === 'ok' || result.kind === 'no-frame'
+    setServerUp(reachable)
+    setStreamStatus(result.kind === 'ok' ? 'online' : 'offline')
+    if (reachable) {
+      setSource(result.data?.source || null)
+      setVideoName(result.data?.video_name || null)
+    }
   }, [])
 
+  const checkStream = useCallback(() => {
+    probeStream().then(applyProbe)
+  }, [applyProbe])
+
   useEffect(() => {
-    if (compact) return undefined
+    if (compact || reconnecting) return undefined
     checkStream()
     const id = setInterval(checkStream, 5000)
     return () => clearInterval(id)
-  }, [compact, checkStream, reconnectToken])
+  }, [compact, checkStream, reconnectToken, reconnecting])
 
   const reconnect = () => {
     setStreamStatus('connecting')
     setReconnectToken((n) => n + 1)
+  }
+
+  const manualReconnect = async () => {
+    if (reconnecting) return
+    setReconnecting(true)
+    setStreamStatus('connecting')
+    const started = Date.now()
+    const result = await probeStream()
+    const remaining = MIN_RECONNECT_MS - (Date.now() - started)
+    if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining))
+    applyProbe(result)
+    setReconnecting(false)
+    setReconnectToken((n) => n + 1)
+    if (result.kind !== 'ok') showFailure({ tone: 'error', ...reconnectFailure(result) })
   }
 
   const onVideoSelected = async (e) => {
@@ -133,6 +199,7 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
 
   return (
     <div className="camera-panel">
+      <StatusModal status={failure} onClose={closeFailure} />
       <div className="camera-head">
         <div
           className={`live-tag${streamStatus !== 'online' ? ' is-offline' : ''}${playingVideo && online ? ' is-video' : ''}`}
@@ -170,10 +237,11 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
           ) : null}
           <button
             type="button"
-            className="ctrl-btn"
-            onClick={reconnect}
-            disabled={streamStatus === 'connecting'}
-            title="Reconnect feed"
+            className={`ctrl-btn${reconnecting ? ' is-spinning' : ''}`}
+            onClick={manualReconnect}
+            disabled={reconnecting}
+            title={reconnecting ? 'Reconnecting…' : 'Reconnect feed'}
+            aria-label={reconnecting ? 'Reconnecting' : 'Reconnect feed'}
           >
             <Icon.Refresh />
           </button>
@@ -190,29 +258,31 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
       <div className={`camera-stage${online ? '' : ' is-offline'}`}>
         {online ? (
           <img
+            key={reconnectToken}
             className="camera-stage-feed"
             src={streamSrc}
             alt="Main Pool CCTV"
             onError={() => setStreamStatus('offline')}
             onLoad={() => setStreamStatus('online')}
           />
-        ) : (
+        ) : reconnecting ? null : (
           <div className="camera-stage-offline" role="status">
             <Icon.VideoOff />
             <p className="feed-unavailable-copy">
               <strong>FEED UNAVAILABLE</strong>
               <span> — Please check connection.</span>
             </p>
-            <button
-              type="button"
-              className="feed-reconnect"
-              onClick={reconnect}
-              disabled={streamStatus === 'connecting'}
-            >
-              {streamStatus === 'connecting' ? 'Reconnecting…' : 'Reconnect'}
+            <button type="button" className="feed-reconnect" onClick={manualReconnect}>
+              Reconnect
             </button>
           </div>
         )}
+        {reconnecting ? (
+          <div className="camera-stage-loading" role="status" aria-live="polite">
+            <span className="feed-spinner" aria-hidden="true" />
+            <p>Reconnecting to the CCTV feed…</p>
+          </div>
+        ) : null}
         {online && showGeofences ? (
           <>
             <svg
