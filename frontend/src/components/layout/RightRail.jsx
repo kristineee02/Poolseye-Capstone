@@ -8,6 +8,7 @@ import {
   fetchEventSummary,
   setManualAlarm,
 } from '../../api/events'
+import { DATA_RESET_EVENT } from '../../api/dataManagement'
 import { formatTime, zoneLabel } from '../history/eventKinds'
 import './RightRail.css'
 
@@ -164,7 +165,11 @@ export default function RightRail({ onNavigate }) {
   useEffect(() => {
     load()
     const id = setInterval(load, POLL_MS)
-    return () => clearInterval(id)
+    window.addEventListener(DATA_RESET_EVENT, load)
+    return () => {
+      clearInterval(id)
+      window.removeEventListener(DATA_RESET_EVENT, load)
+    }
   }, [load])
 
   useEffect(() => {

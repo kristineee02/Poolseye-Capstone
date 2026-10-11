@@ -125,3 +125,39 @@ CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
 CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
 CREATE INDEX IF NOT EXISTS idx_events_camera ON events(camera);
+
+CREATE TABLE IF NOT EXISTS data_backups (
+  id TEXT PRIMARY KEY,
+  admin_id INTEGER NOT NULL,
+  admin_email TEXT,
+  file_name TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  sha256 TEXT NOT NULL,
+  table_counts TEXT,
+  created_at REAL NOT NULL,
+  verified_at REAL
+);
+
+CREATE TABLE IF NOT EXISTS data_reset_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_id INTEGER NOT NULL,
+  admin_email TEXT,
+  categories TEXT NOT NULL,
+  deleted_counts TEXT,
+  backup_id TEXT,
+  status TEXT NOT NULL,
+  error TEXT,
+  created_at REAL NOT NULL
+);
+
+CREATE TRIGGER IF NOT EXISTS data_reset_log_no_update
+BEFORE UPDATE ON data_reset_log
+BEGIN
+  SELECT RAISE(ABORT, 'data_reset_log is append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS data_reset_log_no_delete
+BEFORE DELETE ON data_reset_log
+BEGIN
+  SELECT RAISE(ABORT, 'data_reset_log is append-only');
+END;

@@ -206,6 +206,59 @@ function exec(db, sql) {
   return isLibsql(db) ? libsqlExec(db, sql) : sqliteExec(db, sql)
 }
 
+// Runs a callback on one database transaction. Queries made through the helpers
+// in this module automatically use the active libSQL transaction.
+async function transaction(db, callback, mode = 'write') {
+  if (isLibsql(db)) {
+    const tx = await db._client.transaction(mode)
+    try {
+      const result = await txStore.run({ tx }, callback)
+      await tx.commit()
+      return result
+    } catch (err) {
+      try { await tx.rollback() } catch { /* already rolled back */ }
+      throw err
+    } finally {
+      try { tx.close() } catch { /* already closed */ }
+    }
+  }
+
+  await sqliteRun(db, mode === 'write' ? 'BEGIN IMMEDIATE' : 'BEGIN')
+  try {
+    const result = await callback()
+    await sqliteRun(db, 'COMMIT')
+    return result
+  } catch (err) {
+    try { await sqliteRun(db, 'ROLLBACK') } catch { /* already rolled back */ }
+    throw err
+  }
+}
+
+// Runs every statement in one write transaction: either all of them apply or none do.
+async function batch(db, statements) {
+  if (isLibsql(db)) {
+    const results = await db._client.batch(
+      statements.map(({ sql, params = [] }) => ({ sql, args: params })),
+      'write'
+    )
+    return results.map(resultMeta)
+  }
+
+  await sqliteRun(db, 'BEGIN IMMEDIATE')
+  try {
+    const results = []
+    for (const { sql, params = [] } of statements) {
+      const result = await sqliteRun(db, sql, params)
+      results.push({ lastID: result.lastID, changes: result.changes })
+    }
+    await sqliteRun(db, 'COMMIT')
+    return results
+  } catch (err) {
+    try { await sqliteRun(db, 'ROLLBACK') } catch { /* already rolled back */ }
+    throw err
+  }
+}
+
 async function columnExists(db, table, column) {
   const rows = await all(db, `PRAGMA table_info(${table})`)
   return rows.some((row) => row.name === column)
@@ -294,4 +347,4 @@ async function initDb() {
   return db
 }
 
-module.exports = { initDb, get, run, all, exec, migrateEventsTable }
+module.exports = { initDb, get, run, all, exec, batch, transaction, migrateEventsTable }

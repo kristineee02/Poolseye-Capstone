@@ -16,6 +16,7 @@ const { registerAnalyticsRoutes } = require('./analytics')
 const { registerCameraSettingsRoutes, seedCameraSettings } = require('./cameraSettings')
 const { registerOperatingHoursRoutes, seedOperatingHours } = require('./operatingHours')
 const { registerAlarmRoutes } = require('./alarm')
+const { registerDataManagementRoutes } = require('./dataManagement')
 
 const app = express()
 const PORT = process.env.PORT || 4000
@@ -55,6 +56,7 @@ app.use(cors({
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Disposition', 'Content-Length', 'X-Backup-Id', 'X-Backup-Sha256', 'X-Backup-Size'],
 }))
 // Profile photos are sent as base64 data URLs (2 MB image ≈ 2.7 MB encoded)
 app.use(express.json({ limit: '4mb' }))
@@ -161,6 +163,7 @@ initDb()
     registerCameraSettingsRoutes(app, db, adminRequired)
     registerOperatingHoursRoutes(app, db, adminRequired)
     registerAlarmRoutes(app, db, adminRequired)
+    registerDataManagementRoutes(app, db, adminRequired)
     await geofence.seedGeofence(db)
     await seedCameraSettings(db)
     await seedOperatingHours(db)

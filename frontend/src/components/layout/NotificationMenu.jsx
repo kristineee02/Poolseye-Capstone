@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../ui/Icon'
 import { fetchEvents } from '../../api/events'
+import { DATA_RESET_EVENT } from '../../api/dataManagement'
 import { zoneLabel } from '../history/eventKinds'
 import './NotificationMenu.css'
 
@@ -44,7 +45,11 @@ export default function NotificationMenu({ onNavigate }) {
   useEffect(() => {
     load()
     const id = setInterval(load, POLL_MS)
-    return () => clearInterval(id)
+    window.addEventListener(DATA_RESET_EVENT, load)
+    return () => {
+      clearInterval(id)
+      window.removeEventListener(DATA_RESET_EVENT, load)
+    }
   }, [load])
 
   useEffect(() => {

@@ -4,6 +4,7 @@ import { ConfirmModal, StatusModal, useStatusModal } from '../components/ui/Moda
 import { useAuth } from '../auth/AuthContext'
 import CameraSettingsCard from '../components/settings/CameraSettingsCard'
 import OperatingHoursCard from '../components/settings/OperatingHoursCard'
+import DataManagementCard from '../components/settings/DataManagementCard'
 import './SettingsPage.css'
 
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024
@@ -234,7 +235,7 @@ export default function SettingsPage() {
       <div className="pagehead settings-pagehead">
         <div>
           <h1>Settings</h1>
-          <p className="sub">Manage your account, CCTV connection and operating hours</p>
+          <p className="sub">Manage your account, CCTV connection, operating hours and system data</p>
         </div>
       </div>
 
@@ -269,10 +270,21 @@ export default function SettingsPage() {
           <Icon.Clock />
           Operating Hours
         </button>
+        <button
+          type="button"
+          className={`settings-tab${activeTab === 'data' ? ' active' : ''}`}
+          role="tab"
+          aria-selected={activeTab === 'data'}
+          onClick={() => setActiveTab('data')}
+        >
+          <Icon.Database />
+          Data Management
+        </button>
       </div>
 
       {activeTab === 'camera' ? <CameraSettingsCard showStatus={showStatus} /> : null}
       {activeTab === 'hours' ? <OperatingHoursCard showStatus={showStatus} /> : null}
+      {activeTab === 'data' ? <DataManagementCard showStatus={showStatus} /> : null}
 
       {activeTab === 'profile' ? (
       <>
