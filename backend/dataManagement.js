@@ -347,16 +347,26 @@ async function executeVerifiedReset(db, categories) {
     }
 
     const after = await countCategories(db)
-    for (const key of categories) {
-      if (after[key] !== 0) {
-        throw new Error(`Reset verification failed for ${EVENT_CATEGORIES[key]?.label || 'response statistics'}`)
-      }
-      if (deletedCounts[key] !== before[key]) {
-        throw new Error(`Reset count mismatch for ${EVENT_CATEGORIES[key]?.label || 'response statistics'}`)
+    for (const key of CATEGORY_KEYS) {
+      const label = EVENT_CATEGORIES[key]?.label || 'response statistics'
+      if (categories.includes(key)) {
+        if (after[key] !== 0) {
+          throw new Error(`Reset verification failed for ${label}`)
+        }
+        if (deletedCounts[key] !== before[key]) {
+          throw new Error(`Reset count mismatch for ${label}`)
+        }
+      } else if (after[key] !== before[key]) {
+        // A selective reset must never modify an unchecked category. Throwing
+        // here rolls back every statement in this transaction.
+        throw new Error(`Unchecked category changed during reset: ${label}`)
       }
     }
 
-    return { deletedCounts, counts: after }
+    const preservedCounts = Object.fromEntries(
+      CATEGORY_KEYS.filter((key) => !categories.includes(key)).map((key) => [key, after[key]])
+    )
+    return { deletedCounts, counts: after, preservedCounts }
   }, 'write')
 }
 
@@ -493,12 +503,12 @@ function registerDataManagementRoutes(app, db, adminRequired) {
 
       // Delete, count, and verify inside one transaction. Any mismatch rolls the
       // entire reset back, so categories cannot be left partially cleared.
-      const { deletedCounts, counts } = await executeVerifiedReset(db, categories)
+      const { deletedCounts, counts, preservedCounts } = await executeVerifiedReset(db, categories)
 
       await writeResetLog(db, { admin, categories, deletedCounts, backupId, status: 'completed' })
       console.log(`[data] reset by admin #${admin.id}: ${JSON.stringify(deletedCounts)} (backup ${backupId})`)
 
-      res.json({ ok: true, deletedCounts, counts, verified: true })
+      res.json({ ok: true, deletedCounts, counts, preservedCounts, verified: true })
     } catch (err) {
       // Validation failures are not resets; only attempts that reached the database are audited.
       if (backupId) {

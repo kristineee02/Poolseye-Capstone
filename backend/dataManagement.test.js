@@ -5,7 +5,7 @@ const os = require('node:os')
 const path = require('node:path')
 const sqlite3 = require('sqlite3')
 const { get, run } = require('./db')
-const { __test } = require('./dataManagement')
+const { CATEGORY_KEYS, __test } = require('./dataManagement')
 
 function openDatabase(file) {
   return new Promise((resolve, reject) => {
@@ -75,9 +75,16 @@ test('backup is an accessible exact snapshot and reset is selective, verified, a
     assert.equal(firstReset.counts.detections, 0)
     assert.equal(firstReset.counts.alerts, 1)
     assert.equal(firstReset.counts.broadcasts, 1)
+    assert.equal(firstReset.counts.responseStats, 1)
+    assert.deepEqual(firstReset.preservedCounts, { alerts: 1, broadcasts: 1, responseStats: 1 })
 
-    const finalReset = await __test.executeVerifiedReset(source, ['alerts', 'broadcasts', 'responseStats'])
-    assert.deepEqual(finalReset.deletedCounts, { alerts: 1, broadcasts: 1, responseStats: 1 })
+    const alertOnlyReset = await __test.executeVerifiedReset(source, ['alerts'])
+    assert.deepEqual(alertOnlyReset.deletedCounts, { alerts: 1 })
+    assert.deepEqual(alertOnlyReset.preservedCounts, { detections: 0, broadcasts: 1, responseStats: 1 })
+    assert.equal((await get(source, 'SELECT COUNT(*) AS count FROM events')).count, 1)
+
+    const finalReset = await __test.executeVerifiedReset(source, ['broadcasts', 'responseStats'])
+    assert.deepEqual(finalReset.deletedCounts, { broadcasts: 1, responseStats: 1 })
     assert.equal((await get(source, 'SELECT COUNT(*) AS count FROM events')).count, 0)
     assert.equal(
       (await get(source, "SELECT COUNT(*) AS count FROM events WHERE is_alert = 1 AND status = 'pending'")).count,
@@ -97,6 +104,33 @@ test('backup is an accessible exact snapshot and reset is selective, verified, a
       response_time: null,
     })
     assert.equal((await get(source, 'SELECT COUNT(*) AS count FROM operating_hours')).count, 1)
+
+    await run(
+      source,
+      `INSERT INTO events (id, type, title, category, is_alert, ts) VALUES
+       ('det-2', 'detection', 'Detection 2', NULL, 0, 4),
+       ('alert-2', 'drowning', 'Alert 2', 'drowning', 1, 5),
+       ('broadcast-2', 'broadcast', 'Broadcast 2', 'broadcast', 0, 6)`
+    )
+    await run(
+      source,
+      `UPDATE users SET acknowledged_alerts = 3, missed_alerts = 2, response_time = '00:20'
+       WHERE role = 'lifeguard'`
+    )
+    const selectAllReset = await __test.executeVerifiedReset(source, CATEGORY_KEYS)
+    assert.deepEqual(selectAllReset.deletedCounts, {
+      detections: 1,
+      alerts: 1,
+      broadcasts: 1,
+      responseStats: 1,
+    })
+    assert.deepEqual(selectAllReset.counts, {
+      detections: 0,
+      alerts: 0,
+      broadcasts: 0,
+      responseStats: 0,
+    })
+    assert.deepEqual(selectAllReset.preservedCounts, {})
   } finally {
     if (backup) await close(backup)
     if (source) await close(source)

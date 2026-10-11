@@ -312,7 +312,10 @@ export default function DataManagementCard({ showStatus }) {
         elevated
       >
         <div className="dm-modal">
-          <p className="dm-text">These records will be permanently cleared from the live database:</p>
+          <div className="dm-confirm-scope">
+            <Icon.CheckCircle />
+            <p>Only the checked categories below will be reset. Every unchecked category will be preserved.</p>
+          </div>
 
           <ul className="dm-summary">
             {selectedList.map((c) => (
