@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, Modal, Pressable,
-  RefreshControl,
+  RefreshControl, AppState,
 } from 'react-native';
 import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
 import { Tag } from '../components/Primitives';
@@ -177,7 +177,13 @@ export default function LogScreen({ onPendingCountChange }) {
     loadEvents();
     if (!token) return undefined;
     const id = setInterval(loadEvents, POLL_MS);
-    return () => clearInterval(id);
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') loadEvents();
+    });
+    return () => {
+      clearInterval(id);
+      appStateSubscription.remove();
+    };
   }, [loadEvents, token]);
 
   const onRefresh = async () => {

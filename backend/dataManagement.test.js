@@ -79,11 +79,22 @@ test('backup is an accessible exact snapshot and reset is selective, verified, a
     const finalReset = await __test.executeVerifiedReset(source, ['alerts', 'broadcasts', 'responseStats'])
     assert.deepEqual(finalReset.deletedCounts, { alerts: 1, broadcasts: 1, responseStats: 1 })
     assert.equal((await get(source, 'SELECT COUNT(*) AS count FROM events')).count, 0)
+    assert.equal(
+      (await get(source, "SELECT COUNT(*) AS count FROM events WHERE is_alert = 1 AND status = 'pending'")).count,
+      0
+    )
 
-    const preservedUser = await get(source, 'SELECT email, password_hash FROM users LIMIT 1')
+    const preservedUser = await get(
+      source,
+      `SELECT email, password_hash, acknowledged_alerts, missed_alerts, response_time
+       FROM users LIMIT 1`
+    )
     assert.deepEqual(preservedUser, {
       email: 'guard@example.test',
       password_hash: 'preserved-password-hash',
+      acknowledged_alerts: 0,
+      missed_alerts: 0,
+      response_time: null,
     })
     assert.equal((await get(source, 'SELECT COUNT(*) AS count FROM operating_hours')).count, 1)
   } finally {

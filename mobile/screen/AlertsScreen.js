@@ -4,7 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, LayoutAnimation,
-  RefreshControl,
+  RefreshControl, AppState,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
@@ -246,12 +246,17 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
 
     setConnected(true);
     setError('');
-    setActiveAlerts(pendingRes.events || []);
+    const nextActiveAlerts = pendingRes.events || [];
+    setActiveAlerts(nextActiveAlerts);
     setAckCount(pendingRes.acknowledgedToday ?? 0);
     onPendingCountChange?.(pendingRes.pendingCount ?? pendingRes.events?.length ?? 0);
 
     if (recentRes.ok) {
-      setRecentAlerts(recentRes.events || []);
+      const nextRecentAlerts = recentRes.events || [];
+      setRecentAlerts(nextRecentAlerts);
+      if (nextActiveAlerts.length === 0 && nextRecentAlerts.length === 0) {
+        setSelectedAlert(null);
+      }
     }
   }, [token, onPendingCountChange]);
 
@@ -259,7 +264,13 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
     loadAlerts();
     if (!token) return undefined;
     const id = setInterval(loadAlerts, POLL_MS);
-    return () => clearInterval(id);
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') loadAlerts();
+    });
+    return () => {
+      clearInterval(id);
+      appStateSubscription.remove();
+    };
   }, [loadAlerts, token]);
 
   const onRefresh = async () => {

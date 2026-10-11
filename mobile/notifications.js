@@ -99,6 +99,16 @@ export async function showAlertNotification(alert) {
   }
 }
 
+/** Remove stale PoolsEye alerts and reset the OS app badge after backend reset. */
+export async function clearAlertNotifications() {
+  if (!Notifications) return;
+  await Promise.allSettled([
+    Notifications.dismissAllNotificationsAsync(),
+    Notifications.cancelAllScheduledNotificationsAsync(),
+    Notifications.setBadgeCountAsync(0),
+  ]);
+}
+
 export function onNotificationTapped(handler) {
   if (!Notifications) return () => {};
   const sub = Notifications.addNotificationResponseReceivedListener((response) => {

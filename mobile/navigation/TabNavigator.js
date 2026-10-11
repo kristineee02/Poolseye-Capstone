@@ -16,7 +16,8 @@ import LogScreen     from '../screen/LogScreen';
 import ProfileScreen from '../screen/ProfileScreen';
 import AppShell      from '../components/AppShell';
 
-const IDLE_ICON = '#8FA3B8';
+const IDLE_ICON = '#8CA4B9';
+const ACTIVE_BLUE = '#2584F5';
 const TAB_ICONS = {
   home: require('../assets/icons/nav-home.png'),
   alerts: require('../assets/icons/nav-alerts.png'),
@@ -105,7 +106,7 @@ function TabButton({ tab, isActive, onPress, renderIcon }) {
       >
         {isActive ? (
           <LinearGradient
-            colors={['#4DA3FF', '#347CFF']}
+            colors={['#EEF7FF', '#E4F1FF']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.activePill}
@@ -164,7 +165,7 @@ export default function TabNavigator() {
 
   const renderIcon = (key, isActive, isHovered) => {
     const iconColor = isActive
-      ? '#FFFFFF'
+      ? ACTIVE_BLUE
       : isHovered
         ? colors.accent
         : IDLE_ICON;
@@ -220,20 +221,20 @@ const iconStyles = StyleSheet.create({
   iconWrap: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: 22,
-    height: 22,
+    width: 19,
+    height: 19,
   },
   iconImage: {
-    width: 22,
-    height: 22,
+    width: 19,
+    height: 19,
   },
   badge: {
     position: 'absolute',
-    top: -5,
-    right: -8,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
+    top: -6,
+    right: -9,
+    minWidth: 15,
+    height: 15,
+    borderRadius: 7.5,
     backgroundColor: colors.alarm,
     borderWidth: 1.5,
     borderColor: colors.bgPanel,
@@ -242,7 +243,7 @@ const iconStyles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   badgeText: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '700',
     color: '#fff',
   },
@@ -269,31 +270,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-evenly',
     alignSelf: 'stretch',
-    marginHorizontal: 12,
-    height: 64,
-    paddingHorizontal: 8,
-    paddingVertical: 7,
+    marginHorizontal: 6,
+    height: 56,
+    paddingHorizontal: 5,
+    paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: '#F7FAFF',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#FFFFFF',
-    shadowColor: '#52749D',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.14,
-    shadowRadius: 16,
-    elevation: 5,
+    borderColor: '#DDECF8',
+    shadowColor: '#6CA9D9',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.24,
+    shadowRadius: 10,
+    elevation: 7,
   },
   tabItem: {
     flex: 1,
-    maxWidth: 112,
-    height: 50,
+    height: 48,
   },
   tabButton: {
     flex: 1,
     width: '100%',
-    minHeight: 48,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    minHeight: 46,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
@@ -302,28 +302,28 @@ const styles = StyleSheet.create({
   },
   activePill: {
     position: 'absolute',
-    top: 4,
-    right: 8,
-    bottom: 4,
-    left: 8,
+    top: 1,
+    right: 12,
+    bottom: 1,
+    left: 12,
     borderRadius: radius.full,
   },
   hoverPill: {
     position: 'absolute',
-    top: 4,
-    right: 8,
-    bottom: 4,
-    left: 8,
+    top: 1,
+    right: 12,
+    bottom: 1,
+    left: 12,
     borderRadius: radius.full,
-    backgroundColor: '#E7F1FF',
+    backgroundColor: '#F0F7FF',
   },
   tabLabel: {
-    fontSize: 11,
+    fontSize: 9.5,
     fontWeight: '600',
     letterSpacing: 0.1,
   },
   tabLabelActive: {
-    color: '#FFFFFF',
+    color: ACTIVE_BLUE,
     fontWeight: '700',
   },
   tabLabelIdle: {
