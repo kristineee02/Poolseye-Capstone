@@ -3,6 +3,18 @@ const { get, all, run } = require('./db')
 const { dispatchEvent } = require('./dispatch')
 const { MEDIA_DIR, MEDIA_ROUTE, saveMedia, removeMedia } = require('./mediaStorage')
 
+const SITE_TIME_ZONE = process.env.SITE_TIMEZONE || 'Asia/Manila'
+
+function siteEventTime(ts) {
+  return new Date(ts * 1000).toLocaleTimeString('en-US', {
+    timeZone: SITE_TIME_ZONE,
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  })
+}
+
 const MEDIA_TYPES = {
   'image/jpeg': { ext: 'jpg', column: 'snapshot_uri', resourceType: 'image' },
   'video/webm': { ext: 'webm', column: 'clip_uri', resourceType: 'video' },
@@ -111,7 +123,8 @@ function normalizeIngestPayload(body) {
     code: body?.code ? String(body.code) : null,
     title: String(body?.title || 'Zone event'),
     meta: body?.meta ? String(body.meta) : null,
-    event_time: body?.time ? String(body.time) : body?.event_time ? String(body.event_time) : null,
+    // `ts` is the source of truth; producer and hosting-machine timezones may differ.
+    event_time: siteEventTime(ts),
     event_date: body?.date ? String(body.date) : body?.event_date ? String(body.event_date) : null,
     status: String(body?.status || (body?.is_alert ? 'pending' : 'resolved')),
     severity: body?.severity ? String(body.severity) : null,
@@ -407,7 +420,7 @@ function registerEventRoutes(app, db, adminRequired) {
         ...preset,
         id: `test-${now.getTime()}`,
         meta: `${preset.zone_label} · Person #0 · Test alert`,
-        time: now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }),
+        time: siteEventTime(now.getTime() / 1000),
         date: 'Today',
         status: 'pending',
         camera: 'TEST',

@@ -10,8 +10,9 @@ import threading
 import time
 import uuid
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
@@ -60,6 +61,13 @@ VIDEO_EXTS_ALLOWED = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "500"))
 UPLOAD_CAMERA_ID = "UPLOAD"
 DEFAULT_RTSP = "rtsp://PoolsEye:PoolsEyeCapstone@192.168.0.130:554/stream1"
+SITE_TIME_ZONE = os.environ.get("SITE_TIMEZONE", "Asia/Manila")
+try:
+    SITE_TZ = ZoneInfo(SITE_TIME_ZONE)
+except ZoneInfoNotFoundError:
+    # Philippines/Singapore site time is UTC+8 year-round (no DST). This keeps
+    # Windows installs accurate even when Python's optional tzdata is absent.
+    SITE_TZ = timezone(timedelta(hours=8), name="UTC+08:00")
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
@@ -435,7 +443,9 @@ def push_event(person_id: int, zone: str, event_name: str, is_alert: bool, super
         "severity": "MEDIUM" if is_alert else "LOW",
         "category": "zone",
     })
-    now = datetime.now()
+    # The event instant (`ts`) is timezone-independent; the companion text is
+    # explicitly formatted for the pool site rather than the PC/Tapo timezone.
+    now = datetime.now(SITE_TZ)
     from_upload = _source_kind == "video"
     camera_id = UPLOAD_CAMERA_ID if from_upload else "CAM-01"
     source_label = "Uploaded video" if from_upload else "CAM-01"
