@@ -33,6 +33,7 @@ from zone_check import (  # noqa: E402
     PersonTracker,
     ZONE_LABEL,
     SpatialCalibrator,
+    classify_zone,
     draw_person,
     draw_supervision_overlay,
     foot_point,
@@ -42,6 +43,7 @@ from zone_check import (  # noqa: E402
     process_result,
     supervision_label,
     validate_nesting,
+    zone_pixels,
 )
 CONFIG_PATH = SCRIPTS_DIR / "config.json"
 # Must be the same backend the dashboard uses (frontend VITE_API_URL), or settings saved there never arrive.
@@ -164,7 +166,17 @@ EVENT_CATALOG = {
         "severity": "HIGH",
         "category": "supervision",
     },
+    # The backend pages lifeguards and sounds the ESP32 siren for this category
+    "POSSIBLE_DROWNING": {
+        "type": "alarm",
+        "code": "DRN",
+        "title": "Possible Drowning",
+        "severity": "HIGH",
+        "category": "drowning",
+    },
 }
+# Person id used when the drowning model sees distress the pose model has no track for
+UNTRACKED_PERSON_ID = 0
 
 
 def sync_event_to_backend(entry: dict):
@@ -455,6 +467,114 @@ def push_event(person_id: int, zone: str, event_name: str, is_alert: bool, super
     return entry
 
 
+def _box_iou(a, b) -> float:
+    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
+
+
+class DrowningWatcher:
+    """Runs the drowning detector beside the pose tracker and flags sustained distress.
+
+    One frame of "Drowning" is not enough: a swimmer ducking under looks the same for an
+    instant. A person is flagged only after the class keeps reappearing on them for
+    hold_sec, with gaps no longer than gap_sec.
+    """
+
+    def __init__(self, model, cfg: dict):
+        self.model = model
+        self.conf = float(cfg.get("confidence_threshold", 0.5))
+        self.imgsz = int(cfg.get("imgsz", 640))
+        self.interval = 1.0 / max(0.2, float(cfg.get("max_infer_fps", 2)))
+        self.hold_sec = float(cfg.get("hold_sec", 3.0))
+        self.gap_sec = float(cfg.get("gap_sec", 1.5))
+        self.rearm_sec = float(cfg.get("rearm_sec", 60.0))
+        self.match_iou = float(cfg.get("match_iou", 0.2))
+        wanted = {str(c).lower() for c in cfg.get("alert_classes", ["Drowning"])}
+        self.class_ids = {int(i) for i, name in model.names.items() if str(name).lower() in wanted}
+        self.boxes: list[dict] = []
+        self.boxes_at = 0.0
+        self._streaks: dict[int, list[float]] = {}  # person id -> [first_seen, last_seen]
+        self._fired: dict[int, float] = {}
+        self._last_run = 0.0
+
+    def reset(self):
+        self.boxes, self.boxes_at = [], 0.0
+        self._streaks.clear()
+        self._fired.clear()
+
+    def _owner(self, xyxy, reports) -> dict | None:
+        best, best_iou = None, self.match_iou
+        for r in reports:
+            if r.get("xyxy") is None:
+                continue
+            iou = _box_iou(xyxy, [float(v) for v in r["xyxy"]])
+            if iou >= best_iou:
+                best, best_iou = r, iou
+        return best
+
+    def update(self, frame, reports: list, zcfg: dict, now: float) -> list[dict]:
+        """Return {id, zone, conf} for each person whose distress just outlasted hold_sec."""
+        if now - self._last_run < self.interval:
+            return []
+        self._last_run = now
+
+        result = self.model.predict(frame, conf=self.conf, imgsz=self.imgsz, verbose=False)[0]
+        boxes = []
+        if result.boxes is not None and len(result.boxes):
+            for xyxy, cls, c in zip(
+                result.boxes.xyxy.cpu().numpy(),
+                result.boxes.cls.cpu().numpy().astype(int),
+                result.boxes.conf.cpu().numpy(),
+            ):
+                if int(cls) in self.class_ids:
+                    boxes.append({"xyxy": [float(v) for v in xyxy], "conf": round(float(c), 2)})
+        self.boxes, self.boxes_at = boxes, now
+
+        h, w = frame.shape[:2]
+        zones_px = zone_pixels(zcfg, w, h)
+        orange_px = zcfg.get("orange_proximity", 0.02) * w
+        seen: dict[int, dict] = {}
+        for box in boxes:
+            owner = self._owner(box["xyxy"], reports)
+            if owner is not None:
+                pid, zone = int(owner["id"]), owner["zone"]
+            else:
+                x1, y1, x2, y2 = box["xyxy"]
+                pid = UNTRACKED_PERSON_ID
+                zone = classify_zone((x1 + x2) / 2, y2, zones_px, orange_px)
+            if pid not in seen or box["conf"] > seen[pid]["conf"]:
+                seen[pid] = {"id": pid, "zone": zone, "conf": box["conf"]}
+
+        for pid in [p for p, (_, last) in self._streaks.items() if now - last > self.gap_sec]:
+            del self._streaks[pid]
+
+        flagged = []
+        for pid, hit in seen.items():
+            streak = self._streaks.setdefault(pid, [now, now])
+            streak[1] = now
+            if now - streak[0] < self.hold_sec:
+                continue
+            if now - self._fired.get(pid, -1e9) < self.rearm_sec:
+                continue
+            self._fired[pid] = now
+            flagged.append(hit)
+        return flagged
+
+
+def draw_drowning_boxes(frame, boxes: list):
+    for box in boxes:
+        x1, y1, x2, y2 = (int(v) for v in box["xyxy"])
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
+        label = f"DROWNING {box['conf']:.2f}"
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+        ty = max(th + 6, y1)
+        cv2.rectangle(frame, (x1, ty - th - 6), (x1 + tw + 6, ty), (0, 0, 255), -1)
+        cv2.putText(frame, label, (x1 + 3, ty - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+
 def resize_max_width(frame, max_width: int):
     if max_width <= 0:
         return frame
@@ -694,7 +814,7 @@ def scene_at(results: list, seq: int, ts: float) -> dict:
     if overlay:
         feet = {p["track_id"]: p["foot"] for p in people}
         overlay = {**overlay, "people": [{**p, "foot": feet.get(p["id"], p["foot"])} for p in overlay["people"]]}
-    return {"people": people, "overlay": overlay}
+    return {"people": people, "overlay": overlay, "drowning": near.get("drowning") or []}
 
 
 def render_scene(frame, scene: dict, kpt_conf):
@@ -722,6 +842,7 @@ def render_scene(frame, scene: dict, kpt_conf):
             item["event"],
             supervision_data=item.get("supervision"),
         )
+    draw_drowning_boxes(out, scene.get("drowning") or [])
     return out
 
 
@@ -980,6 +1101,24 @@ def capture_loop(cfg: dict):
     print(f"[stream] loading pose model {model_name}")
     model = YOLO(model_name)
 
+    drowning = None
+    drown_cfg = cfg.get("DROWNING", {})
+    if drown_cfg.get("enabled", True):
+        drown_path = Path(drown_cfg.get("model") or "drowning_best.pt")
+        if not drown_path.is_absolute():
+            drown_path = SCRIPTS_DIR / drown_path
+        if drown_path.exists():
+            print(f"[stream] loading drowning model {drown_path.name}")
+            drowning = DrowningWatcher(YOLO(str(drown_path)), drown_cfg)
+            print(
+                f"[stream] drowning: classes={sorted(drowning.class_ids)} conf={drowning.conf:g} "
+                f"hold={drowning.hold_sec:g}s fps={1 / drowning.interval:g}"
+            )
+        else:
+            print(f"[stream] WARN drowning model {drown_path} not found — drowning alerts are off")
+    # Boxes from the drowning model stay on screen this long between its slower runs
+    drowning_show_sec = 1.5
+
     sup_cfg_init = cfg.get("SUPERVISION", {})
     tracker = PersonTracker(
         cooldown_sec=float(track_cfg.get("alert_cooldown_sec", 3.0)),
@@ -1027,8 +1166,10 @@ def capture_loop(cfg: dict):
         for yolo_tracker in getattr(getattr(model, "predictor", None), "trackers", None) or []:
             yolo_tracker.reset()
         reset_people()
+        if drowning:
+            drowning.reset()
 
-    def log_events(supervision_events, reports, seq: int, ts: float):
+    def log_events(supervision_events, reports, seq: int, ts: float, drowning_events=()):
         def logged(entry):
             if entry and entry["is_alert"]:
                 _media.request(entry["id"], seq, ts)
@@ -1056,6 +1197,12 @@ def capture_loop(cfg: dict):
                 print(
                     f"  Person #{r['id']} | Zone: {ZONE_LABEL.get(r['zone'], r['zone'])} "
                     f"| Event: {r['event']}"
+                )
+        for d in drowning_events:
+            if logged(push_event(d["id"], d["zone"], "POSSIBLE_DROWNING", True, {"confidence": d["conf"]})):
+                print(
+                    f"  [POSSIBLE_DROWNING] Person #{d['id']} "
+                    f"| Zone: {ZONE_LABEL.get(d['zone'], d['zone'])} | conf {d['conf']:.2f}"
                 )
 
     def inference_worker(grabber: FrameGrabber, results: deque, scene_lock: threading.Lock,
@@ -1087,12 +1234,21 @@ def capture_loop(cfg: dict):
                     after_hours=grabber.kind != "video" and after_hours_now(),
                 )
                 sync_people(reports, frame.shape[1], time.time())
+                drowning_events = []
+                if drowning:
+                    now = time.time()
+                    try:
+                        drowning_events = drowning.update(frame, reports, zcfg, now)
+                    except Exception as exc:
+                        print(f"[stream] drowning model error: {exc}")
+                    if now - drowning.boxes_at <= drowning_show_sec:
+                        scene["drowning"] = drowning.boxes
                 scene.update(seq=seq, ts=ts, ready_at=time.time(), epoch=loops)
                 with scene_lock:
                     results.append(scene)
                 with _lock:
                     _latest_reports = [{**r, "event": None, "is_alert": False} for r in reports]
-                log_events(supervision_events, reports, seq, ts)
+                log_events(supervision_events, reports, seq, ts, drowning_events)
             except Exception as exc:
                 print(f"[stream] annotate error: {exc}")
             elapsed = time.time() - started

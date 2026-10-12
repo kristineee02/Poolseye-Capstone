@@ -19,6 +19,18 @@
         "alert_cooldown_sec": 3.0,
         "lost_track_sec": 2.0
     },
+    "DROWNING": {
+        "enabled": true,
+        "model": "drowning_best.pt",
+        "alert_classes": ["Drowning"],
+        "confidence_threshold": 0.5,
+        "imgsz": 640,
+        "max_infer_fps": 2,
+        "hold_sec": 3.0,
+        "gap_sec": 1.5,
+        "rearm_sec": 60.0,
+        "match_iou": 0.2
+    },
     "DROWNING_LOGIC": {
         "angle_threshold": 20.0,
         "movement_threshold": 5.0,
