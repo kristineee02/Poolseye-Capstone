@@ -6,7 +6,7 @@ import { ZONE_TYPES } from '../../data/geofence'
 import { useGeofence } from '../../context/GeofenceContext'
 import { STREAM_BASE } from '../../config'
 import { ACCEPTED_VIDEO_TYPES, returnToLiveFeed, uploadVideo } from '../../api/videoSource'
-import { StatusModal, useStatusModal } from '../ui/Modal'
+import { AlertDialog, StatusModal, useStatusModal } from '../ui/Modal'
 import './CameraPanel.css'
 
 const GEOFENCE_VISIBLE_KEY = 'poolseye.live.showGeofences'
@@ -78,9 +78,10 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
   const [source, setSource] = useState(null)
   const [videoName, setVideoName] = useState(null)
   const [uploadProgress, setUploadProgress] = useState(null)
+  const [uploadFileName, setUploadFileName] = useState('')
   const [switchingToLive, setSwitchingToLive] = useState(false)
   const [reconnecting, setReconnecting] = useState(false)
-  const { status: failure, showStatus: showFailure, closeStatus: closeFailure } = useStatusModal()
+  const { status, showStatus, closeStatus } = useStatusModal()
   const fileInputRef = useRef(null)
   const streamSrc = `${STREAM_BASE}/stream`
   const online = streamStatus === 'online'
@@ -141,24 +142,32 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
     applyProbe(result)
     setReconnecting(false)
     setReconnectToken((n) => n + 1)
-    if (result.kind !== 'ok') showFailure({ tone: 'error', ...reconnectFailure(result) })
+    if (result.kind !== 'ok') showStatus({ tone: 'error', ...reconnectFailure(result) })
   }
 
   const onVideoSelected = async (e) => {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
+    setUploadFileName(file.name)
     setUploadProgress(0)
     const result = await uploadVideo(file, setUploadProgress)
     setUploadProgress(null)
     if (!result.ok) {
-      onNotify?.(result.error || 'Video upload failed.', 'error')
+      showStatus({
+        tone: 'error',
+        title: 'Video upload failed',
+        message: result.error || 'The video could not be uploaded. Please try again.',
+      })
       return
     }
     setSource('video')
     setVideoName(result.video_name || file.name)
-    onNotify?.(`Playing ${result.video_name || file.name} with detection — alerts are tagged as uploaded video`, 'info')
-    setTimeout(reconnect, 1500)
+    showStatus({
+      tone: 'success',
+      title: 'Video uploaded successfully',
+      message: `${result.video_name || file.name} is now playing with AI detection. It will loop continuously until you click “Back to live CCTV”.`,
+    })
   }
 
   const backToLive = async () => {
@@ -199,7 +208,14 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
 
   return (
     <div className="camera-panel">
-      <StatusModal status={failure} onClose={closeFailure} />
+      <AlertDialog
+        open={uploading}
+        tone="processing"
+        title={uploadProgress >= 100 ? 'Preparing video…' : 'Uploading video…'}
+        message={uploadFileName || 'Please wait while your video is uploaded.'}
+        progress={uploadProgress ?? 0}
+      />
+      <StatusModal status={status} onClose={closeStatus} />
       <div className="camera-head">
         <div
           className={`live-tag${streamStatus !== 'online' ? ' is-offline' : ''}${playingVideo && online ? ' is-video' : ''}`}

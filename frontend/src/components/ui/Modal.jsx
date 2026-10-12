@@ -48,6 +48,7 @@ export function AlertDialog({
   cancelText,
   onConfirm,
   confirmVariant,
+  progress,
 }) {
   if (!open) return null
   const config = ALERT_TONES[tone] || ALERT_TONES.info
@@ -86,6 +87,21 @@ export function AlertDialog({
 
         <h2 id="alert-dialog-title">{title}</h2>
         {message ? <p>{message}</p> : null}
+        {isProcessing && Number.isFinite(progress) ? (
+          <div
+            className="alert-dialog-progress"
+            role="progressbar"
+            aria-label="Upload progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={Math.max(0, Math.min(100, progress))}
+          >
+            <div className="alert-dialog-progress-track">
+              <span style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+            </div>
+            <strong>{Math.max(0, Math.min(100, progress))}%</strong>
+          </div>
+        ) : null}
 
         {!isProcessing ? (
           <div className={`alert-dialog-actions${cancelText ? ' has-cancel' : ''}`}>
