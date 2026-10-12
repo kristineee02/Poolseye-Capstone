@@ -5,6 +5,7 @@ import GeofenceStage from '../components/geofence/GeofenceStage'
 import { ZONE_TYPES, getZoneTypeMeta } from '../data/geofence'
 import { useGeofence } from '../context/GeofenceContext'
 import { StatusModal, useStatusModal } from '../components/ui/Modal'
+import { STREAM_BASE } from '../config'
 import '../components/camera/CameraPanel.css'
 import '../components/geofence/GeofenceEditor.css'
 
@@ -35,6 +36,10 @@ export default function GeofenceEditorPage() {
   const [activeZoneId, setActiveZoneId] = useState(zones[0]?.id ?? null)
   const [mode, setMode] = useState('add')
   const [savedNotice, setSavedNotice] = useState(false)
+  const [hiddenZoneIds, setHiddenZoneIds] = useState(() => new Set())
+  const [frameSource, setFrameSource] = useState('live')
+  const [showGrid, setShowGrid] = useState(true)
+  const editorCardRef = useRef(null)
   const undoStackRef = useRef([])
   const redoStackRef = useRef([])
   const [historyTick, setHistoryTick] = useState(0)
@@ -168,6 +173,44 @@ export default function GeofenceEditorPage() {
     }
   }
 
+  function selectZone(zoneId) {
+    setActiveZoneId(zoneId)
+    setMode('add')
+    setHiddenZoneIds((current) => {
+      if (!current.has(zoneId)) return current
+      const next = new Set(current)
+      next.delete(zoneId)
+      return next
+    })
+  }
+
+  function toggleZoneVisibility(zoneId) {
+    setHiddenZoneIds((current) => {
+      const next = new Set(current)
+      if (next.has(zoneId)) next.delete(zoneId)
+      else next.add(zoneId)
+      return next
+    })
+  }
+
+  function clearZone(zone) {
+    if (!zone.points.length) return
+    commitZonePoints(zone.id, [], zone.points)
+  }
+
+  function useLiveFrame() {
+    setFrameSource('live')
+  }
+
+  async function fitEditorToScreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen()
+      else await editorCardRef.current?.requestFullscreen?.()
+    } catch {
+      showStatus({ tone: 'error', title: 'Full screen unavailable', message: 'Your browser could not open the editor in full screen.' })
+    }
+  }
+
   function discardChanges() {
     const restored = discard()
     setActiveZoneId(restored[0]?.id ?? null)
@@ -185,6 +228,184 @@ export default function GeofenceEditorPage() {
       showStatus({ tone: 'error', title: 'Save failed', message: err.message || 'Could not save the geofence.' })
     }
   }
+
+  const visibleZones = zones.filter((zone) => !hiddenZoneIds.has(zone.id))
+  const isPreview = frameSource === 'layout'
+
+  return (
+    <div className="page geofence-page geofence-workspace">
+      <StatusModal status={status} onClose={closeStatus} />
+      <div className="geofence-top-actions-card">
+        <nav className="geofence-source-bar" aria-label="Editor frame source">
+          <button type="button" className={frameSource === 'layout' ? 'active' : ''} onClick={() => setFrameSource('layout')}>
+            <Icon.Layout /><strong>Pool Layout / Preview</strong>
+          </button>
+          <button type="button" className={frameSource === 'live' ? 'active' : ''} onClick={useLiveFrame}>
+            <Icon.Camera /><strong>Live View (CCTV)</strong>
+          </button>
+        </nav>
+        <div className="pagehead-right geofence-head-save">
+          <button className="geofence-cancel-btn" onClick={discardChanges} disabled={!dirty || saving}>Cancel</button>
+          <button className="btn-primary geofence-save-btn" onClick={saveZone} disabled={saving}><Icon.Save /> {saving ? 'Saving…' : savedNotice ? 'Saved' : 'Save changes'}</button>
+        </div>
+      </div>
+      <div className="geofence-layout">
+        <main className="geofence-canvas-col">
+          <section className="geofence-editor-card" ref={editorCardRef}>
+            <header className="geofence-camera-bar">
+              <div className="geofence-camera-title">
+                <strong>South Patio — Pool Perimeter</strong>
+                <span>CAM-01</span>
+                <span className="geofence-live-pill"><i /> Live CCTV</span>
+              </div>
+              <div className="geofence-camera-meta">
+                <span>1000 × 512</span>
+                <span>{frameSource === 'layout' ? 'Pool Layout' : 'Live CCTV'}</span>
+                <span>{dirty ? 'Unsaved changes' : 'Saved geofence'}</span>
+                <span className="geofence-info" title="Edits preview live and are stored after you select Save zones"><Icon.Info /></span>
+              </div>
+            </header>
+
+            <div className="editor-stage-wrap">
+              {activeZone ? (
+                <GeofenceStage
+                  zones={visibleZones}
+                  activeZoneId={activeZoneId}
+                  mode={mode}
+                  backgroundMode={frameSource}
+                  backgroundUrl={frameSource === 'live' ? `${STREAM_BASE}/stream` : ''}
+                  showGrid={showGrid}
+                  layoutZones={zones}
+                  readOnly={isPreview}
+                  onUpdateZonePoints={applyZonePoints}
+                  onCommitZonePoints={commitZonePoints}
+                />
+              ) : (
+                <div className="zone-list-empty">No zone selected. Add a Yellow, Orange, or Red zone to start drawing.</div>
+              )}
+            </div>
+
+            <footer className="geofence-tool-bar">
+              <div className="mode-btn-row">
+                <button type="button" className={`mode-btn mode-btn-add ${mode === 'add' && !isPreview ? 'active' : ''}`} onClick={() => setMode('add')} disabled={isPreview}>
+                  <Icon.Plus /> Add point
+                </button>
+                <button type="button" className={`mode-btn mode-btn-move ${mode === 'move' && !isPreview ? 'active' : ''}`} onClick={() => setMode('move')} disabled={isPreview}>
+                  <img src="/icons/geofence/hand.svg" alt="" aria-hidden="true" /> Move
+                </button>
+                <button type="button" className={`mode-btn mode-btn-remove ${mode === 'delete' && !isPreview ? 'active' : ''}`} onClick={() => setMode('delete')} disabled={isPreview}>
+                  <Icon.Trash /> Remove point
+                </button>
+                <span className="geofence-tool-divider" />
+                <button type="button" className="mode-btn mode-btn-plain" onClick={undo} disabled={isPreview || !canUndo}><img src="/icons/geofence/undo.svg" alt="" aria-hidden="true" /> Undo</button>
+                <button type="button" className="mode-btn mode-btn-plain" onClick={redo} disabled={isPreview || !canRedo}><img src="/icons/geofence/redo.svg" alt="" aria-hidden="true" /> Redo</button>
+                <span className="geofence-tool-divider" />
+                <button type="button" className={`mode-btn mode-btn-plain ${showGrid ? 'active-secondary' : ''}`} onClick={() => setShowGrid((value) => !value)}><Icon.Grid /> Show grid <span className={`geofence-inline-toggle ${showGrid ? 'on' : ''}`}><i /></span></button>
+                <button type="button" className="mode-btn mode-btn-plain" onClick={fitEditorToScreen}><Icon.Maximize /> Fit to screen</button>
+              </div>
+            </footer>
+          </section>
+        </main>
+
+        <aside className="geofence-sidebar" aria-label="Zone configuration">
+          <div className="geofence-sidebar-scroll">
+            <section className="geofence-config-card">
+              <div className="geofence-section-head">
+                <div><h2>Zone Configuration</h2><Icon.Info title="Configure and select the zone you want to edit" /></div>
+                <span className={`geofence-preview-badge ${dirty ? 'is-dirty' : ''}`}><Icon.Play /> Preview on Live</span>
+              </div>
+              <div className="geofence-zone-stack">
+                {zones.length === 0 && <div className="zone-list-empty">No zones yet. Add one below to begin.</div>}
+                {zones.map((zone) => {
+                  const meta = getZoneTypeMeta(zone.type)
+                  const active = zone.id === activeZoneId
+                  const hidden = hiddenZoneIds.has(zone.id)
+                  return (
+                    <article key={zone.id} className={`geofence-zone-card geofence-zone-card--${zone.type} ${active ? 'active' : ''}`}>
+                      <button type="button" className="geofence-zone-summary" onClick={() => selectZone(zone.id)}>
+                        <span className="geofence-zone-dot" style={{ background: meta.color }} />
+                        <span className="geofence-zone-copy"><strong>{meta.label}</strong><small>{zone.name}</small></span>
+                        <span className="geofence-point-count">{zone.points.length} pts</span>
+                        <Icon.ChevronDown className={active ? 'is-open' : ''} />
+                      </button>
+                      <div className="geofence-zone-actions">
+                        <button type="button" className={hidden ? 'is-muted' : ''} onClick={() => toggleZoneVisibility(zone.id)} title={hidden ? 'Show zone' : 'Hide zone'}>{hidden ? <Icon.EyeOff /> : <Icon.Eye />}</button>
+                        <button type="button" onClick={() => clearZone(zone)} disabled={isPreview || !zone.points.length}><Icon.Trash /> Clear</button>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            </section>
+
+            <section className="geofence-config-card">
+              <div className="geofence-section-head compact"><div><h2>Add Zone</h2><Icon.Info title="Add another zone using the existing drawing workflow" /></div></div>
+              <div className="zone-type-add-grid geofence-add-grid">
+                {Object.values(ZONE_TYPES).map((type) => (
+                  <button key={type.id} type="button" className={`zone-type-add-btn zone-type-add-btn--${type.id}`} onClick={() => addZone(type.id)} disabled={isPreview}>
+                    <span className="zone-type-add-swatch" style={{ background: type.color }} />
+                    <span className="zone-type-add-copy"><strong>{type.label}</strong><span>Polygon • click to draw</span></span>
+                    <Icon.Plus />
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {activeZone && activeMeta && (
+              <section className="geofence-config-card">
+                <div className="geofence-section-head compact">
+                  <div><h2>Active Zone Options</h2><span className="geofence-active-zone-name">{activeMeta.label}</span></div>
+                  <button type="button" className="geofence-delete-zone" onClick={() => removeZone(activeZone.id)} disabled={isPreview}>Delete zone</button>
+                </div>
+                <div className="geofence-option-body">
+                  <div className={`zone-alert-banner zone-alert-banner--${activeZone.type}`}>
+                    <span className="zone-alert-dot" style={{ background: activeMeta.color }} />
+                    <div><strong>{activeMeta.alertLabel}</strong><p>{activeMeta.alertDescription}</p></div>
+                  </div>
+                  <div className="field-row">
+                    <label className="field-label">Zone name</label>
+                    <input className="field-input" type="text" value={activeZone.name} disabled={isPreview} onChange={(event) => updateActiveZone({ name: event.target.value })} />
+                  </div>
+                  {activeZone.type === 'transition' && (
+                    <div className="field-row">
+                      <label className="field-label">Crossing direction</label>
+                      <select className="field-input" value={activeZone.direction} disabled={isPreview} onChange={(event) => updateActiveZone({ direction: event.target.value })}>
+                        <option value="both">Either direction (shallow ↔ deep)</option>
+                        <option value="toward">Toward deep end only</option>
+                        <option value="away">Toward shallow end only</option>
+                      </select>
+                    </div>
+                  )}
+                  <div className="geofence-toggle-row"><label>Active during standby hours</label><Toggle on={activeZone.activeDuringStandby} disabled={isPreview} onChange={(value) => updateActiveZone({ activeDuringStandby: value })} label="Active during standby hours" /></div>
+                </div>
+              </section>
+            )}
+
+            {activeZone && (
+              <details className="geofence-config-card geofence-points-card">
+                <summary className="geofence-section-head compact">
+                  <div><h2>Boundary Points</h2><span className="geofence-active-zone-name">Precise X/Y editing</span></div>
+                  <span className="geofence-point-count">{activeZone.points.length} pts</span>
+                </summary>
+                <div className="point-editor">
+                  {activeZone.points.length === 0 && <div className="zone-list-empty">Click the frame to place the first vertex.</div>}
+                  {activeZone.points.map((point, index) => (
+                    <div className="point-editor-row" key={`${activeZone.id}-${index}`}>
+                      <span className="point-editor-index">{index + 1}</span>
+                      <label className="point-editor-xy">X<input type="number" min="0" max="1000" value={point.x} disabled={isPreview} onFocus={startPointCoordEdit} onBlur={commitPointCoordEdit} onChange={(event) => updatePointCoord(index, 'x', event.target.value)} /></label>
+                      <label className="point-editor-xy">Y<input type="number" min="0" max="512" value={point.y} disabled={isPreview} onFocus={startPointCoordEdit} onBlur={commitPointCoordEdit} onChange={(event) => updatePointCoord(index, 'y', event.target.value)} /></label>
+                      <button type="button" className="point-editor-remove" title="Remove point" disabled={isPreview} onClick={() => removePoint(index)}><Icon.Trash /></button>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+
+          </div>
+        </aside>
+      </div>
+    </div>
+  )
 
   return (
     <div className="page geofence-page">

@@ -17,6 +17,30 @@ function getStagePoint(svgEl, clientX, clientY) {
   }
 }
 
+function insetPolygon(points, ratio = 0.13) {
+  if (!points || points.length < 3) return []
+  const center = points.reduce(
+    (sum, point) => ({ x: sum.x + point.x / points.length, y: sum.y + point.y / points.length }),
+    { x: 0, y: 0 },
+  )
+  return points.map((point) => ({
+    x: Math.round(point.x + (center.x - point.x) * ratio),
+    y: Math.round(point.y + (center.y - point.y) * ratio),
+  }))
+}
+
+function polygonBounds(points) {
+  if (!points.length) return null
+  const xs = points.map((point) => point.x)
+  const ys = points.map((point) => point.y)
+  return {
+    left: Math.min(...xs),
+    right: Math.max(...xs),
+    top: Math.min(...ys),
+    bottom: Math.max(...ys),
+  }
+}
+
 function ZoneShape({ zone, active }) {
   const meta = getZoneTypeMeta(zone.type)
   const pts = zone.points.map((p) => `${p.x},${p.y}`).join(' ')
@@ -57,6 +81,11 @@ export default function GeofenceStage({
   zones,
   activeZoneId,
   mode,
+  backgroundMode = 'layout',
+  backgroundUrl = '',
+  showGrid = true,
+  layoutZones = zones,
+  readOnly = false,
   onUpdateZonePoints,
   onCommitZonePoints,
 }) {
@@ -68,12 +97,17 @@ export default function GeofenceStage({
 
   const activeZone = zones.find((z) => z.id === activeZoneId)
   const activeMeta = activeZone ? getZoneTypeMeta(activeZone.type) : null
+  const outerLayoutZone = layoutZones.find((zone) => zone.type === 'warning' && zone.points.length >= 3)
+  const adaptivePoolPoints = insetPolygon(outerLayoutZone?.points)
+  const adaptivePoolShape = adaptivePoolPoints.map((point) => `${point.x},${point.y}`).join(' ')
+  const adaptiveBounds = polygonBounds(adaptivePoolPoints)
 
   useEffect(() => {
     if (activeZone) livePointsRef.current = activeZone.points
   }, [activeZone?.points])
 
   function handleStageClick(e) {
+    if (readOnly) return
     if (draggedRef.current) {
       draggedRef.current = false
       return
@@ -85,6 +119,7 @@ export default function GeofenceStage({
   }
 
   function handlePointPointerDown(index, e) {
+    if (readOnly) return
     e.stopPropagation()
     if (mode === 'delete') {
       if (!activeZone) return
@@ -99,6 +134,7 @@ export default function GeofenceStage({
   }
 
   function handlePointerMove(e) {
+    if (readOnly) return
     if (draggingIndex === null || !activeZone) return
     draggedRef.current = true
     const point = getStagePoint(svgRef.current, e.clientX, e.clientY)
@@ -108,6 +144,11 @@ export default function GeofenceStage({
   }
 
   function handlePointerUp(e) {
+    if (readOnly) {
+      dragStartPointsRef.current = null
+      setDraggingIndex(null)
+      return
+    }
     const pointerId = e?.pointerId
     if (pointerId != null && svgRef.current?.hasPointerCapture?.(pointerId)) {
       svgRef.current.releasePointerCapture(pointerId)
@@ -123,12 +164,12 @@ export default function GeofenceStage({
     <svg
       ref={svgRef}
       viewBox={`0 0 ${STAGE_W} ${STAGE_H}`}
-      preserveAspectRatio="xMidYMid slice"
+      preserveAspectRatio="none"
       onClick={handleStageClick}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
-      style={{ cursor: mode === 'add' ? 'crosshair' : 'default' }}
+      style={{ cursor: readOnly ? 'default' : mode === 'add' ? 'crosshair' : 'default' }}
     >
       <defs>
         <linearGradient id="ge-water" x1="0" y1="0" x2="0" y2="1">
@@ -139,11 +180,11 @@ export default function GeofenceStage({
           <stop offset="0%"   stopColor="#F0F8FF" />
           <stop offset="100%" stopColor="#E8F3FC" />
         </linearGradient>
-        <pattern id="ge-tile" width="50" height="50" patternUnits="userSpaceOnUse">
-          <rect width="50" height="50" fill="none" stroke="#C5D9E8" strokeWidth="0.7" opacity="0.4" />
-        </pattern>
         <pattern id="ge-ripple" width="80" height="20" patternUnits="userSpaceOnUse">
           <path d="M0 10 Q20 3 40 10 T80 10" stroke="#A7ECFF" strokeWidth="1.2" fill="none" opacity="0.35" />
+        </pattern>
+        <pattern id="ge-editor-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#8DB6D4" strokeWidth="1" opacity="0.24" />
         </pattern>
         <filter id="ge-shadow">
           <feDropShadow dx="0" dy="6" stdDeviation="10" floodColor="#1E6FFF" floodOpacity="0.25" />
@@ -151,11 +192,13 @@ export default function GeofenceStage({
         <clipPath id="ge-pool-clip">
           <rect x={PX} y={PY} width={PW} height={PH} rx="36" ry="36" />
         </clipPath>
+        <clipPath id="ge-adaptive-pool-clip">
+          {adaptivePoolShape && <polygon points={adaptivePoolShape} />}
+        </clipPath>
       </defs>
 
       {/* Deck */}
       <rect x="0" y="0" width={STAGE_W} height={STAGE_H} fill="url(#ge-deck)" />
-      <rect x="0" y="0" width={STAGE_W} height={STAGE_H} fill="url(#ge-tile)" />
 
       {/* Pool water */}
       <rect x={PX} y={PY} width={PW} height={PH} rx="36" ry="36"
@@ -206,6 +249,66 @@ export default function GeofenceStage({
         MAIN POOL — SAFETY GEOFENCE
       </text>
 
+      {/* The preview pool follows the saved outer-zone geometry instead of staying rectangular. */}
+      {backgroundMode === 'layout' && adaptiveBounds && (
+        <g className="adaptive-pool-layout">
+          <rect x="0" y="0" width={STAGE_W} height={STAGE_H} fill="url(#ge-deck)" />
+          <polygon
+            points={adaptivePoolShape}
+            transform="translate(0 11)"
+            fill="#0d73bb"
+            opacity="0.34"
+          />
+          <polygon
+            points={adaptivePoolShape}
+            fill="url(#ge-water)"
+            stroke="#8de8ff"
+            strokeWidth="7"
+            strokeLinejoin="round"
+            filter="url(#ge-shadow)"
+          />
+          <g clipPath="url(#ge-adaptive-pool-clip)">
+            <rect x="0" y="0" width={STAGE_W} height={STAGE_H} fill="url(#ge-ripple)" opacity="0.58" />
+            <line
+              x1={(adaptiveBounds.left + adaptiveBounds.right) / 2}
+              y1={adaptiveBounds.top}
+              x2={(adaptiveBounds.left + adaptiveBounds.right) / 2}
+              y2={adaptiveBounds.bottom}
+              stroke="#fff"
+              strokeWidth="1.5"
+              strokeDasharray="7 8"
+              opacity="0.35"
+            />
+          </g>
+          <text
+            x={(adaptiveBounds.left + adaptiveBounds.right) / 2}
+            y={adaptiveBounds.top + 27}
+            fill="#fff"
+            fontFamily="Roboto Mono, monospace"
+            fontSize="12"
+            fontWeight="700"
+            textAnchor="middle"
+            opacity="0.68"
+            letterSpacing="2"
+          >
+            MAIN POOL · ADAPTIVE PREVIEW
+          </text>
+          <text x={adaptiveBounds.left + 24} y={adaptiveBounds.bottom - 17} fill="#fff" fontFamily="Roboto Mono, monospace" fontSize="10" opacity="0.7">SHALLOW</text>
+          <text x={adaptiveBounds.right - 24} y={adaptiveBounds.bottom - 17} fill="#fff" fontFamily="Roboto Mono, monospace" fontSize="10" textAnchor="end" opacity="0.7">DEEP</text>
+        </g>
+      )}
+
+      {backgroundMode !== 'layout' && (
+        <g>
+          <rect x="0" y="0" width={STAGE_W} height={STAGE_H} fill="#10243a" />
+          {backgroundUrl && (
+            <image href={backgroundUrl} x="0" y="0" width={STAGE_W} height={STAGE_H} preserveAspectRatio="none" />
+          )}
+        </g>
+      )}
+
+      {showGrid && <rect x="0" y="0" width={STAGE_W} height={STAGE_H} fill="url(#ge-editor-grid)" pointerEvents="none" />}
+
       {/* ── Inactive zones (draw first) ── */}
       {zones
         .filter((z) => z.id !== activeZoneId)
@@ -233,7 +336,7 @@ export default function GeofenceStage({
                 fill="#fff" stroke={activeMeta.color} strokeWidth="2.5"
                 onPointerDown={(e) => handlePointPointerDown(i, e)}
                 onClick={(e) => e.stopPropagation()}
-                style={{ cursor: mode === 'delete' ? 'pointer' : 'grab' }}
+                style={{ cursor: readOnly ? 'default' : mode === 'delete' ? 'pointer' : 'grab' }}
               />
               <text
                 x={p.x} y={p.y - 12}
@@ -255,17 +358,17 @@ export default function GeofenceStage({
         </g>
       )}
 
-      {/* Mode hint */}
-      <rect x={STAGE_W - 250} y="16" width="234" height="40" rx="8"
-        fill="#FFFFFF" opacity="0.92" stroke="#E7E9EE" />
-      <text x={STAGE_W - 238} y="32" fill="#6B7385" fontFamily="Roboto Mono, monospace" fontSize="10">
-        {mode === 'add' ? 'CLICK STAGE TO ADD POINT' : mode === 'delete' ? 'CLICK POINT TO REMOVE' : 'DRAG POINTS TO ADJUST'}
-      </text>
-      <text x={STAGE_W - 238} y="46" fill="#1A2233" fontFamily="Roboto Mono, monospace" fontSize="11" fontWeight="600">
-        {activeMeta
-          ? `${activeMeta.shortLabel} · ${activeMeta.geometry}`
-          : `Edit mode: ${mode}`}
-      </text>
+      {!readOnly && (
+        <g>
+          <rect x={STAGE_W - 250} y="16" width="234" height="40" rx="8" fill="#FFFFFF" opacity="0.92" stroke="#E7E9EE" />
+          <text x={STAGE_W - 238} y="32" fill="#6B7385" fontFamily="Roboto Mono, monospace" fontSize="10">
+            {mode === 'add' ? 'CLICK STAGE TO ADD POINT' : mode === 'delete' ? 'CLICK POINT TO REMOVE' : 'DRAG POINTS TO ADJUST'}
+          </text>
+          <text x={STAGE_W - 238} y="46" fill="#1A2233" fontFamily="Roboto Mono, monospace" fontSize="11" fontWeight="600">
+            {activeMeta ? `${activeMeta.shortLabel} · ${activeMeta.geometry}` : `Edit mode: ${mode}`}
+          </text>
+        </g>
+      )}
     </svg>
   )
 }
