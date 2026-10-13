@@ -59,9 +59,6 @@ function resolveApiBase() {
 
 export const API_BASE = resolveApiBase();
 
-export const TOKEN_KEY = 'poolseye-lifeguard-token';
-export const USER_KEY = 'poolseye-lifeguard-session';
-
 export async function apiFetch(path, { method = 'GET', body, token } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;

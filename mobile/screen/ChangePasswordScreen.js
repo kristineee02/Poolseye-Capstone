@@ -1,68 +1,16 @@
-// PoolsEye — Change / Create Password (screenshot layout)
-
 import React, { useMemo, useState } from 'react';
 import {
   View, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { Text, TextInput } from '../components/Typography';
-import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, radius, shadow, touch } from '../theme/tokens';
 import { GradientButton } from '../components/Primitives';
 import { getPasswordRuleChecks } from '../auth/passwordRules';
 import { useAuth } from '../context/AuthContext';
 import StatusModal from '../components/StatusModal';
-
-function BackArrow({ color = colors.accent, size = 22 }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M15 6 9 12l6 6"
-        stroke={color}
-        strokeWidth={2.2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-function PasswordToggleIcon({ visible, color }) {
-  if (visible) {
-    return (
-      <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-        <Path
-          d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"
-          stroke={color}
-          strokeWidth={1.8}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <Circle cx="12" cy="12" r="3" stroke={color} strokeWidth={1.8} />
-      </Svg>
-    );
-  }
-
-  return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M10.6 10.6a2.5 2.5 0 0 0 3.5 3.5"
-        stroke={color}
-        strokeWidth={1.8}
-        strokeLinecap="round"
-      />
-      <Path
-        d="M6.5 6.7C4.6 8.2 3.2 10.1 2 12c0 0 3.5 7 10 7 1.8 0 3.4-.5 4.8-1.2M9.9 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a18.2 18.2 0 0 1-2.9 4.1"
-        stroke={color}
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Line x1="3" y1="3" x2="21" y2="21" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-    </Svg>
-  );
-}
+import { BackArrowIcon, PasswordVisibilityIcon } from '../components/icons/FormIcons';
 
 function PasswordField({
   value,
@@ -74,29 +22,29 @@ function PasswordField({
 }) {
   return (
     <View style={styles.fieldBlock}>
-    <View style={[styles.field, error && styles.fieldInvalid]}>
-      <TextInput
-        style={styles.input}
-        value={value}
-        onChangeText={onChangeText}
-        secureTextEntry={!visible}
-        placeholder={placeholder}
-        placeholderTextColor={colors.textTertiary}
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
-      <TouchableOpacity
-        style={styles.eyeButton}
-        onPress={onToggleVisible}
-        accessibilityRole="button"
-        accessibilityLabel={visible ? 'Hide password' : 'Show password'}
-        activeOpacity={0.7}
-        hitSlop={8}
-      >
-        <PasswordToggleIcon visible={visible} color={colors.textTertiary} />
-      </TouchableOpacity>
-    </View>
-    {error ? <Text style={styles.fieldError}>{error}</Text> : null}
+      <View style={[styles.field, error && styles.fieldInvalid]}>
+        <TextInput
+          style={styles.input}
+          value={value}
+          onChangeText={onChangeText}
+          secureTextEntry={!visible}
+          placeholder={placeholder}
+          placeholderTextColor={colors.textTertiary}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <TouchableOpacity
+          style={styles.eyeButton}
+          onPress={onToggleVisible}
+          accessibilityRole="button"
+          accessibilityLabel={visible ? 'Hide password' : 'Show password'}
+          activeOpacity={0.7}
+          hitSlop={8}
+        >
+          <PasswordVisibilityIcon visible={visible} />
+        </TouchableOpacity>
+      </View>
+      {error ? <Text style={styles.fieldError}>{error}</Text> : null}
     </View>
   );
 }
@@ -143,7 +91,7 @@ export default function ChangePasswordScreen({
   const email = resetEmail || user?.email || '';
   const showCurrentField = !forced && !resetMode;
   const showBack = Boolean(onCancel) && !forced;
-  // Inside Profile tab AppShell already handles safe area — keep header tight under "Profile"
+  // Embedded profile content already receives safe-area spacing from AppShell.
   const embedded = Boolean(onCancel) && !forced && !resetMode;
 
   const rules = useMemo(() => getPasswordRuleChecks(newPassword), [newPassword]);
@@ -234,7 +182,7 @@ export default function ChangePasswordScreen({
               accessibilityRole="button"
               accessibilityLabel="Go back"
             >
-              <BackArrow />
+              <BackArrowIcon />
             </TouchableOpacity>
           ) : (
             <View style={styles.backSpacer} />

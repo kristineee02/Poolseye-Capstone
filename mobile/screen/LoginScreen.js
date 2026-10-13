@@ -1,5 +1,3 @@
-// PoolsEye — Login (Sky Harmony light layout matching design reference)
-
 import React, { useState } from 'react';
 import {
   View, TouchableOpacity, StyleSheet,
@@ -7,84 +5,15 @@ import {
   ScrollView, Image,
 } from 'react-native';
 import { Text, TextInput } from '../components/Typography';
-import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, radius, shadow, touch } from '../theme/tokens';
 import { GradientButton } from '../components/Primitives';
 import { useAuth } from '../context/AuthContext';
 import StatusModal from '../components/StatusModal';
 import ForgotPasswordScreen from './ForgotPasswordScreen';
+import { LockIcon, PasswordVisibilityIcon, UserIcon } from '../components/icons/FormIcons';
 
-const ICON_BLUE = colors.accent;
 const logo = require('../assets/logo.png');
-
-function UserIcon({ color = ICON_BLUE }) {
-  return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Circle cx="12" cy="8" r="3.5" stroke={color} strokeWidth={1.8} />
-      <Path
-        d="M5 19.5c0-3.2 3.1-5.5 7-5.5s7 2.3 7 5.5"
-        stroke={color}
-        strokeWidth={1.8}
-        strokeLinecap="round"
-      />
-    </Svg>
-  );
-}
-
-function LockIcon({ color = ICON_BLUE }) {
-  return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M7 11V8.5a5 5 0 0 1 10 0V11"
-        stroke={color}
-        strokeWidth={1.8}
-        strokeLinecap="round"
-      />
-      <Path
-        d="M6.5 11h11a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 17.5 21h-11A1.5 1.5 0 0 1 5 19.5v-7A1.5 1.5 0 0 1 6.5 11Z"
-        stroke={color}
-        strokeWidth={1.8}
-      />
-    </Svg>
-  );
-}
-
-function PasswordToggleIcon({ visible, color }) {
-  if (visible) {
-    return (
-      <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-        <Path
-          d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"
-          stroke={color}
-          strokeWidth={1.8}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <Circle cx="12" cy="12" r="3" stroke={color} strokeWidth={1.8} />
-      </Svg>
-    );
-  }
-
-  return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M10.6 10.6a2.5 2.5 0 0 0 3.5 3.5"
-        stroke={color}
-        strokeWidth={1.8}
-        strokeLinecap="round"
-      />
-      <Path
-        d="M6.5 6.7C4.6 8.2 3.2 10.1 2 12c0 0 3.5 7 10 7 1.8 0 3.4-.5 4.8-1.2M9.9 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a18.2 18.2 0 0 1-2.9 4.1"
-        stroke={color}
-        strokeWidth={1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Line x1="3" y1="3" x2="21" y2="21" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-    </Svg>
-  );
-}
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -178,7 +107,7 @@ export default function LoginScreen() {
                 accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
                 activeOpacity={0.7}
               >
-                <PasswordToggleIcon visible={showPassword} color="#94A3B8" />
+                <PasswordVisibilityIcon visible={showPassword} color="#94A3B8" />
               </TouchableOpacity>
             </View>
             {fields.password ? <Text style={styles.fieldError}>{fields.password}</Text> : null}

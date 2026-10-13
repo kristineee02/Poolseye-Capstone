@@ -1,6 +1,3 @@
-// PoolsEye — Tab Navigator
-// Floating light bar — bright blue active pill with persistent alert badge
-
 import React, { useRef, useState } from 'react';
 import {
   View, Pressable, StyleSheet, Animated, Image,

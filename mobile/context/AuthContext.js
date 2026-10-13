@@ -1,8 +1,21 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { validateNewPassword } from '../auth/passwordRules';
-import { apiFetch, TOKEN_KEY, USER_KEY } from '../api/client';
+import {
+  changePassword as requestPasswordChange,
+  fetchCurrentUser,
+  login,
+  requestPasswordReset,
+  resetPassword as requestPasswordResetCompletion,
+  updateNotificationPreferences,
+  updateProfile as requestProfileUpdate,
+} from '../api/auth';
 import { unregisterFromNotifications } from '../notifications';
+import {
+  clearSession,
+  readSessionToken,
+  saveSession,
+  saveSessionUser,
+} from '../storage/session';
 
 const AuthContext = createContext(null);
 
@@ -15,19 +28,19 @@ export function AuthProvider({ children }) {
     let cancelled = false;
     (async () => {
       try {
-        const storedToken = await AsyncStorage.getItem(TOKEN_KEY);
+        const storedToken = await readSessionToken();
         if (!storedToken) return;
 
-        const result = await apiFetch('/api/mobile/auth/me', { token: storedToken });
+        const result = await fetchCurrentUser(storedToken);
         if (!cancelled && result.ok && result.user) {
           setToken(storedToken);
           setUser(result.user);
-          await AsyncStorage.setItem(USER_KEY, JSON.stringify(result.user));
+          await saveSessionUser(result.user);
         } else if (!cancelled) {
-          await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
+          await clearSession();
         }
       } catch {
-        // ignore corrupt session
+        // A malformed or unavailable local session should fall back to login.
       } finally {
         if (!cancelled) setReady(true);
       }
@@ -40,15 +53,11 @@ export function AuthProvider({ children }) {
   const persistSession = async (nextToken, nextUser) => {
     setToken(nextToken);
     setUser(nextUser);
-    await AsyncStorage.setItem(TOKEN_KEY, nextToken);
-    await AsyncStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+    await saveSession(nextToken, nextUser);
   };
 
   const signIn = async (email, password) => {
-    const result = await apiFetch('/api/mobile/auth/login', {
-      method: 'POST',
-      body: { email, password },
-    });
+    const result = await login(email, password);
     if (!result.ok) return { ok: false, error: result.error };
 
     await persistSession(result.token, result.user);
@@ -69,14 +78,10 @@ export function AuthProvider({ children }) {
     const check = validateNewPassword(newPassword, { email: user.email });
     if (!check.ok) return check;
 
-    const result = await apiFetch('/api/mobile/auth/change-password', {
-      method: 'POST',
-      token,
-      body: {
-        currentPassword,
-        newPassword,
-        skipCurrentCheck: skipCurrentCheck || user.mustChangePassword,
-      },
+    const result = await requestPasswordChange(token, {
+      currentPassword,
+      newPassword,
+      skipCurrentCheck: skipCurrentCheck || user.mustChangePassword,
     });
     if (!result.ok) return { ok: false, error: result.error };
 
@@ -90,13 +95,9 @@ export function AuthProvider({ children }) {
     const nextName = typeof name === 'string' ? name.trim() : user.name;
     if (!nextName) return { ok: false, error: 'Name is required.' };
 
-    const result = await apiFetch('/api/mobile/auth/profile', {
-      method: 'PATCH',
-      token,
-      body: {
-        name: nextName,
-        photoUri: photoUri === undefined ? user.photoUri || null : photoUri,
-      },
+    const result = await requestProfileUpdate(token, {
+      name: nextName,
+      photoUri: photoUri === undefined ? user.photoUri || null : photoUri,
     });
     if (!result.ok) return { ok: false, error: result.error };
 
@@ -104,15 +105,9 @@ export function AuthProvider({ children }) {
     return { ok: true };
   };
 
-  const updateAvatar = async (photoUri) => updateProfile({ photoUri });
-
   const updateNotificationPrefs = async (changes) => {
     if (!user || !token) return { ok: false, error: 'You must be signed in.' };
-    const result = await apiFetch('/api/mobile/notifications', {
-      method: 'PATCH',
-      token,
-      body: changes,
-    });
+    const result = await updateNotificationPreferences(token, changes);
     if (!result.ok) return { ok: false, error: result.error };
 
     await persistSession(token, result.user);
@@ -120,10 +115,7 @@ export function AuthProvider({ children }) {
   };
 
   const verifyResetEmail = async (email) => {
-    const result = await apiFetch('/api/mobile/auth/forgot-password/verify-email', {
-      method: 'POST',
-      body: { email },
-    });
+    const result = await requestPasswordReset(email);
     if (!result.ok) return { ok: false, error: result.error };
     return { ok: true, email: result.email };
   };
@@ -132,24 +124,21 @@ export function AuthProvider({ children }) {
     const check = validateNewPassword(newPassword, { email });
     if (!check.ok) return check;
 
-    const result = await apiFetch('/api/mobile/auth/forgot-password/reset', {
-      method: 'POST',
-      body: { email, newPassword, code },
-    });
+    const result = await requestPasswordResetCompletion({ email, newPassword, code });
     if (!result.ok) return { ok: false, error: result.error };
 
     setUser(null);
     setToken(null);
-    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
+    await clearSession();
     return { ok: true };
   };
 
   const signOut = async () => {
-    // Stop broadcasts reaching this phone once nobody is signed in on it.
+    // Remove the remote push destination before discarding local credentials.
     await unregisterFromNotifications(token).catch(() => {});
     setUser(null);
     setToken(null);
-    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
+    await clearSession();
   };
 
   return (
@@ -162,7 +151,6 @@ export function AuthProvider({ children }) {
         signOut,
         changePassword,
         updateProfile,
-        updateAvatar,
         updateNotificationPrefs,
         verifyResetEmail,
         resetPassword,
