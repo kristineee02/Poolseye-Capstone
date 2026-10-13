@@ -235,20 +235,30 @@ export default function GeofenceEditorPage() {
   return (
     <div className="page geofence-page geofence-workspace">
       <StatusModal status={status} onClose={closeStatus} />
-      <div className="geofence-top-actions-card">
-        <nav className="geofence-source-bar" aria-label="Editor frame source">
-          <button type="button" className={frameSource === 'layout' ? 'active' : ''} onClick={() => setFrameSource('layout')}>
-            <Icon.Layout /><strong>Pool Layout / Preview</strong>
-          </button>
-          <button type="button" className={frameSource === 'live' ? 'active' : ''} onClick={useLiveFrame}>
-            <Icon.Camera /><strong>Live View (CCTV)</strong>
-          </button>
-        </nav>
+      <div className="pagehead geofence-pagehead geofence-main-head">
+        <div className="geofence-title-block">
+          <h1>Geofence editor</h1>
+          <div className="sub">
+            Configure detection boundaries and preview zones on the live camera
+            {dirty ? ' · unsaved changes' : ''}
+          </div>
+        </div>
         <div className="pagehead-right geofence-head-save">
+          {syncError && <span className="is-error">{syncError}</span>}
           <button className="geofence-cancel-btn" onClick={discardChanges} disabled={!dirty || saving}>Cancel</button>
           <button className="btn-primary geofence-save-btn" onClick={saveZone} disabled={saving}><Icon.Save /> {saving ? 'Saving…' : savedNotice ? 'Saved' : 'Save changes'}</button>
         </div>
       </div>
+
+      <nav className="geofence-source-bar geofence-view-tabs" aria-label="Editor frame source">
+        <button type="button" className={frameSource === 'layout' ? 'active' : ''} onClick={() => setFrameSource('layout')}>
+          <Icon.Layout /><strong>Pool Layout / Preview</strong>
+        </button>
+        <button type="button" className={frameSource === 'live' ? 'active' : ''} onClick={useLiveFrame}>
+          <Icon.Camera /><strong>Live View (CCTV)</strong>
+        </button>
+      </nav>
+
       <div className="geofence-layout">
         <main className="geofence-canvas-col">
           <section className="geofence-editor-card" ref={editorCardRef}>

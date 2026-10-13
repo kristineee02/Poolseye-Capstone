@@ -7,6 +7,7 @@
 
 .geofence-pagehead {
   flex-shrink: 0;
+  width: 100%;
 }
 
 .geofence-layout {
@@ -613,6 +614,18 @@
 
 .geofence-main-head .sub {
   font-size: 13px;
+}
+
+.geofence-view-tabs {
+  width: fit-content;
+}
+
+.geofence-view-tabs > button {
+  width: auto;
+  min-width: 172px;
+  padding-inline: 18px;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .geofence-head-save {
