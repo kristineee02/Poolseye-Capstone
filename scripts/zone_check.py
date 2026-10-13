@@ -331,15 +331,17 @@ def in_orange_shape(x, y, orange, orange_proximity_px) -> bool:
 
 
 def classify_zone(x, y, zones_px, orange_proximity_px) -> str:
-    in_yellow = zones_px["yellow"]["enabled"] and point_in_polygon(
-        x, y, zones_px["yellow"]["points"]
+    # Nesting is only enforced against zones that are actually drawn, so a missing
+    # outer zone doesn't hide people standing in the inner ones.
+    yellow_on = zones_px["yellow"]["enabled"] and len(zones_px["yellow"]["points"]) >= 3
+    red_on = zones_px["red"]["enabled"] and len(zones_px["red"]["points"]) >= 3
+    in_yellow = yellow_on and point_in_polygon(x, y, zones_px["yellow"]["points"])
+    inside_outer = in_yellow or not yellow_on
+    in_red = red_on and inside_outer and point_in_polygon(x, y, zones_px["red"]["points"])
+    in_orange = (
+        (in_red or (not red_on and inside_outer))
+        and in_orange_shape(x, y, zones_px["orange"], orange_proximity_px)
     )
-    in_red = (
-        in_yellow
-        and zones_px["red"]["enabled"]
-        and point_in_polygon(x, y, zones_px["red"]["points"])
-    )
-    in_orange = in_red and in_orange_shape(x, y, zones_px["orange"], orange_proximity_px)
     if in_orange:
         return "orange"
     if in_red:

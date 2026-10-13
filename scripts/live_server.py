@@ -181,16 +181,27 @@ UNTRACKED_PERSON_ID = 0
 
 def sync_event_to_backend(entry: dict):
     """Persist live detection events to the Express backend for Event history."""
-    try:
-        payload = json.dumps(entry).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
-        secret = os.environ.get("EVENTS_INGEST_SECRET")
-        if secret:
-            headers["X-Events-Secret"] = secret
-        req = Request(EVENTS_INGEST_API, data=payload, headers=headers, method="POST")
-        urlopen(req, timeout=2)
-    except (URLError, TimeoutError, OSError):
-        pass
+    payload = json.dumps(entry).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    secret = os.environ.get("EVENTS_INGEST_SECRET")
+    if secret:
+        headers["X-Events-Secret"] = secret
+    reason = "no response"
+    # A sleeping or busy Render instance can take well over a few seconds to answer
+    for attempt in range(4):
+        try:
+            req = Request(EVENTS_INGEST_API, data=payload, headers=headers, method="POST")
+            with urlopen(req, timeout=15):
+                return
+        except HTTPError as err:
+            if err.code < 500:
+                print(f"[events] {entry['id']} rejected by {EVENTS_INGEST_API} ({err.code})")
+                return
+            reason = f"HTTP {err.code}"
+        except (URLError, TimeoutError, OSError) as err:
+            reason = str(getattr(err, "reason", err))
+        time.sleep(2 * (attempt + 1))
+    print(f"[events] could not save {entry['id']} to {EVENTS_INGEST_API} ({reason})")
 
 
 def upload_event_media(event_id: str, content_type: str, data: bytes) -> str | None:
@@ -599,7 +610,7 @@ class FrameGrabber:
         self.kind = kind
         self.max_width = max_width
         self.failed = False
-        # An uploaded video plays once; replaying it would log every alert again.
+        # An uploaded video loops until the admin returns to live; ended means it can't be replayed.
         self.ended = False
         self.loops = 0
         self._frame = None
@@ -627,10 +638,16 @@ class FrameGrabber:
                 next_frame_at = max(next_frame_at + self._frame_interval, time.time() - self._frame_interval)
             ok, frame = self.cap.read()
             if (not ok or frame is None) and self.kind == "video":
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ok, frame = self.cap.read()
+                if not ok or frame is None:
+                    with self._cond:
+                        self.ended = True
+                        self._cond.notify_all()
+                    return
                 with self._cond:
-                    self.ended = True
-                    self._cond.notify_all()
-                return
+                    self.loops += 1
+                next_frame_at = time.time() + self._frame_interval
             if not ok or frame is None:
                 fail += 1
                 if fail > 30:
@@ -1221,7 +1238,7 @@ def capture_loop(cfg: dict):
             if grabber.loops != loops:
                 loops = grabber.loops
                 reset_tracking()
-                print("[stream] uploaded video restarted — re-detecting from the beginning")
+                print("[stream] uploaded video restarted — boxes only, alerts were logged on the first play")
             started = time.time()
             try:
                 zcfg = current_zcfg(fallback_zcfg)
@@ -1248,7 +1265,8 @@ def capture_loop(cfg: dict):
                     results.append(scene)
                 with _lock:
                     _latest_reports = [{**r, "event": None, "is_alert": False} for r in reports]
-                log_events(supervision_events, reports, seq, ts, drowning_events)
+                if loops == 0:
+                    log_events(supervision_events, reports, seq, ts, drowning_events)
             except Exception as exc:
                 print(f"[stream] annotate error: {exc}")
             elapsed = time.time() - started
@@ -1335,7 +1353,7 @@ def capture_loop(cfg: dict):
                 ended_at = ended_at or time.time()
                 # Show the last frames (and let their alerts save evidence) before switching back
                 if shown_seq >= grabber.newest_seq or time.time() - ended_at > MAX_DISPLAY_DELAY_SEC + 1.0:
-                    print("[stream] uploaded video finished — returning to live CCTV")
+                    print("[stream] uploaded video could not be replayed — returning to live CCTV")
                     with _lock:
                         _latest_jpeg = None
                     clear_video()

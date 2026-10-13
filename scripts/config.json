@@ -1,6 +1,6 @@
 {
     "CAMERA": {
-        "rtsp_url": "rtsp://PoolsEye:PoolsEyeCapstone@192.168.0.130:554/stream1",
+        "rtsp_url": "rtsp://PoolsEye:PoolsEyeCapstone@10.247.113.195:554/stream1",
         "source": "rtsp",
         "fallback_webcam": true,
         "webcam_index": 0

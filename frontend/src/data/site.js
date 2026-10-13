@@ -1,3 +1,3 @@
 export const site = {
-  name: 'Sablan Residence — South Patio Pool',
+  name: 'Casa Teodora Resort: Main Pool',
 }
