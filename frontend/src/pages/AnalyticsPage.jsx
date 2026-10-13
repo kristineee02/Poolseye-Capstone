@@ -45,8 +45,59 @@ const TYPE_COLORS = {
 }
 const FALLBACK_TYPE_COLORS = ['#0EA5E9', '#EC4899', '#84CC16', '#14B8A6', '#6366F1', '#78716C']
 
+const DETECTION_GROUPS = [
+  { id: 'supervision', label: 'Supervision Status' },
+  { id: 'zone', label: 'Zone Events' },
+  { id: 'distress', label: 'Potential Drowning-Distress' },
+  { id: 'other', label: 'Other Detections' },
+]
+
 function typeColor(title, index) {
   return TYPE_COLORS[title] || FALLBACK_TYPE_COLORS[index % FALLBACK_TYPE_COLORS.length]
+}
+
+function detectionGroup(title) {
+  const value = title.toLowerCase()
+  if (value.includes('supervised') || value.includes('supervision')) return 'supervision'
+  if (value.includes('drowning') || value.includes('distress')) return 'distress'
+  if (
+    value.includes('zone')
+    || value.includes('pool')
+    || value.includes('monitored area')
+    || value.includes('after-hours')
+    || value.includes('intrusion')
+  ) return 'zone'
+  return 'other'
+}
+
+function groupDetectionTypes(types) {
+  const grouped = new Map(DETECTION_GROUPS.map((group) => [group.id, []]))
+  types.forEach((type, index) => {
+    grouped.get(detectionGroup(type.title)).push({
+      ...type,
+      color: typeColor(type.title, index),
+    })
+  })
+
+  const supervisionOrder = (title) => {
+    const value = title.toLowerCase()
+    if (value === 'person supervised' || value === 'supervised person') return 0
+    if (value === 'unsupervised person') return 1
+    return 2
+  }
+
+  grouped.get('supervision').sort((a, b) => supervisionOrder(a.title) - supervisionOrder(b.title))
+
+  return DETECTION_GROUPS
+    .map((group) => {
+      const items = grouped.get(group.id)
+      return {
+        ...group,
+        items,
+        total: items.reduce((sum, item) => sum + item.count, 0),
+      }
+    })
+    .filter((group) => group.items.length)
 }
 
 function formatDuration(seconds) {
@@ -178,6 +229,7 @@ export default function AnalyticsPage() {
     ? data.byHour.indexOf(Math.max(...data.byHour))
     : null
   const maxTypeCount = Math.max(1, ...(data?.byType || []).map((t) => t.count))
+  const detectionGroups = groupDetectionTypes(data?.byType || [])
 
   return (
     <div className="page analytics-page">
@@ -266,7 +318,7 @@ export default function AnalyticsPage() {
                     ? `${summary.drowningPending} still pending`
                     : 'All responded to'}                />
                 <StatCard
-                  tone="alarm"
+                  tone="warn"
                   icon={Icon.AlertTriangle}
                   label="High-severity alerts"
                   value={summary.highSeverity}
@@ -286,7 +338,7 @@ export default function AnalyticsPage() {
                   comparisonLabel={comparisonLabel}
                   hint={`${summary.pending} still pending`}                />
                 <StatCard
-                  tone="warn"
+                  tone="violet"
                   icon={Icon.Clock}
                   label="Average response time"
                   value={formatDuration(responseTimes.average)}
@@ -324,29 +376,44 @@ export default function AnalyticsPage() {
                     <div className="chart-card">
                       <div className="chart-card-head">
                         <h3>Detections by type</h3>
-                        <span className="chart-sub">Most frequent first</span>
+                        <span className="chart-sub">Grouped for easier comparison</span>
                       </div>
                       <div className="incident-trend-list">
-                        {data.byType.map((t, i) => (
-                          <div key={t.title} className="incident-trend-row">
-                            <span className="it-type" title={t.title}>
-                              <span className="it-type-dot" style={{ background: typeColor(t.title, i) }} />
-                              {t.title}
-                            </span>
-                            <div className="it-bar-track">
-                              <div
-                                className="it-bar-fill"
-                                style={{
-                                  width: `${(t.count / maxTypeCount) * 100}%`,
-                                  background: typeColor(t.title, i),
-                                }}
-                              />
+                        {detectionGroups.map((group) => (
+                          <section
+                            key={group.id}
+                            className="incident-trend-group"
+                          >
+                            <div className="incident-trend-group-head">
+                              <h4>{group.label}</h4>
+                              <span>
+                                {group.total} detection{group.total === 1 ? '' : 's'}
+                              </span>
                             </div>
-                            <span className="it-count">{t.count}</span>
-                            <span className={`sev-pill ${SEV_CLASS[t.severity]}`}>
-                              {t.severity.toLowerCase()}
-                            </span>
-                          </div>
+                            <div className="incident-trend-group-body">
+                              {group.items.map((t) => (
+                                <div key={t.title} className="incident-trend-row">
+                                  <span className="it-type" title={t.title}>
+                                    <span className="it-type-dot" style={{ background: t.color }} />
+                                    {t.title}
+                                  </span>
+                                  <div className="it-bar-track">
+                                    <div
+                                      className="it-bar-fill"
+                                      style={{
+                                        width: `${(t.count / maxTypeCount) * 100}%`,
+                                        background: t.color,
+                                      }}
+                                    />
+                                  </div>
+                                  <span className="it-count">{t.count}</span>
+                                  <span className={`sev-pill ${SEV_CLASS[t.severity]}`}>
+                                    {t.severity.toLowerCase()}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </section>
                         ))}
                       </div>
                     </div>
@@ -372,7 +439,7 @@ export default function AnalyticsPage() {
             <section className="analytics-section">
               <div className="analytics-summary-grid">
                 {[
-                  { label: 'Average response', value: responseTimes.average, icon: Icon.Clock, tone: 'warn' },
+                  { label: 'Average response', value: responseTimes.average, icon: Icon.Clock, tone: 'violet' },
                   { label: 'Median response', value: responseTimes.median, icon: Icon.Chart, tone: 'accent' },
                   { label: 'Fastest response', value: responseTimes.fastest, icon: Icon.CheckCircle, tone: 'safe' },
                   { label: 'Slowest response', value: responseTimes.slowest, icon: Icon.AlertTriangle, tone: 'alarm' },
