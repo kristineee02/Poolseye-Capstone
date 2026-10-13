@@ -2,9 +2,10 @@
 
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, ScrollView, StyleSheet, TouchableOpacity,
+  View, ScrollView, StyleSheet, TouchableOpacity,
   Image, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { Text, TextInput } from '../components/Typography';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import Svg, { Path } from 'react-native-svg';

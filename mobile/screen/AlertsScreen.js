@@ -3,9 +3,10 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, LayoutAnimation,
+  View, ScrollView, StyleSheet, TouchableOpacity, LayoutAnimation,
   RefreshControl, AppState,
 } from 'react-native';
+import { Text } from '../components/Typography';
 import Svg, { Path } from 'react-native-svg';
 import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';

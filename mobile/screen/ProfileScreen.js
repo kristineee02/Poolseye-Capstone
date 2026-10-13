@@ -3,8 +3,9 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, Image,
+  View, ScrollView, StyleSheet, TouchableOpacity, Image,
 } from 'react-native';
+import { Text } from '../components/Typography';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';

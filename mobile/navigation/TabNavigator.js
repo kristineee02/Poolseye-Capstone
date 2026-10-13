@@ -3,10 +3,11 @@
 
 import React, { useRef, useState } from 'react';
 import {
-  View, Text, Pressable, StyleSheet, Animated, Image,
+  View, Pressable, StyleSheet, Animated, Image,
 } from 'react-native';
+import { Text } from '../components/Typography';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, radius } from '../theme/tokens';
+import { colors, radius, typography } from '../theme/tokens';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 import { useAlertNotifications } from '../hooks/useAlertNotifications';
 import { useAuth } from '../context/AuthContext';
@@ -243,7 +244,7 @@ const iconStyles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   badgeText: {
-    fontSize: 8,
+    fontSize: 10,
     fontWeight: '700',
     color: '#fff',
   },
@@ -318,7 +319,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F7FF',
   },
   tabLabel: {
-    fontSize: 9.5,
+    fontSize: typography.xs,
     fontWeight: '600',
     letterSpacing: 0.1,
   },

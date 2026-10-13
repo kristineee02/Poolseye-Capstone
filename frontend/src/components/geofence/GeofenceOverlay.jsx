@@ -38,7 +38,7 @@ export default function GeofenceOverlay({ zones = [], showLabels = true, dimmed 
                 x={zone.points[0].x + 6}
                 y={zone.points[0].y - 8}
                 fill={meta.color}
-                fontFamily="Roboto Mono, monospace"
+                fontFamily="Inter, sans-serif"
                 fontSize="11"
                 fontWeight="700"
               >

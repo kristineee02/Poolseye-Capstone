@@ -64,12 +64,14 @@
   gap: 10px;
 }
 .pagehead h1 {
-  font-size: 19px;
-  font-weight: 700;
+  font-size: var(--text-page-title);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 .pagehead .sub {
-  font-size: 12.5px;
+  font-size: var(--text-control);
+  line-height: var(--leading-normal);
   color: var(--text-secondary);
   margin-top: 3px;
 }

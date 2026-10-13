@@ -212,9 +212,9 @@ export default function GeofenceStage({
         x2={PX + PW * 0.52} y2={PY + PH - 8}
         stroke="#FFFFFF" strokeWidth="1.5" strokeDasharray="6 8" opacity="0.28"
       />
-      <text x={PX + 28} y={PY + PH - 18} fill="#fff" fontFamily="Roboto Mono, monospace"
+      <text x={PX + 28} y={PY + PH - 18} fill="#fff" fontFamily="Inter, sans-serif"
         fontSize="11" opacity="0.55">SHALLOW</text>
-      <text x={PX + PW - 28} y={PY + PH - 18} fill="#fff" fontFamily="Roboto Mono, monospace"
+      <text x={PX + PW - 28} y={PY + PH - 18} fill="#fff" fontFamily="Inter, sans-serif"
         fontSize="11" opacity="0.55" textAnchor="end">DEEP</text>
 
       {/* Lane lines */}
@@ -238,13 +238,13 @@ export default function GeofenceStage({
       ))}
 
       {/* Depth labels */}
-      <text x={PX + 18} y={PY + 40}  fill="#fff" fontFamily="Roboto Mono, monospace" fontSize="11" opacity="0.6">1.0m</text>
-      <text x={PX + 18} y={PY + 130} fill="#fff" fontFamily="Roboto Mono, monospace" fontSize="11" opacity="0.6">1.5m</text>
-      <text x={PX + 18} y={PY + 220} fill="#fff" fontFamily="Roboto Mono, monospace" fontSize="11" opacity="0.6">2.0m</text>
-      <text x={PX + 18} y={PY + 320} fill="#fff" fontFamily="Roboto Mono, monospace" fontSize="11" opacity="0.6">2.5m</text>
+      <text x={PX + 18} y={PY + 40}  fill="#fff" fontFamily="Inter, sans-serif" fontSize="11" opacity="0.6">1.0m</text>
+      <text x={PX + 18} y={PY + 130} fill="#fff" fontFamily="Inter, sans-serif" fontSize="11" opacity="0.6">1.5m</text>
+      <text x={PX + 18} y={PY + 220} fill="#fff" fontFamily="Inter, sans-serif" fontSize="11" opacity="0.6">2.0m</text>
+      <text x={PX + 18} y={PY + 320} fill="#fff" fontFamily="Inter, sans-serif" fontSize="11" opacity="0.6">2.5m</text>
 
       {/* Pool label */}
-      <text x={PX + PW / 2} y={PY + 28} fill="#fff" fontFamily="Roboto Mono, monospace"
+      <text x={PX + PW / 2} y={PY + 28} fill="#fff" fontFamily="Inter, sans-serif"
         fontSize="12" fontWeight="700" textAnchor="middle" opacity="0.5" letterSpacing="2">
         MAIN POOL — SAFETY GEOFENCE
       </text>
@@ -284,7 +284,7 @@ export default function GeofenceStage({
             x={(adaptiveBounds.left + adaptiveBounds.right) / 2}
             y={adaptiveBounds.top + 27}
             fill="#fff"
-            fontFamily="Roboto Mono, monospace"
+            fontFamily="Inter, sans-serif"
             fontSize="12"
             fontWeight="700"
             textAnchor="middle"
@@ -293,8 +293,8 @@ export default function GeofenceStage({
           >
             MAIN POOL · ADAPTIVE PREVIEW
           </text>
-          <text x={adaptiveBounds.left + 24} y={adaptiveBounds.bottom - 17} fill="#fff" fontFamily="Roboto Mono, monospace" fontSize="10" opacity="0.7">SHALLOW</text>
-          <text x={adaptiveBounds.right - 24} y={adaptiveBounds.bottom - 17} fill="#fff" fontFamily="Roboto Mono, monospace" fontSize="10" textAnchor="end" opacity="0.7">DEEP</text>
+          <text x={adaptiveBounds.left + 24} y={adaptiveBounds.bottom - 17} fill="#fff" fontFamily="Inter, sans-serif" fontSize="10" opacity="0.7">SHALLOW</text>
+          <text x={adaptiveBounds.right - 24} y={adaptiveBounds.bottom - 17} fill="#fff" fontFamily="Inter, sans-serif" fontSize="10" textAnchor="end" opacity="0.7">DEEP</text>
         </g>
       )}
 
@@ -341,7 +341,7 @@ export default function GeofenceStage({
               <text
                 x={p.x} y={p.y - 12}
                 fill={activeMeta.color}
-                fontFamily="Roboto Mono, monospace"
+                fontFamily="Inter, sans-serif"
                 fontSize="10"
                 fontWeight="700"
                 textAnchor="middle"
@@ -351,7 +351,7 @@ export default function GeofenceStage({
             </g>
           ))}
           <text x={16} y={STAGE_H - 16} fill={activeMeta.color}
-            fontFamily="Roboto Mono, monospace" fontSize="12" fontWeight="700">
+            fontFamily="Inter, sans-serif" fontSize="12" fontWeight="700">
             {activeMeta.label.toUpperCase()} · {activeZone.name.toUpperCase()} — {activeZone.points.length} POINTS
             {activeMeta.geometry === 'polygon' && activeZone.points.length < 3 ? ' (need 3+ to close)' : ''}
           </text>
@@ -361,10 +361,10 @@ export default function GeofenceStage({
       {!readOnly && (
         <g>
           <rect x={STAGE_W - 250} y="16" width="234" height="40" rx="8" fill="#FFFFFF" opacity="0.92" stroke="#E7E9EE" />
-          <text x={STAGE_W - 238} y="32" fill="#6B7385" fontFamily="Roboto Mono, monospace" fontSize="10">
+          <text x={STAGE_W - 238} y="32" fill="#6B7385" fontFamily="Inter, sans-serif" fontSize="10">
             {mode === 'add' ? 'CLICK STAGE TO ADD POINT' : mode === 'delete' ? 'CLICK POINT TO REMOVE' : 'DRAG POINTS TO ADJUST'}
           </text>
-          <text x={STAGE_W - 238} y="46" fill="#1A2233" fontFamily="Roboto Mono, monospace" fontSize="11" fontWeight="600">
+          <text x={STAGE_W - 238} y="46" fill="#1A2233" fontFamily="Inter, sans-serif" fontSize="11" fontWeight="600">
             {activeMeta ? `${activeMeta.shortLabel} · ${activeMeta.geometry}` : `Edit mode: ${mode}`}
           </text>
         </g>

@@ -1,7 +1,8 @@
 // PoolsEye — ProfileHero (greeting + online, matches dashboard reference)
 
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import { Text } from './Typography';
 import { colors, radius, typography } from '../theme/tokens';
 import { useAuth } from '../context/AuthContext';
 import { lifeguard as defaultLifeguard } from '../data';

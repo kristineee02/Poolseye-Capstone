@@ -2,9 +2,10 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity, Modal, Pressable,
+  View, FlatList, StyleSheet, TouchableOpacity, Modal, Pressable,
   RefreshControl, AppState,
 } from 'react-native';
+import { Text } from '../components/Typography';
 import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
 import { Tag } from '../components/Primitives';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';

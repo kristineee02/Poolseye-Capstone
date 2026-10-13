@@ -53,9 +53,9 @@ export default function CameraFeedIllustration({ zones = initialZones }) {
         x2={PX + PW * 0.52} y2={PY + PH - 8}
         stroke="#FFFFFF" strokeWidth="1.5" strokeDasharray="6 8" opacity="0.22"
       />
-      <text x={PX + 28} y={PY + PH - 18} fill="#fff" fontFamily="Roboto Mono, monospace"
+      <text x={PX + 28} y={PY + PH - 18} fill="#fff" fontFamily="Inter, sans-serif"
         fontSize="11" opacity="0.5">SHALLOW</text>
-      <text x={PX + PW - 28} y={PY + PH - 18} fill="#fff" fontFamily="Roboto Mono, monospace"
+      <text x={PX + PW - 28} y={PY + PH - 18} fill="#fff" fontFamily="Inter, sans-serif"
         fontSize="11" opacity="0.5" textAnchor="end">DEEP</text>
 
       {/* Lane lines clipped to pool */}
@@ -79,13 +79,13 @@ export default function CameraFeedIllustration({ zones = initialZones }) {
       ))}
 
       {/* Depth markers */}
-      <text x={PX + 18} y={PY + 40}  fill="#fff" fontFamily="Roboto Mono, monospace" fontSize="11" opacity="0.65">1.0m</text>
-      <text x={PX + 18} y={PY + 130} fill="#fff" fontFamily="Roboto Mono, monospace" fontSize="11" opacity="0.65">1.5m</text>
-      <text x={PX + 18} y={PY + 220} fill="#fff" fontFamily="Roboto Mono, monospace" fontSize="11" opacity="0.65">2.0m</text>
-      <text x={PX + 18} y={PY + 320} fill="#fff" fontFamily="Roboto Mono, monospace" fontSize="11" opacity="0.65">2.5m</text>
+      <text x={PX + 18} y={PY + 40}  fill="#fff" fontFamily="Inter, sans-serif" fontSize="11" opacity="0.65">1.0m</text>
+      <text x={PX + 18} y={PY + 130} fill="#fff" fontFamily="Inter, sans-serif" fontSize="11" opacity="0.65">1.5m</text>
+      <text x={PX + 18} y={PY + 220} fill="#fff" fontFamily="Inter, sans-serif" fontSize="11" opacity="0.65">2.0m</text>
+      <text x={PX + 18} y={PY + 320} fill="#fff" fontFamily="Inter, sans-serif" fontSize="11" opacity="0.65">2.5m</text>
 
       {/* Pool label */}
-      <text x={PX + PW / 2} y={PY + 28} fill="#fff" fontFamily="Roboto Mono, monospace"
+      <text x={PX + PW / 2} y={PY + 28} fill="#fff" fontFamily="Inter, sans-serif"
         fontSize="12" fontWeight="700" textAnchor="middle" opacity="0.55" letterSpacing="2">
         MAIN POOL — LIVE CCTV
       </text>
@@ -98,18 +98,18 @@ export default function CameraFeedIllustration({ zones = initialZones }) {
         fill="#1B9C6E" fillOpacity="0.18" stroke="#1B9C6E" strokeWidth="3" />
       <rect x={adult.x} y={adult.y} width={adult.w} height={20} rx="4" fill="#1B9C6E" />
       <text x={adult.x + adult.w / 2} y={adult.y + 14} fill="#fff"
-        fontFamily="Roboto Mono, monospace" fontSize="11" fontWeight="700" textAnchor="middle">PERSON</text>
+        fontFamily="Inter, sans-serif" fontSize="11" fontWeight="700" textAnchor="middle">PERSON</text>
       <text x={adult.x + adult.w / 2} y={adultCy - 6} fill="#1B9C6E"
-        fontFamily="Roboto Mono, monospace" fontSize="13" fontWeight="700" textAnchor="middle">0.97</text>
+        fontFamily="Inter, sans-serif" fontSize="13" fontWeight="700" textAnchor="middle">0.97</text>
 
       {/* ── Unsupervised person bounding box — deck, before pool ── */}
       <rect x={child.x} y={child.y} width={child.w} height={child.h} rx="4"
         fill="#B6790A" fillOpacity="0.18" stroke="#B6790A" strokeWidth="3" />
       <rect x={child.x} y={child.y} width={child.w} height={20} rx="4" fill="#B6790A" />
       <text x={child.x + child.w / 2} y={child.y + 14} fill="#fff"
-        fontFamily="Roboto Mono, monospace" fontSize="11" fontWeight="700" textAnchor="middle">PERSON</text>
+        fontFamily="Inter, sans-serif" fontSize="11" fontWeight="700" textAnchor="middle">PERSON</text>
       <text x={child.x + child.w / 2} y={childCy - 6} fill="#B6790A"
-        fontFamily="Roboto Mono, monospace" fontSize="13" fontWeight="700" textAnchor="middle">0.93</text>
+        fontFamily="Inter, sans-serif" fontSize="13" fontWeight="700" textAnchor="middle">0.93</text>
 
       {/* ── Distance line ── */}
       <line x1={childCx} y1={childCy} x2={adultCx} y2={adultCy}
@@ -117,15 +117,15 @@ export default function CameraFeedIllustration({ zones = initialZones }) {
       <rect x={(childCx + adultCx) / 2 - 44} y={(childCy + adultCy) / 2 - 11}
         width={88} height={22} rx="4" fill="#D6364A" />
       <text x={(childCx + adultCx) / 2} y={(childCy + adultCy) / 2 + 4}
-        fill="#fff" fontFamily="Roboto Mono, monospace" fontSize="11" fontWeight="700" textAnchor="middle">
+        fill="#fff" fontFamily="Inter, sans-serif" fontSize="11" fontWeight="700" textAnchor="middle">
         1.2m · OVER
       </text>
 
       {/* Timestamp */}
       <rect x="856" y="20" width="124" height="34" rx="8"
         fill="#FFFFFF" opacity="0.92" stroke="#E7E9EE" strokeWidth="1" />
-      <text x="868" y="33" fill="#9AA1B0" fontFamily="Roboto Mono, monospace" fontSize="9.5">2026-06-22</text>
-      <text x="868" y="47" fill="#1A2233" fontFamily="Roboto Mono, monospace" fontSize="11" fontWeight="600">10:42:11 AM</text>
+      <text x="868" y="33" fill="#9AA1B0" fontFamily="Inter, sans-serif" fontSize="9.5">2026-06-22</text>
+      <text x="868" y="47" fill="#1A2233" fontFamily="Inter, sans-serif" fontSize="11" fontWeight="600">10:42:11 AM</text>
     </svg>
   )
 }

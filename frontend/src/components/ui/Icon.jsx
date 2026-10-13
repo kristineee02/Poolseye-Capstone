@@ -484,7 +484,7 @@ export const Icon = {
       <path d="M12.5 1v4.5H17" fill="#F4F4F4" stroke="#C6C6C6" strokeLinejoin="round" />
       <path d="M5.5 8.5h9M5.5 11h9M5.5 13.5h6" stroke="#B0B0B0" strokeWidth="0.9" strokeLinecap="round" />
       <rect x="2.5" y="15" width="15" height="7.5" rx="1" fill="#217346" />
-      <text x="10" y="20.4" textAnchor="middle" fill="#fff" fontSize="5.2" fontWeight="700" fontFamily="Segoe UI, Arial, sans-serif">X</text>
+      <text x="10" y="20.4" textAnchor="middle" fill="#fff" fontSize="5.2" fontWeight="700" fontFamily="Inter, sans-serif">X</text>
     </svg>
   ),
   FilePdf: (p) => (
@@ -493,7 +493,7 @@ export const Icon = {
       <path d="M12.5 1v4.5H17" fill="#F4F4F4" stroke="#C6C6C6" strokeLinejoin="round" />
       <path d="M5.5 8.5h9M5.5 11h9M5.5 13.5h9" stroke="#B0B0B0" strokeWidth="0.9" strokeLinecap="round" />
       <rect x="2.5" y="15" width="15" height="7.5" rx="1" fill="#E5252A" />
-      <text x="10" y="20.2" textAnchor="middle" fill="#fff" fontSize="4.4" fontWeight="700" fontFamily="Segoe UI, Arial, sans-serif">PDF</text>
+      <text x="10" y="20.2" textAnchor="middle" fill="#fff" fontSize="4.4" fontWeight="700" fontFamily="Inter, sans-serif">PDF</text>
     </svg>
   ),
   FileCsv: (p) => (
@@ -502,7 +502,7 @@ export const Icon = {
       <path d="M12.5 1v4.5H17" fill="#F4F4F4" stroke="#C6C6C6" strokeLinejoin="round" />
       <path d="M5.5 8h9M5.5 10.5h9M5.5 13h9M8 8v5.5M11.5 8v5.5" stroke="#B0B0B0" strokeWidth="0.8" strokeLinecap="round" />
       <rect x="2.5" y="15" width="15" height="7.5" rx="1" fill="#198038" />
-      <text x="10" y="20.2" textAnchor="middle" fill="#fff" fontSize="4.2" fontWeight="700" fontFamily="Segoe UI, Arial, sans-serif">CSV</text>
+      <text x="10" y="20.2" textAnchor="middle" fill="#fff" fontSize="4.2" fontWeight="700" fontFamily="Inter, sans-serif">CSV</text>
     </svg>
   ),
 }

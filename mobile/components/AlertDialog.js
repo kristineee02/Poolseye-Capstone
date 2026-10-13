@@ -4,13 +4,13 @@ import React from 'react';
 import {
   Modal,
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
   Pressable,
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
+import { Text } from './Typography';
 import Svg, { Circle, Line, Path, Polyline } from 'react-native-svg';
 
 const TONE_COLORS = {
@@ -317,7 +317,7 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
   },
   btnText: {
-    fontSize: 13.5,
+    fontSize: 13,
     fontWeight: '600',
   },
   btnTextOnTone: {

@@ -5,7 +5,8 @@
 }
 
 .settings-pagehead h1 {
-  font-size: 22px;
+  font-size: var(--text-page-title);
+  font-weight: var(--weight-extrabold);
 }
 
 .settings-tabs {

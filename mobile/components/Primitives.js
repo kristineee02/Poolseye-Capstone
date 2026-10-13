@@ -2,7 +2,8 @@
 // Touch-friendly, Sky Harmony–consistent components
 
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { Text } from './Typography';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
 
@@ -321,7 +322,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   mono: {
-    fontFamily: 'Courier',
+    fontFamily: typography.mono,
     fontSize: typography.sm,
     color: colors.textSecondary,
   },

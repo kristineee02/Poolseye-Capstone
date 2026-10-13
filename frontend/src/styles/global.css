@@ -17,15 +17,43 @@ body {
     linear-gradient(180deg, var(--bg-app) 0%, #E8F3FC 100%);
   color: var(--text-primary);
   font-family: var(--font-ui);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-normal);
+  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .mono {
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
-button {
+button,
+input,
+select,
+textarea,
+table {
   font-family: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  font-size: var(--text-control);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-ui);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.02em;
 }
 
 :focus-visible {

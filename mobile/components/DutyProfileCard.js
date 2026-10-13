@@ -1,7 +1,8 @@
 // PoolsEye — Duty profile hero card (Alerts screen)
 
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import { Text } from './Typography';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle } from 'react-native-svg';
 import { lifeguard as defaultLifeguard } from '../data';

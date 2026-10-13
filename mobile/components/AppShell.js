@@ -2,7 +2,8 @@
 // Screen header; hidden when title is empty (Home uses ProfileHero)
 
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import { Text } from './Typography';
 import { colors, spacing, typography } from '../theme/tokens';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 

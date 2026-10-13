@@ -63,17 +63,29 @@ export const spacing = {
   xxl: 36,
 };
 
-/** Readable mobile type scale (min ~11px) */
+/** Inter-based mobile type scale shared by screens and components. */
 export const typography = {
-  ui:   'System',
-  mono: 'Courier',
+  ui:   'Inter_400Regular',
+  mono: 'Inter_500Medium',
+  fonts: {
+    regular:   'Inter_400Regular',
+    medium:    'Inter_500Medium',
+    semiBold:  'Inter_600SemiBold',
+    bold:      'Inter_700Bold',
+    extraBold: 'Inter_800ExtraBold',
+  },
   xs:   11,
   sm:   13,
   base: 14,
-  md:  15,
-  lg:  17,
-  xl:  22,
+  md:   15,
+  lg:   17,
+  xl:   22,
   kpi: 28,
+  lineHeight: {
+    tight: 1.2,
+    normal: 1.45,
+    relaxed: 1.6,
+  },
 };
 
 /** Minimum comfortable tap target */
