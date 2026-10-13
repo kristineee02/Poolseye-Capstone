@@ -1,5 +1,9 @@
 import { Icon } from '../ui/Icon'
 
+// Event timestamps are Unix instants. Always display them in the pool site's
+// timezone instead of inheriting the browser/device timezone.
+export const SITE_TIME_ZONE = import.meta.env.VITE_SITE_TIMEZONE || 'Asia/Manila'
+
 export const EVENT_KINDS = {
   distress: { id: 'distress', label: 'Distress', icon: Icon.AlertCircle, rank: 4 },
   intrusion: { id: 'intrusion', label: 'Intrusion', icon: Icon.AlertTriangle, rank: 3 },
@@ -57,15 +61,22 @@ export function zoneLabel(event) {
 export function formatTime(ts, withSeconds = false) {
   if (ts == null) return '—'
   return new Date(ts * 1000).toLocaleTimeString('en', {
+    timeZone: SITE_TIME_ZONE,
     hour: 'numeric',
     minute: '2-digit',
+    hour12: true,
     ...(withSeconds ? { second: '2-digit' } : {}),
   })
 }
 
 export function formatDate(ts) {
   if (ts == null) return '—'
-  return new Date(ts * 1000).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })
+  return new Date(ts * 1000).toLocaleDateString('en', {
+    timeZone: SITE_TIME_ZONE,
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
 }
 
 export function formatDateTime(ts) {

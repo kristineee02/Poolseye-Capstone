@@ -653,7 +653,16 @@ def draw_skeleton(frame, kxy, kcf, kpt_conf):
             continue
         if ca < kpt_conf or cb < kpt_conf:
             continue
-        cv2.line(frame, (int(xa), int(ya)), (int(xb), int(yb)), COLORS["bone"], 2)
+        cv2.line(frame, (int(xa), int(ya)), (int(xb), int(yb)), COLORS["bone"], 3, cv2.LINE_AA)
+    # Draw each visible joint as well as the connecting bones. The old renderer
+    # only drew lines, which made keypoints almost invisible on distant swimmers.
+    for index, point in enumerate(kxy):
+        x, y = float(point[0]), float(point[1])
+        confidence = float(kcf[index]) if kcf is not None else 1.0
+        if min(x, y) <= 1 or confidence < kpt_conf:
+            continue
+        cv2.circle(frame, (int(x), int(y)), 4, (0, 255, 255), -1, cv2.LINE_AA)
+        cv2.circle(frame, (int(x), int(y)), 5, (25, 25, 25), 1, cv2.LINE_AA)
 
 
 def draw_supervision_overlay(frame, people, calibrator: SpatialCalibrator | None = None, threshold_m: float = 0.7):

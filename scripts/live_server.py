@@ -10,8 +10,9 @@ import threading
 import time
 import uuid
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
@@ -35,6 +36,7 @@ from zone_check import (  # noqa: E402
     SpatialCalibrator,
     classify_zone,
     draw_person,
+    draw_skeleton,
     draw_supervision_overlay,
     foot_point,
     is_after_hours,
@@ -59,6 +61,13 @@ VIDEO_EXTS_ALLOWED = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "500"))
 UPLOAD_CAMERA_ID = "UPLOAD"
 DEFAULT_RTSP = "rtsp://PoolsEye:PoolsEyeCapstone@192.168.0.130:554/stream1"
+SITE_TIME_ZONE = os.environ.get("SITE_TIMEZONE", "Asia/Manila")
+try:
+    SITE_TZ = ZoneInfo(SITE_TIME_ZONE)
+except ZoneInfoNotFoundError:
+    # Philippines/Singapore site time is UTC+8 year-round (no DST). This keeps
+    # Windows installs accurate even when Python's optional tzdata is absent.
+    SITE_TZ = timezone(timedelta(hours=8), name="UTC+08:00")
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
@@ -79,6 +88,7 @@ _active_camera_host: str | None = None
 # Uploaded video that replaces the CCTV feed until the admin returns to live
 _video_lock = threading.Lock()
 _video_override: dict | None = None  # {"path": Path, "name": str}
+_instance_lock_handle = None
 # Operating hours set from the dashboard Settings page (after-hours rule)
 _hours_lock = threading.Lock()
 _operating_hours: dict | None = None
@@ -444,7 +454,9 @@ def push_event(person_id: int, zone: str, event_name: str, is_alert: bool, super
         "severity": "MEDIUM" if is_alert else "LOW",
         "category": "zone",
     })
-    now = datetime.now()
+    # The event instant (`ts`) is timezone-independent; the companion text is
+    # explicitly formatted for the pool site rather than the PC/Tapo timezone.
+    now = datetime.now(SITE_TZ)
     from_upload = _source_kind == "video"
     camera_id = UPLOAD_CAMERA_ID if from_upload else "CAM-01"
     source_label = "Uploaded video" if from_upload else "CAM-01"
@@ -505,14 +517,22 @@ class DrowningWatcher:
         self.match_iou = float(cfg.get("match_iou", 0.2))
         wanted = {str(c).lower() for c in cfg.get("alert_classes", ["Drowning"])}
         self.class_ids = {int(i) for i, name in model.names.items() if str(name).lower() in wanted}
+        # Swimming / Normal / Floating are labelled on the feed so viewers see the model working,
+        # but only alert_classes at confidence_threshold count toward an alert.
+        self.show_all = bool(cfg.get("show_all_classes", True))
+        self.display_conf = float(cfg.get("display_confidence", self.conf))
+        self.pose_crop_conf = float(cfg.get("pose_crop_confidence", 0.1))
+        self.max_pose_crops = max(1, int(cfg.get("max_pose_crops", 3)))
         self.boxes: list[dict] = []
+        self.labels: list[dict] = []
+        self.poses: list[dict] = []
         self.boxes_at = 0.0
         self._streaks: dict[int, list[float]] = {}  # person id -> [first_seen, last_seen]
         self._fired: dict[int, float] = {}
         self._last_run = 0.0
 
     def reset(self):
-        self.boxes, self.boxes_at = [], 0.0
+        self.boxes, self.labels, self.poses, self.boxes_at = [], [], [], 0.0
         self._streaks.clear()
         self._fired.clear()
 
@@ -532,17 +552,27 @@ class DrowningWatcher:
             return []
         self._last_run = now
 
-        result = self.model.predict(frame, conf=self.conf, imgsz=self.imgsz, verbose=False)[0]
-        boxes = []
+        min_conf = min(self.conf, self.display_conf) if self.show_all else self.conf
+        result = self.model.predict(frame, conf=min_conf, imgsz=self.imgsz, verbose=False)[0]
+        boxes, labels = [], []
         if result.boxes is not None and len(result.boxes):
             for xyxy, cls, c in zip(
                 result.boxes.xyxy.cpu().numpy(),
                 result.boxes.cls.cpu().numpy().astype(int),
                 result.boxes.conf.cpu().numpy(),
             ):
-                if int(cls) in self.class_ids:
-                    boxes.append({"xyxy": [float(v) for v in xyxy], "conf": round(float(c), 2)})
-        self.boxes, self.boxes_at = boxes, now
+                box = {
+                    "xyxy": [float(v) for v in xyxy],
+                    "conf": round(float(c), 2),
+                    "name": str(self.model.names.get(int(cls), cls)),
+                    "alert": int(cls) in self.class_ids and c >= self.conf,
+                }
+                if box["alert"]:
+                    boxes.append(box)
+                    labels.append(box)
+                elif self.show_all and c >= self.display_conf:
+                    labels.append(box)
+        self.boxes, self.labels, self.boxes_at = boxes, labels, now
 
         h, w = frame.shape[:2]
         zones_px = zone_pixels(zcfg, w, h)
@@ -574,16 +604,95 @@ class DrowningWatcher:
             flagged.append(hit)
         return flagged
 
+    def activity_poses(self, frame, pose_model, existing_people: list, kpt_conf: float, imgsz: int) -> list:
+        """Recover swimmer keypoints by enlarging activity-detector boxes.
+
+        A full-pool frame makes swimmers very small, so a generic pose model can miss
+        them while detecting large poolside objects. Activity boxes provide safe ROIs
+        that can be enlarged before pose inference. Existing full-frame poses are not
+        duplicated.
+        """
+        if pose_model is None or not self.labels:
+            self.poses = []
+            return []
+        h, w = frame.shape[:2]
+        candidates = []
+        for label in sorted(self.labels, key=lambda item: item["conf"], reverse=True):
+            if any(_box_iou(label["xyxy"], person["xyxy"]) >= 0.2 for person in existing_people):
+                continue
+            x1, y1, x2, y2 = label["xyxy"]
+            pad_x = max(30.0, (x2 - x1) * 0.35)
+            pad_y = max(30.0, (y2 - y1) * 0.35)
+            ax1, ay1 = max(0, int(x1 - pad_x)), max(0, int(y1 - pad_y))
+            ax2, ay2 = min(w, int(x2 + pad_x)), min(h, int(y2 + pad_y))
+            crop = frame[ay1:ay2, ax1:ax2]
+            if crop.size:
+                candidates.append((crop, ax1, ay1, label))
+            if len(candidates) >= self.max_pose_crops:
+                break
+        if not candidates:
+            self.poses = []
+            return []
+
+        results = pose_model.predict(
+            [item[0] for item in candidates],
+            conf=self.pose_crop_conf,
+            imgsz=imgsz,
+            verbose=False,
+        )
+        recovered = []
+        for result, (_, ox, oy, label) in zip(results, candidates):
+            if result.boxes is None or not len(result.boxes) or result.keypoints is None:
+                continue
+            xyxy = result.boxes.xyxy.cpu().numpy()
+            confs = result.boxes.conf.cpu().numpy()
+            kxy = result.keypoints.xy.cpu().numpy()
+            kcf = result.keypoints.conf.cpu().numpy() if result.keypoints.conf is not None else None
+            best = None
+            for index, box in enumerate(xyxy):
+                global_box = [box[0] + ox, box[1] + oy, box[2] + ox, box[3] + oy]
+                score = _box_iou(global_box, label["xyxy"]) + float(confs[index]) * 0.1
+                if best is None or score > best[0]:
+                    best = (score, index)
+            index = best[1]
+            points = kxy[index].copy()
+            points[:, 0] += ox
+            points[:, 1] += oy
+            point_conf = None if kcf is None else kcf[index]
+            visible = len(points) if point_conf is None else int((point_conf >= kpt_conf).sum())
+            if visible >= 3:
+                recovered.append({"kxy": points, "kcf": point_conf})
+        self.poses = recovered
+        return recovered
+
+
+# BGR colours for the drowning model's classes; anything unknown falls back to grey
+ACTIVITY_COLORS = {
+    "drowning": (0, 0, 255),
+    "floating": (0, 140, 255),
+    "swimming": (255, 160, 30),
+    "normal": (80, 175, 40),
+}
+
 
 def draw_drowning_boxes(frame, boxes: list):
-    for box in boxes:
+    # Alert boxes are drawn last so they stay on top of the activity labels
+    for box in sorted(boxes, key=lambda b: bool(b.get("alert", True))):
+        alert = bool(box.get("alert", True))
+        name = str(box.get("name") or "Drowning")
+        color = ACTIVITY_COLORS.get(name.lower(), (160, 160, 160))
         x1, y1, x2, y2 = (int(v) for v in box["xyxy"])
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
-        label = f"DROWNING {box['conf']:.2f}"
-        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-        ty = max(th + 6, y1)
-        cv2.rectangle(frame, (x1, ty - th - 6), (x1 + tw + 6, ty), (0, 0, 255), -1)
-        cv2.putText(frame, label, (x1 + 3, ty - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3 if alert else 2)
+        label = f"{name.upper() if alert else name} {box['conf']:.2f}"
+        scale = 0.6 if alert else 0.5
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, scale, 2)
+        if alert:
+            ty = max(th + 6, y1)
+        else:
+            # Below the box, so it doesn't cover the pose tracker's person label above it
+            ty = min(frame.shape[0] - 2, y2 + th + 6)
+        cv2.rectangle(frame, (x1, ty - th - 6), (x1 + tw + 6, ty), color, -1)
+        cv2.putText(frame, label, (x1 + 3, ty - 4), cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), 2)
 
 
 def resize_max_width(frame, max_width: int):
@@ -605,12 +714,14 @@ class FrameGrabber:
     until the detections for that moment are ready.
     """
 
-    def __init__(self, cap, kind: str, max_width: int, publish_fps: float):
+    def __init__(self, cap, kind: str, max_width: int, publish_fps: float, source_path: Path | None = None):
         self.cap = cap
         self.kind = kind
+        self.source_path = source_path
         self.max_width = max_width
         self.failed = False
-        # An uploaded video loops until the admin returns to live; ended means it can't be replayed.
+
+
         self.ended = False
         self.loops = 0
         self._frame = None
@@ -638,6 +749,7 @@ class FrameGrabber:
                 next_frame_at = max(next_frame_at + self._frame_interval, time.time() - self._frame_interval)
             ok, frame = self.cap.read()
             if (not ok or frame is None) and self.kind == "video":
+
                 self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 ok, frame = self.cap.read()
                 if not ok or frame is None:
@@ -648,6 +760,27 @@ class FrameGrabber:
                 with self._cond:
                     self.loops += 1
                 next_frame_at = time.time() + self._frame_interval
+
+                # Rewind at EOF instead of clearing the video override and silently
+                # switching back to the live camera.
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ok, frame = self.cap.read()
+                # Some MP4/codec combinations cannot seek after EOF. Reopen the same
+                # uploaded file as a fallback while keeping it as the active source.
+                if (not ok or frame is None) and self.source_path:
+                    self.cap.release()
+                    self.cap = cv2.VideoCapture(str(self.source_path))
+                    ok, frame = self.cap.read()
+                if ok and frame is not None:
+                    with self._cond:
+                        self.loops += 1
+                    next_frame_at = time.time() + self._frame_interval
+                else:
+                    with self._cond:
+                        self.failed = True
+                        self._cond.notify_all()
+                    return
+
             if not ok or frame is None:
                 fail += 1
                 if fail > 30:
@@ -831,7 +964,12 @@ def scene_at(results: list, seq: int, ts: float) -> dict:
     if overlay:
         feet = {p["track_id"]: p["foot"] for p in people}
         overlay = {**overlay, "people": [{**p, "foot": feet.get(p["id"], p["foot"])} for p in overlay["people"]]}
-    return {"people": people, "overlay": overlay, "drowning": near.get("drowning") or []}
+    return {
+        "people": people,
+        "overlay": overlay,
+        "drowning": near.get("drowning") or [],
+        "activity_poses": near.get("activity_poses") or [],
+    }
 
 
 def render_scene(frame, scene: dict, kpt_conf):
@@ -859,6 +997,8 @@ def render_scene(frame, scene: dict, kpt_conf):
             item["event"],
             supervision_data=item.get("supervision"),
         )
+    for pose in scene.get("activity_poses", []):
+        draw_skeleton(out, pose["kxy"], pose["kcf"], kpt_conf)
     draw_drowning_boxes(out, scene.get("drowning") or [])
     return out
 
@@ -1106,6 +1246,9 @@ def capture_loop(cfg: dict):
             _zcfg = fallback_zcfg
 
     model_name = pose_cfg.get("model") or "yolo11n-pose.pt"
+    pose_path = Path(model_name)
+    if not pose_path.is_absolute():
+        pose_path = SCRIPTS_DIR / pose_path
     conf = float(pose_cfg.get("confidence_threshold", 0.25))
     kpt_conf = float(pose_cfg.get("keypoint_confidence", 0.3))
     imgsz = int(pose_cfg.get("imgsz", 416))
@@ -1115,10 +1258,19 @@ def capture_loop(cfg: dict):
     # Leaves CPU for decoding and encoding; uncapped inference starves them and video stutters.
     max_infer_fps = max(0.5, float(pose_cfg.get("max_infer_fps", 6)))
 
-    print(f"[stream] loading pose model {model_name}")
-    model = YOLO(model_name)
+    if not pose_path.exists():
+        raise FileNotFoundError(f"Pose model not found: {pose_path}")
+    print(f"[stream] loading pose model {pose_path}")
+    model = YOLO(str(pose_path))
+    kpt_shape = getattr(model.model, "kpt_shape", None)
+    if model.task != "pose" or not kpt_shape:
+        raise RuntimeError(
+            f"POSE.model must be a YOLO pose/keypoint checkpoint; {pose_path.name} reports task={model.task!r}"
+        )
+    print(f"[stream] pose: keypoints={kpt_shape[0]} conf={conf:g} kpt_conf={kpt_conf:g}")
 
     drowning = None
+    activity_pose_model = None
     drown_cfg = cfg.get("DROWNING", {})
     if drown_cfg.get("enabled", True):
         drown_path = Path(drown_cfg.get("model") or "drowning_best.pt")
@@ -1126,10 +1278,19 @@ def capture_loop(cfg: dict):
             drown_path = SCRIPTS_DIR / drown_path
         if drown_path.exists():
             print(f"[stream] loading drowning model {drown_path.name}")
-            drowning = DrowningWatcher(YOLO(str(drown_path)), drown_cfg)
+            drowning_model = YOLO(str(drown_path))
+            if drowning_model.task != "detect":
+                raise RuntimeError(
+                    f"DROWNING.model must be a YOLO detection checkpoint; "
+                    f"{drown_path.name} reports task={drowning_model.task!r}"
+                )
+            drowning = DrowningWatcher(drowning_model, drown_cfg)
+            if drown_cfg.get("pose_crop_fallback", True):
+                activity_pose_model = YOLO(str(pose_path))
             print(
                 f"[stream] drowning: classes={sorted(drowning.class_ids)} conf={drowning.conf:g} "
-                f"hold={drowning.hold_sec:g}s fps={1 / drowning.interval:g}"
+                f"hold={drowning.hold_sec:g}s fps={1 / drowning.interval:g} "
+                f"labels={'all classes' if drowning.show_all else 'alerts only'} (>= {drowning.display_conf:g})"
             )
         else:
             print(f"[stream] WARN drowning model {drown_path} not found — drowning alerts are off")
@@ -1254,12 +1415,31 @@ def capture_loop(cfg: dict):
                 drowning_events = []
                 if drowning:
                     now = time.time()
+                    previous_boxes_at = drowning.boxes_at
                     try:
                         drowning_events = drowning.update(frame, reports, zcfg, now)
                     except Exception as exc:
                         print(f"[stream] drowning model error: {exc}")
                     if now - drowning.boxes_at <= drowning_show_sec:
-                        scene["drowning"] = drowning.boxes
+                        scene["drowning"] = drowning.labels
+                        if drowning.boxes_at != previous_boxes_at:
+                            drowning.activity_poses(
+                                frame,
+                                activity_pose_model,
+                                scene["people"],
+                                kpt_conf,
+                                imgsz,
+                            )
+                        scene["activity_poses"] = drowning.poses
+                        if grabber.kind == "video" and drowning.labels:
+                            # Uploaded pool footage often contains large curtains or
+                            # furniture that a generic pose model mistakes for people.
+                            # Keep full-frame poses only when an activity box confirms
+                            # the same subject; recovered crop poses cover missed swimmers.
+                            scene["people"] = [
+                                person for person in scene["people"]
+                                if any(_box_iou(person["xyxy"], box["xyxy"]) >= 0.1 for box in drowning.labels)
+                            ]
                 scene.update(seq=seq, ts=ts, ready_at=time.time(), epoch=loops)
                 with scene_lock:
                     results.append(scene)
@@ -1316,7 +1496,13 @@ def capture_loop(cfg: dict):
         reset_tracking()
         _media.clear()
         print(f"[stream] connected ({kind}) — annotating frames for dashboard")
-        grabber = FrameGrabber(cap, kind, max_width, stream_fps)
+        grabber = FrameGrabber(
+            cap,
+            kind,
+            max_width,
+            stream_fps,
+            source_path=video["path"] if video else None,
+        )
         results: deque = deque(maxlen=8)
         scene_lock = threading.Lock()
         stop_inference = threading.Event()
@@ -1340,14 +1526,16 @@ def capture_loop(cfg: dict):
         delay = 0.5
         newest_result_seq = 0
         connected_at = delay_logged_at = time.time()
-        ended_at = None
         while _running:
             if _camera_changed.is_set():
                 with _lock:
                     _latest_jpeg = None
                 break
             if grabber.failed:
-                print("[stream] lost stream — reconnecting...")
+                if kind == "video":
+                    print("[stream] uploaded video decoder stopped — reopening the same video...")
+                else:
+                    print("[stream] lost stream — reconnecting...")
                 break
             if grabber.ended:
                 ended_at = ended_at or time.time()
@@ -1554,7 +1742,38 @@ def events():
     })
 
 
+def acquire_instance_lock() -> bool:
+    """Prevent two inference servers from competing for port 8000 and the same camera.
+
+    Windows can allow multiple Flask sockets to listen on the same port, which sends
+    upload, health, and stream requests to different model processes. Holding this
+    one-byte OS lock for the process lifetime makes startup deterministic.
+    """
+    global _instance_lock_handle
+    lock_path = Path(tempfile.gettempdir()) / "poolseye-live-server.lock"
+    handle = open(lock_path, "a+b")
+    try:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"0")
+            handle.flush()
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, IOError):
+        handle.close()
+        return False
+    _instance_lock_handle = handle
+    return True
+
+
 if __name__ == "__main__":
+    if not acquire_instance_lock():
+        sys.exit("[stream] another live_server.py instance is already running")
     cfg = load_full_config(CONFIG_PATH)
     camera = load_camera_settings(cfg)
     print(f"[stream] config {CONFIG_PATH}")

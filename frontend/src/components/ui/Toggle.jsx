@@ -1,4 +1,4 @@
-export default function Toggle({ on, onChange, label }) {
+export default function Toggle({ on, onChange, label, disabled = false }) {
   return (
     <button
       type="button"
@@ -6,6 +6,7 @@ export default function Toggle({ on, onChange, label }) {
       aria-checked={on}
       aria-label={label}
       className={`toggle ${on ? 'on' : ''}`}
+      disabled={disabled}
       onClick={() => onChange(!on)}
     >
       <span className="knob" />

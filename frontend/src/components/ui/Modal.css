@@ -319,6 +319,40 @@
   font-size: 13px;
   line-height: 1.55;
   color: #6B7280;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.alert-dialog-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px auto 0;
+  max-width: 280px;
+}
+
+.alert-dialog-progress-track {
+  flex: 1;
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--alert-tone) 16%, #FFFFFF);
+}
+
+.alert-dialog-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--alert-tone);
+  transition: width 0.18s ease-out;
+}
+
+.alert-dialog-progress strong {
+  min-width: 38px;
+  color: var(--alert-tone);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .alert-dialog-actions {
