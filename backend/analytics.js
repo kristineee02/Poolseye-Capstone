@@ -22,6 +22,10 @@ function isAlert(row) {
   return Boolean(row.is_alert) || row.type === 'alarm'
 }
 
+function isDrowning(row) {
+  return row.category === 'drowning'
+}
+
 function startOfDay(date) {
   const d = new Date(date)
   d.setHours(0, 0, 0, 0)
@@ -114,7 +118,7 @@ async function buildAnalytics(db, rangeKey) {
   const prevSinceTs = sinceTs - range.days * 86400
   const prevRows = await all(
     db,
-    `SELECT type, severity, is_alert, status, ts, acknowledged_at FROM events e
+    `SELECT type, severity, category, is_alert, status, ts, acknowledged_at FROM events e
      WHERE e.ts >= ? AND e.ts < ? AND ${REAL_EVENTS_SQL}`,
     [prevSinceTs, sinceTs]
   )
@@ -125,6 +129,7 @@ async function buildAnalytics(db, rangeKey) {
     acknowledged: prevAlerts.filter((r) => r.status === 'resolved').length,
     totalAlerts: prevAlerts.length,
     highSeverity: prevAlerts.filter((r) => severityOf(r) === 'HIGH').length,
+    drowningDetected: prevRows.filter(isDrowning).length,
     acknowledgedRate: prevAlerts.length ? prevReviewed / prevAlerts.length : null,
     averageResponse: average(prevAlerts.map(responseSeconds).filter((v) => v != null)),
   }
@@ -135,6 +140,7 @@ async function buildAnalytics(db, rangeKey) {
   const pending = alerts.filter((r) => r.status === 'pending')
   const reviewed = acknowledged.length + dismissed.length
   const responses = alerts.map(responseSeconds).filter((v) => v != null)
+  const drowning = rows.filter(isDrowning)
 
   const byType = new Map()
   for (const row of rows) {
@@ -178,6 +184,8 @@ async function buildAnalytics(db, rangeKey) {
       totalDetections: rows.length,
       totalAlerts: alerts.length,
       highSeverity: alerts.filter((r) => severityOf(r) === 'HIGH').length,
+      drowningDetected: drowning.length,
+      drowningPending: drowning.filter((r) => r.status === 'pending').length,
       acknowledged: acknowledged.length,
       dismissed: dismissed.length,
       pending: pending.length,

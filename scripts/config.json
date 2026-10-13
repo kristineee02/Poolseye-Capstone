@@ -9,6 +9,9 @@
         "model": "yolo11n-pose.pt",
         "confidence_threshold": 0.15,
         "keypoint_confidence": 0.15,
+        "person_confidence": 0.15,
+        "require_upper_body": true,
+        "upper_body_keypoint_conf": 0.35,
         "imgsz": 640,
         "max_infer_fps": 6,
         "stream_fps": 15,
@@ -17,7 +20,8 @@
     },
     "TRACKING": {
         "alert_cooldown_sec": 3.0,
-        "lost_track_sec": 2.0
+        "lost_track_sec": 2.0,
+        "event_quiet_sec": 120
     },
     "DROWNING": {
         "enabled": true,
@@ -29,6 +33,12 @@
         "pose_crop_fallback": true,
         "pose_crop_confidence": 0.1,
         "max_pose_crops": 3,
+        "pose_crop_imgsz": 320,
+        "behavior_enabled": true,
+        "behavior_hold_sec": 4.0,
+        "behavior_max_travel": 0.35,
+        "behavior_min_aspect": 0.9,
+        "water_classes": ["Swimming", "Drowning", "Floating"],
         "imgsz": 640,
         "max_infer_fps": 3,
         "hold_sec": 1.0,

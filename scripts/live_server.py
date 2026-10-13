@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import tempfile
@@ -100,6 +101,10 @@ _PERSON_MEMORY_SEC = 10.0
 _REID_MAX_DIST_FRAC = 0.12  # of frame width
 _person_alias: dict[int, int] = {}  # track id -> person id
 _person_memory: dict[int, dict] = {}  # person id -> {"events": set, "foot": (x, y), "last_seen": t}
+# Track ids churn in the water, so per-person memory alone let one incident log again and
+# again. An event type is logged once, then stays quiet until it has gone undetected this long.
+_event_quiet_sec = 120.0
+_event_last_seen: dict[tuple, float] = {}  # (event name, from upload) -> last time it was detected
 # The feed is shown this far behind capture (at most) so every frame is drawn with
 # detections from its own moment instead of boxes left over from an older frame.
 MAX_DISPLAY_DELAY_SEC = 2.5
@@ -436,10 +441,21 @@ def reset_people():
 
 
 def push_event(person_id: int, zone: str, event_name: str, is_alert: bool, supervision_data: dict = None):
-    """Append a dashboard-ready event the first time this person triggers this event type."""
+    """Append a dashboard-ready event the first time this event type is detected.
+
+    Repeats are dropped until the event has gone undetected for _event_quiet_sec, so
+    one ongoing incident is logged and notified once.
+    """
     pid = int(person_id)
+    from_upload = _source_kind == "video"
 
     with _lock:
+        key = (event_name, from_upload)
+        detected_at = time.time()
+        last = _event_last_seen.get(key)
+        _event_last_seen[key] = detected_at
+        if last is not None and detected_at - last < _event_quiet_sec:
+            return None
         person = _person_alias.setdefault(pid, pid)
         mem = _person_memory.setdefault(person, {"events": set(), "foot": None, "last_seen": time.time()})
         if event_name in mem["events"]:
@@ -457,7 +473,6 @@ def push_event(person_id: int, zone: str, event_name: str, is_alert: bool, super
     # The event instant (`ts`) is timezone-independent; the companion text is
     # explicitly formatted for the pool site rather than the PC/Tapo timezone.
     now = datetime.now(SITE_TZ)
-    from_upload = _source_kind == "video"
     camera_id = UPLOAD_CAMERA_ID if from_upload else "CAM-01"
     source_label = "Uploaded video" if from_upload else "CAM-01"
     entry = {
@@ -498,6 +513,15 @@ def _box_iou(a, b) -> float:
     return inter / union if union > 0 else 0.0
 
 
+def _box_overlap_of_smaller(a, b) -> float:
+    """Share of the smaller box covered by the other; 1.0 when one sits inside the other."""
+    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    smaller = min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]))
+    return inter / smaller if smaller > 0 else 0.0
+
+
 class DrowningWatcher:
     """Runs the drowning detector beside the pose tracker and flags sustained distress.
 
@@ -523,18 +547,79 @@ class DrowningWatcher:
         self.display_conf = float(cfg.get("display_confidence", self.conf))
         self.pose_crop_conf = float(cfg.get("pose_crop_confidence", 0.1))
         self.max_pose_crops = max(1, int(cfg.get("max_pose_crops", 3)))
+        # Crops are small, so a smaller input size keeps the pose fallback cheap
+        self.pose_crop_imgsz = int(cfg.get("pose_crop_imgsz", 320))
+        self.duplicate_overlap = float(cfg.get("duplicate_overlap", 0.6))
+        # Behaviour check: the model often calls a struggling person "Swimming", but a
+        # swimmer travels while someone drowning stays upright and bobs in one place.
+        self.behavior = bool(cfg.get("behavior_enabled", True))
+        self.behavior_hold = float(cfg.get("behavior_hold_sec", 4.0))
+        self.behavior_travel = float(cfg.get("behavior_max_travel", 0.35))
+        self.behavior_aspect = float(cfg.get("behavior_min_aspect", 0.9))
+        self.behavior_min_samples = max(2, int(cfg.get("behavior_min_samples", 3)))
+        self.water_classes = {str(c).lower() for c in cfg.get("water_classes", ["Swimming", "Drowning", "Floating"])}
         self.boxes: list[dict] = []
         self.labels: list[dict] = []
         self.poses: list[dict] = []
         self.boxes_at = 0.0
         self._streaks: dict[int, list[float]] = {}  # person id -> [first_seen, last_seen]
         self._fired: dict[int, float] = {}
+        self._tracks: dict[int, dict] = {}  # water box track id -> {"box", "history", "seen"}
+        self._next_track = 1
         self._last_run = 0.0
+        # Background runner: the activity model and crop poses take longer than the pose
+        # tracker, so they run on their own thread instead of holding up every frame.
+        self._cond = threading.Condition()
+        self._pending = None
+        self._events: list[dict] = []
+        self._gen = 0
+        self._thread = None
 
     def reset(self):
-        self.boxes, self.labels, self.poses, self.boxes_at = [], [], [], 0.0
-        self._streaks.clear()
-        self._fired.clear()
+        with self._cond:
+            self._gen += 1
+            self._pending = None
+            self._events.clear()
+            self.boxes, self.labels, self.poses, self.boxes_at = [], [], [], 0.0
+            self._streaks.clear()
+            self._fired.clear()
+            self._tracks.clear()
+
+    def start(self, pose_model, kpt_conf: float):
+        self._pose_model, self._kpt_conf = pose_model, kpt_conf
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def submit(self, frame, reports: list, zcfg: dict, people: list, seq: int, ts: float, use_zones: bool):
+        """Hand the newest frame to the runner; an older frame still waiting is dropped."""
+        with self._cond:
+            self._pending = (frame, list(reports), zcfg, list(people), seq, ts, use_zones, self._gen)
+            self._cond.notify()
+
+    def drain_events(self) -> list[dict]:
+        with self._cond:
+            events, self._events = self._events, []
+        return events
+
+    def _loop(self):
+        while True:
+            with self._cond:
+                self._cond.wait_for(lambda: self._pending is not None)
+                frame, reports, zcfg, people, seq, ts, use_zones, gen = self._pending
+                self._pending = None
+            wait = self.interval - (time.time() - self._last_run)
+            if wait > 0:
+                time.sleep(wait)
+            try:
+                flagged = self.update(frame, reports, zcfg, time.time(), use_zones)
+                if self.boxes_at >= time.time() - 0.5:
+                    self.activity_poses(frame, self._pose_model, people, self._kpt_conf, self.pose_crop_imgsz)
+            except Exception as exc:
+                print(f"[stream] drowning model error: {exc}")
+                continue
+            with self._cond:
+                if gen == self._gen:
+                    self._events.extend({**hit, "seq": seq, "ts": ts} for hit in flagged)
 
     def _owner(self, xyxy, reports) -> dict | None:
         best, best_iou = None, self.match_iou
@@ -546,7 +631,52 @@ class DrowningWatcher:
                 best, best_iou = r, iou
         return best
 
-    def update(self, frame, reports: list, zcfg: dict, now: float) -> list[dict]:
+    def _still_in_water(self, water: list, zones_px, orange_px, use_zones: bool, now: float) -> list[dict]:
+        """Water boxes that have stayed upright without travelling for behavior_hold seconds."""
+        deep_on = use_zones and zones_px["orange"]["enabled"] and len(zones_px["orange"]["points"]) >= 2
+        matched = set()
+        for box in water:
+            best, best_iou = None, 0.3
+            for tid, tr in self._tracks.items():
+                if tid in matched:
+                    continue
+                iou = _box_iou(box["xyxy"], tr["box"])
+                if iou >= best_iou:
+                    best, best_iou = tid, iou
+            if best is None:
+                best = self._next_track
+                self._next_track += 1
+                self._tracks[best] = {"history": deque(maxlen=64)}
+            matched.add(best)
+            x1, y1, x2, y2 = box["xyxy"]
+            tr = self._tracks[best]
+            tr.update(box=box["xyxy"], seen=now, last=box)
+            tr["history"].append((now, (x1 + x2) / 2, (y1 + y2) / 2, max(1.0, x2 - x1), max(1.0, y2 - y1)))
+        for tid in [t for t, tr in self._tracks.items() if now - tr["seen"] > self.gap_sec]:
+            del self._tracks[tid]
+
+        still = []
+        for tid in matched:
+            tr = self._tracks[tid]
+            # Sharing the CPU, the activity model runs slower than max_infer_fps; looking back
+            # one allowed gap past the hold keeps a 4 s hold reachable at ~1 run per second.
+            window = [h for h in tr["history"] if now - h[0] <= self.behavior_hold + self.gap_sec]
+            if len(window) < self.behavior_min_samples or window[-1][0] - window[0][0] < self.behavior_hold:
+                continue
+            heights = sorted(h[4] for h in window)
+            size = heights[len(heights) // 2]
+            xs, ys = [h[1] for h in window], [h[2] for h in window]
+            travel = math.hypot(max(xs) - min(xs), max(ys) - min(ys)) / size
+            aspect = sorted(h[4] / h[3] for h in window)[len(window) // 2]
+            if travel > self.behavior_travel or aspect < self.behavior_aspect:
+                continue
+            x1, y1, x2, y2 = tr["box"]
+            if deep_on and classify_zone((x1 + x2) / 2, y2, zones_px, orange_px) != "orange":
+                continue
+            still.append(tr["last"])
+        return still
+
+    def update(self, frame, reports: list, zcfg: dict, now: float, use_zones: bool = True) -> list[dict]:
         """Return {id, zone, conf} for each person whose distress just outlasted hold_sec."""
         if now - self._last_run < self.interval:
             return []
@@ -554,29 +684,50 @@ class DrowningWatcher:
 
         min_conf = min(self.conf, self.display_conf) if self.show_all else self.conf
         result = self.model.predict(frame, conf=min_conf, imgsz=self.imgsz, verbose=False)[0]
-        boxes, labels = [], []
+        boxes, labels, water = [], [], []
+        detections = []
         if result.boxes is not None and len(result.boxes):
             for xyxy, cls, c in zip(
                 result.boxes.xyxy.cpu().numpy(),
                 result.boxes.cls.cpu().numpy().astype(int),
                 result.boxes.conf.cpu().numpy(),
             ):
-                box = {
+                detections.append({
                     "xyxy": [float(v) for v in xyxy],
                     "conf": round(float(c), 2),
                     "name": str(self.model.names.get(int(cls), cls)),
                     "alert": int(cls) in self.class_ids and c >= self.conf,
-                }
-                if box["alert"]:
-                    boxes.append(box)
-                    labels.append(box)
-                elif self.show_all and c >= self.display_conf:
-                    labels.append(box)
-        self.boxes, self.labels, self.boxes_at = boxes, labels, now
+                })
+        # YOLO's NMS keeps a smaller box nested inside a larger one on the same person,
+        # so one swimmer showed two labels; keep the alert or most confident box of each.
+        kept = []
+        for box in sorted(detections, key=lambda b: (b["alert"], b["conf"]), reverse=True):
+            if not any(_box_overlap_of_smaller(box["xyxy"], k["xyxy"]) >= self.duplicate_overlap for k in kept):
+                kept.append(box)
+        for box in kept:
+            if box["name"].lower() in self.water_classes and box["conf"] >= self.display_conf:
+                water.append(box)
+            if box["alert"]:
+                boxes.append(box)
+                labels.append(box)
+            elif self.show_all and box["conf"] >= self.display_conf:
+                labels.append(box)
 
         h, w = frame.shape[:2]
         zones_px = zone_pixels(zcfg, w, h)
         orange_px = zcfg.get("orange_proximity", 0.02) * w
+        if self.behavior:
+            for box in self._still_in_water(water, zones_px, orange_px, use_zones, now):
+                if box["alert"]:
+                    box["behavior"] = True
+                    continue
+                flagged_box = {**box, "name": "Drowning", "alert": True, "behavior": True}
+                labels = [flagged_box if b is box else b for b in labels]
+                if flagged_box not in labels:
+                    labels.append(flagged_box)
+                boxes.append(flagged_box)
+        self.boxes, self.labels, self.boxes_at = boxes, labels, now
+
         seen: dict[int, dict] = {}
         for box in boxes:
             owner = self._owner(box["xyxy"], reports)
@@ -587,7 +738,8 @@ class DrowningWatcher:
                 pid = UNTRACKED_PERSON_ID
                 zone = classify_zone((x1 + x2) / 2, y2, zones_px, orange_px)
             if pid not in seen or box["conf"] > seen[pid]["conf"]:
-                seen[pid] = {"id": pid, "zone": zone, "conf": box["conf"]}
+                seen[pid] = {"id": pid, "zone": zone, "conf": box["conf"], "behavior": False}
+            seen[pid]["behavior"] = seen[pid]["behavior"] or bool(box.get("behavior"))
 
         for pid in [p for p, (_, last) in self._streaks.items() if now - last > self.gap_sec]:
             del self._streaks[pid]
@@ -596,7 +748,8 @@ class DrowningWatcher:
         for pid, hit in seen.items():
             streak = self._streaks.setdefault(pid, [now, now])
             streak[1] = now
-            if now - streak[0] < self.hold_sec:
+            # The behaviour check already waited behavior_hold seconds before flagging
+            if now - streak[0] < self.hold_sec and not hit["behavior"]:
                 continue
             if now - self._fired.get(pid, -1e9) < self.rearm_sec:
                 continue
@@ -675,24 +828,52 @@ ACTIVITY_COLORS = {
 }
 
 
+def _draw_activity_label(frame, box: dict, x1: int, y1: int, y2: int, below_offset: int = 0):
+    alert = bool(box.get("alert", True))
+    name = str(box.get("name") or "Drowning")
+    color = ACTIVITY_COLORS.get(name.lower(), (160, 160, 160))
+    label = f"{name.upper() if alert else name} {box['conf']:.2f}"
+    scale = 0.6 if alert else 0.5
+    (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, scale, 2)
+    if alert:
+        ty = max(th + 6, y1)
+    else:
+        # Below the box, so it doesn't cover the pose tracker's person label above it
+        ty = min(frame.shape[0] - 2, y2 + below_offset + th + 6)
+    cv2.rectangle(frame, (x1, ty - th - 6), (x1 + tw + 6, ty), color, -1)
+    cv2.putText(frame, label, (x1 + 3, ty - 4), cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), 2)
+
+
 def draw_drowning_boxes(frame, boxes: list):
     # Alert boxes are drawn last so they stay on top of the activity labels
     for box in sorted(boxes, key=lambda b: bool(b.get("alert", True))):
         alert = bool(box.get("alert", True))
-        name = str(box.get("name") or "Drowning")
-        color = ACTIVITY_COLORS.get(name.lower(), (160, 160, 160))
+        color = ACTIVITY_COLORS.get(str(box.get("name") or "Drowning").lower(), (160, 160, 160))
         x1, y1, x2, y2 = (int(v) for v in box["xyxy"])
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3 if alert else 2)
-        label = f"{name.upper() if alert else name} {box['conf']:.2f}"
-        scale = 0.6 if alert else 0.5
-        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, scale, 2)
-        if alert:
-            ty = max(th + 6, y1)
-        else:
-            # Below the box, so it doesn't cover the pose tracker's person label above it
-            ty = min(frame.shape[0] - 2, y2 + th + 6)
-        cv2.rectangle(frame, (x1, ty - th - 6), (x1 + tw + 6, ty), color, -1)
-        cv2.putText(frame, label, (x1 + 3, ty - 4), cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), 2)
+        _draw_activity_label(frame, box, x1, y1, y2)
+
+
+def match_activity_to_people(people: list, boxes: list) -> tuple[dict, list]:
+    """Pair each tracked person with the activity box covering them; return (index -> box, unmatched).
+
+    The pose tracker and the activity model both box the same swimmer, so drawing
+    both stacked two rectangles and two labels on one person.
+    """
+    matched, claimed = {}, set()
+    for index, person in enumerate(people):
+        px = [float(v) for v in person["xyxy"]]
+        best, best_score = None, 0.5
+        for i, box in enumerate(boxes):
+            if i in claimed:
+                continue
+            score = _box_overlap_of_smaller(px, box["xyxy"])
+            if score >= best_score:
+                best, best_score = i, score
+        if best is not None:
+            claimed.add(best)
+            matched[index] = boxes[best]
+    return matched, [box for i, box in enumerate(boxes) if i not in claimed]
 
 
 def resize_max_width(frame, max_width: int):
@@ -832,7 +1013,8 @@ class FrameGrabber:
 def annotate_frame(frame, model, zcfg, tracker, conf, kpt_conf, imgsz: int,
                    supervision_cfg: dict | None = None,
                    calibrator: SpatialCalibrator | None = None,
-                   after_hours: bool = False):
+                   after_hours: bool = False,
+                   person_filter: dict | None = None):
     """Run pose track + supervision; return reports, the scene to draw, and supervision events.
 
     Drawing is left to render_scene so the display loop can paint the latest
@@ -855,7 +1037,7 @@ def annotate_frame(frame, model, zcfg, tracker, conf, kpt_conf, imgsz: int,
 
     _, reports = process_result(
         results[0], zcfg, tracker, kpt_conf, persist=True,
-        draw_zone_overlay=False, draw_people=False,
+        draw_zone_overlay=False, draw_people=False, person_filter=person_filter,
     )
 
     sup_enabled = bool(supervision_cfg and supervision_cfg.get('enabled', False))
@@ -981,7 +1163,9 @@ def render_scene(frame, scene: dict, kpt_conf):
             draw_supervision_overlay(out, overlay["people"], overlay["calibrator"], overlay["threshold"])
         except Exception:
             pass
-    for item in scene.get("people", []):
+    people = scene.get("people", [])
+    activity, unmatched = match_activity_to_people(people, scene.get("drowning") or [])
+    for index, item in enumerate(people):
         draw_person(
             out,
             item["track_id"],
@@ -996,10 +1180,11 @@ def render_scene(frame, scene: dict, kpt_conf):
             item["zone"],
             item["event"],
             supervision_data=item.get("supervision"),
+            activity=activity.get(index),
         )
     for pose in scene.get("activity_poses", []):
         draw_skeleton(out, pose["kxy"], pose["kcf"], kpt_conf)
-    draw_drowning_boxes(out, scene.get("drowning") or [])
+    draw_drowning_boxes(out, unmatched)
     return out
 
 
@@ -1163,6 +1348,9 @@ def set_video(path: Path, name: str):
     with _video_lock:
         previous = _video_override["path"] if _video_override else None
         _video_override = {"path": path, "name": name}
+    with _lock:
+        for key in [k for k in _event_last_seen if k[1]]:
+            del _event_last_seen[key]
     _camera_changed.set()
     if previous and previous != path:
         # Let the capture loop release the old file before deleting it
@@ -1235,10 +1423,11 @@ def open_capture(kind: str, settings: dict):
 
 
 def capture_loop(cfg: dict):
-    global _latest_jpeg, _latest_reports, _running, _zcfg, _source_kind, _active_camera_host
+    global _latest_jpeg, _latest_reports, _running, _zcfg, _source_kind, _active_camera_host, _event_quiet_sec
 
     pose_cfg = cfg.get("POSE", {})
     track_cfg = cfg.get("TRACKING", {})
+    _event_quiet_sec = float(track_cfg.get("event_quiet_sec", _event_quiet_sec))
     fallback_zcfg = cfg["ZONES"]
     camera = load_camera_settings(cfg)
     with _zcfg_lock:
@@ -1251,6 +1440,12 @@ def capture_loop(cfg: dict):
         pose_path = SCRIPTS_DIR / pose_path
     conf = float(pose_cfg.get("confidence_threshold", 0.25))
     kpt_conf = float(pose_cfg.get("keypoint_confidence", 0.3))
+    person_filter = {
+        "min_confidence": float(pose_cfg.get("person_confidence", 0.15)),
+        "require_upper_body": bool(pose_cfg.get("require_upper_body", True)),
+        "upper_body_keypoint_conf": float(pose_cfg.get("upper_body_keypoint_conf", 0.35)),
+        "merge_nested": True,
+    }
     imgsz = int(pose_cfg.get("imgsz", 416))
     max_width = int(pose_cfg.get("max_width", 960))
     jpeg_quality = int(pose_cfg.get("jpeg_quality", 65))
@@ -1287,10 +1482,13 @@ def capture_loop(cfg: dict):
             drowning = DrowningWatcher(drowning_model, drown_cfg)
             if drown_cfg.get("pose_crop_fallback", True):
                 activity_pose_model = YOLO(str(pose_path))
+            drowning.start(activity_pose_model, kpt_conf)
             print(
                 f"[stream] drowning: classes={sorted(drowning.class_ids)} conf={drowning.conf:g} "
                 f"hold={drowning.hold_sec:g}s fps={1 / drowning.interval:g} "
-                f"labels={'all classes' if drowning.show_all else 'alerts only'} (>= {drowning.display_conf:g})"
+                f"labels={'all classes' if drowning.show_all else 'alerts only'} (>= {drowning.display_conf:g}) "
+                f"behavior={'on' if drowning.behavior else 'off'} "
+                f"(still {drowning.behavior_hold:g}s, travel <= {drowning.behavior_travel:g})"
             )
         else:
             print(f"[stream] WARN drowning model {drown_path} not found — drowning alerts are off")
@@ -1410,26 +1608,20 @@ def capture_loop(cfg: dict):
                     calibrator=ensure_calibrator(frame, zcfg, supervision_cfg),
                     # Uploaded footage was not recorded now, so the live clock's closing time doesn't apply
                     after_hours=grabber.kind != "video" and after_hours_now(),
+                    person_filter=person_filter,
                 )
                 sync_people(reports, frame.shape[1], time.time())
                 drowning_events = []
                 if drowning:
                     now = time.time()
-                    previous_boxes_at = drowning.boxes_at
-                    try:
-                        drowning_events = drowning.update(frame, reports, zcfg, now)
-                    except Exception as exc:
-                        print(f"[stream] drowning model error: {exc}")
+                    drowning.submit(
+                        frame, reports, zcfg, scene["people"], seq, ts,
+                        # Zones are drawn for the CCTV view, not for uploaded footage
+                        use_zones=grabber.kind != "video",
+                    )
+                    drowning_events = drowning.drain_events()
                     if now - drowning.boxes_at <= drowning_show_sec:
                         scene["drowning"] = drowning.labels
-                        if drowning.boxes_at != previous_boxes_at:
-                            drowning.activity_poses(
-                                frame,
-                                activity_pose_model,
-                                scene["people"],
-                                kpt_conf,
-                                imgsz,
-                            )
                         scene["activity_poses"] = drowning.poses
                         if grabber.kind == "video" and drowning.labels:
                             # Uploaded pool footage often contains large curtains or
@@ -1446,7 +1638,9 @@ def capture_loop(cfg: dict):
                 with _lock:
                     _latest_reports = [{**r, "event": None, "is_alert": False} for r in reports]
                 if loops == 0:
-                    log_events(supervision_events, reports, seq, ts, drowning_events)
+                    log_events(supervision_events, reports, seq, ts)
+                    for d in drowning_events:
+                        log_events([], [], d["seq"], d["ts"], [d])
             except Exception as exc:
                 print(f"[stream] annotate error: {exc}")
             elapsed = time.time() - started

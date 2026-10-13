@@ -735,7 +735,9 @@ def _draw_status_tag(frame, x, y_top, tag, tag_color, detail):
     cv2.putText(frame, detail, (dx + pad, top + h - pad - 1), font, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
 
 
-def draw_person(frame, track_id, xyxy, foot, src, left, right, kxy, kcf, kpt_conf, zone, event, supervision_data: dict | None = None):
+def draw_person(frame, track_id, xyxy, foot, src, left, right, kxy, kcf, kpt_conf, zone, event,
+                supervision_data: dict | None = None, activity: dict | None = None):
+    """Draw one box and one label per person; activity is the drowning model's class for them."""
     x1, y1, x2, y2 = (int(v) for v in xyxy)
 
     status = supervision_data.get('status') if supervision_data else None
@@ -744,6 +746,12 @@ def draw_person(frame, track_id, xyxy, foot, src, left, right, kxy, kcf, kpt_con
         color = tag[1]
     else:
         color = COLORS[BOX_COLOR.get(zone, "clear")]
+    activity_text = f"{activity['name']} {activity['conf']:.2f}" if activity else None
+    if activity and activity.get("alert"):
+        # Drowning outranks the supervision status, which moves into the details
+        tag = ("DROWNING", (0, 0, 255))
+        color = tag[1]
+        activity_text = SUPERVISION_TAGS.get(status, ("", None))[0] or None
 
     draw_skeleton(frame, kxy, kcf, kpt_conf)
     if left:
@@ -757,6 +765,8 @@ def draw_person(frame, track_id, xyxy, foot, src, left, right, kxy, kcf, kpt_con
 
     if tag:
         details = [f"#{track_id}", ZONE_LABEL.get(zone, zone)]
+        if activity_text:
+            details.insert(0, activity_text)
         if status in ("supervised", "unsupervised"):
             sep = supervision_data.get('separation_distance')
             details.append(f"{sep:.2f}m to nearest person" if sep is not None else "alone")
@@ -767,6 +777,8 @@ def draw_person(frame, track_id, xyxy, foot, src, left, right, kxy, kcf, kpt_con
         _draw_status_tag(frame, x1, y1, tag[0], tag[1], " | ".join(details))
     else:
         label = f"Person #{track_id} | Zone: {ZONE_LABEL.get(zone, zone)} | Event: {event or '-'}"
+        if activity_text:
+            label = f"{activity_text} | {label}"
         (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
         ty = max(th + 8, y1 - 8)
         cv2.rectangle(frame, (x1, ty - th - 6), (x1 + tw + 8, ty + 4), (0, 0, 0), -1)
@@ -821,8 +833,39 @@ def people_from_result(result):
         yield int(ids[i]), xyxy[i], (None if kxy is None else kxy[i]), (None if kcf is None else kcf[i])
 
 
+HEAD_KEYPOINTS = slice(0, 5)  # nose, eyes, ears
+SHOULDER_KEYPOINTS = slice(5, 7)
+
+
+def looks_like_person(box_conf, kcf, person_filter: dict | None) -> bool:
+    """Reject pose detections without a believable upper body.
+
+    The pose model readily matches curtains, chair stacks and railings to legs and
+    hips; real people (swimmers included) nearly always show shoulders or a head.
+    """
+    if not person_filter:
+        return True
+    if box_conf is not None and box_conf < float(person_filter.get("min_confidence", 0.0)):
+        return False
+    if not person_filter.get("require_upper_body", False) or kcf is None:
+        return True
+    thr = float(person_filter.get("upper_body_keypoint_conf", 0.35))
+    shoulders = int((np.asarray(kcf[SHOULDER_KEYPOINTS]) >= thr).sum())
+    head = int((np.asarray(kcf[HEAD_KEYPOINTS]) >= thr).sum())
+    return shoulders >= 2 or (shoulders >= 1 and head >= 1)
+
+
+def _overlap_of_smaller(a, b) -> float:
+    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    smaller = min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]))
+    return inter / smaller if smaller > 0 else 0.0
+
+
 def process_result(result, zcfg, tracker: PersonTracker, kpt_conf, persist: bool,
-                   draw_zone_overlay: bool = True, draw_people: bool = True):
+                   draw_zone_overlay: bool = True, draw_people: bool = True,
+                   person_filter: dict | None = None):
     frame = result.orig_img.copy()
     h, w = frame.shape[:2]
     zones_px = zone_pixels(zcfg, w, h)
@@ -835,7 +878,19 @@ def process_result(result, zcfg, tracker: PersonTracker, kpt_conf, persist: bool
         draw_zones(frame, zones_px)
     reports = []
     box_conf = result.boxes.conf.cpu().numpy() if result.boxes is not None and result.boxes.conf is not None else None
+    candidates = []
     for i, (track_id, xyxy, kxy, kcf) in enumerate(people_from_result(result) or []):
+        c = None if box_conf is None else float(box_conf[i])
+        if looks_like_person(c, kcf, person_filter):
+            candidates.append((i, track_id, xyxy, kxy, kcf, c or 0.0))
+    if person_filter and person_filter.get("merge_nested", True):
+        # One swimmer often gets a second, nested box (e.g. upper body plus splash)
+        kept = []
+        for cand in sorted(candidates, key=lambda item: item[5], reverse=True):
+            if not any(_overlap_of_smaller(cand[2], k[2]) >= 0.7 for k in kept):
+                kept.append(cand)
+        candidates = sorted(kept, key=lambda item: item[0])
+    for i, track_id, xyxy, kxy, kcf, _ in candidates:
         fx, fy, src, left, right = foot_point(xyxy, kxy, kcf, kpt_conf)
         zone = classify_zone(fx, fy, zones_px, orange_px)
         if persist:

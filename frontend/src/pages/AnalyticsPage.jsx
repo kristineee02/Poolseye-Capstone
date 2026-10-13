@@ -30,6 +30,25 @@ const DATE_OPTIONS = [
 
 const SEV_CLASS = { HIGH: 'sev-high', MEDIUM: 'sev-medium', LOW: 'sev-low' }
 
+// Fixed per type so a type keeps its color when the date range changes.
+const TYPE_COLORS = {
+  'Possible Drowning': '#B91C1C',
+  'Unsupervised Person': '#F43F5E',
+  'Red Zone Intrusion': '#F97316',
+  'Deep-Pool Entry': '#7C3AED',
+  'After-Hours Presence': '#EAB308',
+  'Entered Monitored Area': '#2563EB',
+  'Left Pool Area': '#06B6D4',
+  'Person Supervised': '#16A34A',
+  'Left Deep Pool': '#A855F7',
+  'Left Red Zone': '#F59E0B',
+}
+const FALLBACK_TYPE_COLORS = ['#0EA5E9', '#EC4899', '#84CC16', '#14B8A6', '#6366F1', '#78716C']
+
+function typeColor(title, index) {
+  return TYPE_COLORS[title] || FALLBACK_TYPE_COLORS[index % FALLBACK_TYPE_COLORS.length]
+}
+
 function formatDuration(seconds) {
   if (seconds == null) return '—'
   const s = Math.round(seconds)
@@ -69,6 +88,7 @@ function buildCsv(data) {
     ['Total detections', summary.totalDetections],
     ['Total alerts', summary.totalAlerts],
     ['High-severity alerts', summary.highSeverity],
+    ['Drowning detected', summary.drowningDetected ?? 0],
     ['Acknowledged', summary.acknowledged],
     ['Dismissed (false alarm)', summary.dismissed],
     ['Pending', summary.pending],
@@ -227,7 +247,7 @@ export default function AnalyticsPage() {
         <div className={`analytics-body${loading ? ' is-refreshing' : ''}`}>
           {activeTab === 'overview' && (
             <section className="analytics-section">
-              <div className="analytics-summary-grid">
+              <div className="analytics-summary-grid is-five">
                 <StatCard
                   tone="accent"
                   icon={Icon.Bell}
@@ -235,6 +255,16 @@ export default function AnalyticsPage() {
                   value={summary.totalAlerts}
                   trend={{ current: summary.totalAlerts, previous: previous?.totalAlerts }}
                   comparisonLabel={comparisonLabel}                />
+                <StatCard
+                  tone="alarm"
+                  icon={Icon.Waves}
+                  label="Drowning detected"
+                  value={summary.drowningDetected ?? 0}
+                  trend={{ current: summary.drowningDetected ?? 0, previous: previous?.drowningDetected }}
+                  comparisonLabel={comparisonLabel}
+                  hint={summary.drowningPending
+                    ? `${summary.drowningPending} still pending`
+                    : 'All responded to'}                />
                 <StatCard
                   tone="alarm"
                   icon={Icon.AlertTriangle}
@@ -297,13 +327,19 @@ export default function AnalyticsPage() {
                         <span className="chart-sub">Most frequent first</span>
                       </div>
                       <div className="incident-trend-list">
-                        {data.byType.map((t) => (
+                        {data.byType.map((t, i) => (
                           <div key={t.title} className="incident-trend-row">
-                            <span className="it-type" title={t.title}>{t.title}</span>
+                            <span className="it-type" title={t.title}>
+                              <span className="it-type-dot" style={{ background: typeColor(t.title, i) }} />
+                              {t.title}
+                            </span>
                             <div className="it-bar-track">
                               <div
-                                className={`it-bar-fill ${SEV_CLASS[t.severity]}`}
-                                style={{ width: `${(t.count / maxTypeCount) * 100}%` }}
+                                className="it-bar-fill"
+                                style={{
+                                  width: `${(t.count / maxTypeCount) * 100}%`,
+                                  background: typeColor(t.title, i),
+                                }}
                               />
                             </div>
                             <span className="it-count">{t.count}</span>
