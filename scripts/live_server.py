@@ -1600,7 +1600,8 @@ def capture_loop(cfg: dict):
             return calibrator_box["calibrator"]
         try:
             calibrator = SpatialCalibrator.from_config({**cfg, "ZONES": zcfg}, fw, fh)
-            print(f"[stream] SpatialCalibrator initialized ({fw}x{fh}) — 0.7m proximity using perspective projection")
+            mode = "surveyed homography" if calibrator.calibrated else "body-height scale (no surveyed calibration)"
+            print(f"[stream] SpatialCalibrator initialized ({fw}x{fh}) — proximity via {mode}")
         except Exception as cal_err:
             print(f"[stream] Calibrator init warning: {cal_err} — falling back to linear scale")
             calibrator = SpatialCalibrator(

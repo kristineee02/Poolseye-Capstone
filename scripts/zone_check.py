@@ -191,6 +191,42 @@ def pixels_to_meters(pixel_distance, frame_width, pool_real_width_m):
     return pixel_distance / ratio
 
 
+# Typical standing height used to turn a person's box height into a local pixels-per-meter scale
+ASSUMED_PERSON_HEIGHT_M = 1.7
+
+
+def _box_height(xyxy) -> float:
+    if xyxy is None or len(xyxy) < 4:
+        return 0.0
+    return max(0.0, float(xyxy[3]) - float(xyxy[1]))
+
+
+def body_scale_distance(p1, p2, camera_pitch_deg: float = 35.0) -> float | None:
+    """
+    Ground distance in meters between two foot points, using the taller person's box
+    height as the pixels-per-meter scale at their spot. Perspective shrinks a person and
+    the gap beside them equally, so this needs no pool calibration. Depth (vertical
+    image offset) is foreshortened by the camera tilt and is stretched back out.
+    """
+    height_px = max(_box_height(p1.get('xyxy')), _box_height(p2.get('xyxy')))
+    if height_px <= 0:
+        return None
+    px_per_m = height_px / ASSUMED_PERSON_HEIGHT_M
+    foreshortening = max(math.sin(math.radians(camera_pitch_deg)), 0.3)
+    dx_m = (p2['foot'][0] - p1['foot'][0]) / px_per_m
+    dy_m = (p2['foot'][1] - p1['foot'][1]) / (px_per_m * foreshortening)
+    return math.hypot(dx_m, dy_m)
+
+
+def person_separation(p1, p2, calibrator: SpatialCalibrator) -> float:
+    """Meters between two people: surveyed homography when available, otherwise body scale."""
+    if not getattr(calibrator, 'calibrated', False):
+        dist_m = body_scale_distance(p1, p2, getattr(calibrator, 'camera_pitch_deg', 35.0))
+        if dist_m is not None:
+            return dist_m
+    return calibrator.calculate_distance(p1['foot'], p2['foot'])
+
+
 def calculate_person_distances(people, frame_width=1920, pool_real_width_m=15.0, calibrator: SpatialCalibrator | None = None):
     """Calculate pairwise distances between all pairs of people in real-world meters."""
     distances = []
@@ -201,7 +237,7 @@ def calculate_person_distances(people, frame_width=1920, pool_real_width_m=15.0,
             fx1, fy1 = p1['foot']
             fx2, fy2 = p2['foot']
             if calibrator is not None:
-                dist_m = calibrator.calculate_distance((fx1, fy1), (fx2, fy2))
+                dist_m = person_separation(p1, p2, calibrator)
             else:
                 dist_px = math.hypot(fx2 - fx1, fy2 - fy1)
                 dist_m = pixels_to_meters(dist_px, frame_width, pool_real_width_m)
@@ -253,7 +289,7 @@ def check_supervision(people, supervision_cfg, frame_width_or_calibrator):
         for other in candidates:
             if other['id'] == person['id']:
                 continue
-            dist_m = calibrator.calculate_distance(person['foot'], other['foot'])
+            dist_m = person_separation(person, other, calibrator)
             if dist_m < nearest_distance:
                 nearest_distance = dist_m
                 nearest_person_id = other['id']
@@ -1112,6 +1148,28 @@ def run_self_test() -> int:
     p_pool = {"id": 34, "foot": pt2_px, "zone": "yellow"}
     unsupervised_deck = check_supervision([p_deck, p_pool], sup_cfg, cal)
     check("deck person within 0.7m supervises pool person", p_pool.get("supervised") is True and len(unsupervised_deck) == 0)
+
+    # Check 4c: Without a surveyed calibration, a hand-drawn zone must not distort proximity
+    zone_cal = SpatialCalibrator.from_zone_polygon(
+        [(380, 300), (520, 300), (560, 420), (340, 420)], frame_size=(960, 540),
+    )
+    check("drawn-zone calibrator is not treated as surveyed", zone_cal.calibrated is False)
+    adult = {"id": 51, "foot": (430, 400), "zone": "yellow", "xyxy": [400, 200, 460, 400]}
+    beside = {"id": 52, "foot": (485, 400), "zone": "yellow", "xyxy": [455, 205, 515, 400]}
+    check_supervision([adult, beside], sup_cfg, zone_cal)
+    check("shoulder-to-shoulder people are supervised on an uncalibrated camera",
+          adult["supervised"] is True and beside["supervised"] is True
+          and adult["supervision_data"]["separation_distance"] < 0.6)
+    child = {"id": 53, "foot": (481, 400), "zone": "yellow", "xyxy": [462, 300, 500, 400]}
+    check_supervision([adult, child], sup_cfg, zone_cal)
+    check("short child beside an adult is supervised", child["supervised"] is True)
+    behind = {"id": 54, "foot": (485, 380), "zone": "yellow", "xyxy": [455, 190, 515, 380]}
+    check_supervision([adult, behind], sup_cfg, zone_cal)
+    check("side by side with a slight depth offset is supervised", behind["supervised"] is True)
+    across = {"id": 55, "foot": (730, 400), "zone": "yellow", "xyxy": [700, 200, 760, 400]}
+    check_supervision([adult, across], sup_cfg, zone_cal)
+    check("people several body-widths apart are unsupervised",
+          adult["supervised"] is False and across["supervision_data"]["separation_distance"] > 2.0)
 
     # Check 5: Status follows the current frame exactly — no smoothing or grace periods
     tr = PersonTracker()

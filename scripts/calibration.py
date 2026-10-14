@@ -25,10 +25,15 @@ class SpatialCalibrator:
         pool_width_m: float = 15.0,
         pool_length_m: float = 25.0,
         frame_size: Tuple[int, int] = (1920, 1080),
+        camera_pitch_deg: float = 35.0,
     ):
         self.pool_width_m = float(pool_width_m)
         self.pool_length_m = float(pool_length_m)
         self.frame_size = frame_size  # (width, height)
+        self.camera_pitch_deg = float(camera_pitch_deg)
+        # Only an explicit matrix / measured reference points give trustworthy meters.
+        # Guessed homographies (drawn zones, defaults) are flagged so proximity can use body scale.
+        self.calibrated = homography_matrix is not None
 
         if homography_matrix is not None:
             self.H = np.array(homography_matrix, dtype=np.float64)
@@ -84,6 +89,19 @@ class SpatialCalibrator:
         """
         if len(polygon_points) < 4:
             return cls(pool_width_m=pool_width_m, pool_length_m=pool_length_m, frame_size=frame_size)
+        cal = cls._zone_homography(polygon_points, pool_width_m, pool_length_m, frame_size)
+        # A hand-drawn geofence is not a surveyed pool rectangle, so its meters are only an estimate
+        cal.calibrated = False
+        return cal
+
+    @classmethod
+    def _zone_homography(
+        cls,
+        polygon_points: List[Tuple[float, float]],
+        pool_width_m: float,
+        pool_length_m: float,
+        frame_size: Tuple[int, int],
+    ) -> "SpatialCalibrator":
 
         pts = np.array(polygon_points[:4], dtype=np.float32)
         # Order points: top-left, top-right, bottom-right, bottom-left
@@ -113,8 +131,14 @@ class SpatialCalibrator:
 
     @classmethod
     def from_config(cls, cfg: Dict[str, Any], frame_w: int, frame_h: int) -> "SpatialCalibrator":
+        """Build calibrator from application config dictionary (config.json)."""
+        cal = cls._homography_from_config(cfg, frame_w, frame_h)
+        cal.camera_pitch_deg = float(cfg.get("CALIBRATION", {}).get("camera_pitch_deg", 35.0))
+        return cal
+
+    @classmethod
+    def _homography_from_config(cls, cfg: Dict[str, Any], frame_w: int, frame_h: int) -> "SpatialCalibrator":
         """
-        Build calibrator from application config dictionary (config.json).
         Checks:
         1. CALIBRATION.homography_matrix
         2. CALIBRATION.reference_points
