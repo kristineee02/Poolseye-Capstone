@@ -73,6 +73,22 @@ async function escalateEvent(db, eventId) {
   return pushToLifeguards(db, event, `URGENT — no response yet: ${PUSH_TITLES[event.category] || event.title}`)
 }
 
+/**
+ * Admin-triggered urgent re-send of an alert lifeguards were already paged for.
+ * Returns null when the alert was never sent or someone is already responding.
+ */
+async function resendUrgent(db, eventId) {
+  const claimed = await run(
+    db,
+    'UPDATE events SET escalated_at = ? WHERE id = ? AND dispatched_at IS NOT NULL AND responding_at IS NULL',
+    [Date.now() / 1000, eventId]
+  )
+  if (!claimed?.changes) return null
+
+  const event = await get(db, 'SELECT * FROM events WHERE id = ?', [eventId])
+  return pushToLifeguards(db, event, `URGENT — no response yet: ${PUSH_TITLES[event.category] || event.title}`)
+}
+
 async function escalationTick(db) {
   const now = Date.now() / 1000
   const base = `status = 'pending' AND is_alert = 1 AND COALESCE(category, '') <> 'broadcast'`
@@ -112,4 +128,4 @@ function startEscalation(db) {
   return timer
 }
 
-module.exports = { dispatchEvent, escalationTick, startEscalation }
+module.exports = { dispatchEvent, resendUrgent, escalationTick, startEscalation }

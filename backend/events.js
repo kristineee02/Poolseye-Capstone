@@ -1,6 +1,6 @@
 const express = require('express')
 const { get, all, run } = require('./db')
-const { dispatchEvent } = require('./dispatch')
+const { dispatchEvent, resendUrgent } = require('./dispatch')
 const { MEDIA_DIR, MEDIA_ROUTE, saveMedia, removeMedia } = require('./mediaStorage')
 
 const SITE_TIME_ZONE = process.env.SITE_TIMEZONE || 'Asia/Manila'
@@ -31,8 +31,11 @@ function ingestAuthorized(req) {
 const LEGACY_DEMO_EVENT_IDS = ['evt-1', 'evt-2', 'evt-3', 'evt-4', 'evt-5']
 // Test alerts only exist to exercise the lifeguard app; they are cleared on the next start after a day.
 const TEST_EVENT_TTL_SEC = 24 * 60 * 60
+// Zone-leave events from earlier builds stay in the database but are no longer shown or counted.
+const LEFT_ZONE_TITLES = ['Left Deep Pool', 'Left Red Zone', 'Left Pool Area']
+const HIDDEN_EVENTS_SQL = `COALESCE(title, '') NOT IN (${LEFT_ZONE_TITLES.map((t) => `'${t}'`).join(', ')})`
 // Event history and its counts only cover detections, not test alerts or admin broadcasts.
-const REAL_EVENTS_SQL = "COALESCE(camera, '') <> 'TEST' AND COALESCE(category, '') <> 'broadcast'"
+const REAL_EVENTS_SQL = `COALESCE(camera, '') <> 'TEST' AND COALESCE(category, '') <> 'broadcast' AND ${HIDDEN_EVENTS_SQL}`
 
 function rowToEvent(row) {
   if (!row) return null
@@ -154,6 +157,9 @@ async function removeLegacyDemoEvents(db) {
 
   const tests = await run(db, "DELETE FROM events WHERE camera = 'TEST' AND ts < ?", [Date.now() / 1000 - TEST_EVENT_TTL_SEC])
   if (tests?.changes) console.log('Removed old test alerts:', tests.changes)
+
+  const renamed = await run(db, "UPDATE events SET title = 'Yellow Zone Area' WHERE title = 'Entered Monitored Area'")
+  if (renamed?.changes) console.log('Renamed "Entered Monitored Area" events to "Yellow Zone Area":', renamed.changes)
 }
 
 async function insertEvent(db, payload) {
@@ -458,9 +464,38 @@ function registerEventRoutes(app, db, adminRequired) {
     }
   })
 
+  app.post('/api/events/:id/resend', adminRequired, async (req, res) => {
+    try {
+      const row = await get(db, 'SELECT * FROM events WHERE id = ?', [req.params.id])
+      if (!row) return res.status(404).json({ error: 'Event not found' })
+      if (row.status !== 'pending') {
+        return res.status(400).json({ error: 'Only active alerts can be re-sent to lifeguards.' })
+      }
+
+      const result = await resendUrgent(db, row.id)
+      if (!result) {
+        return res.status(409).json({
+          error: row.responding_at
+            ? 'A lifeguard is already responding to this alert.'
+            : 'Send this alert to lifeguards first.',
+        })
+      }
+
+      const updated = await get(db, 'SELECT * FROM events WHERE id = ?', [row.id])
+      res.json({ ok: true, event: await eventWithResponder(db, updated), ...result })
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: 'Failed to re-send alert to lifeguards' })
+    }
+  })
+
   app.post('/api/events/ingest', async (req, res) => {
     try {
       if (!ingestAuthorized(req)) return res.status(401).json({ error: 'Unauthorized' })
+      // An older live_server.py still sends zone-leave events; they are not logged anymore
+      if (LEFT_ZONE_TITLES.includes(String(req.body?.title || ''))) {
+        return res.json({ ok: true, ignored: true })
+      }
 
       const event = await insertEvent(db, req.body)
       res.status(201).json({ ok: true, event })
@@ -504,6 +539,7 @@ function registerEventRoutes(app, db, adminRequired) {
 }
 
 module.exports = {
+  HIDDEN_EVENTS_SQL,
   MEDIA_DIR,
   MEDIA_ROUTE,
   registerEventRoutes,

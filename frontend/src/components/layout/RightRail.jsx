@@ -6,6 +6,7 @@ import {
   fetchActiveAlert,
   fetchAlarm,
   fetchEventSummary,
+  resendEvent,
   setManualAlarm,
 } from '../../api/events'
 import { DATA_RESET_EVENT } from '../../api/dataManagement'
@@ -45,7 +46,7 @@ function timeAgo(ts) {
   return `${Math.floor(sec / 86400)}d ago`
 }
 
-function HandoffStatus({ alert }) {
+function HandoffStatus({ alert, busy, onResend }) {
   if (alert.responding_at) {
     return (
       <div className="rr-handoff is-responding">
@@ -58,11 +59,17 @@ function HandoffStatus({ alert }) {
   }
   if (alert.escalated_at) {
     return (
-      <div className="rr-handoff is-escalated">
-        <Icon.AlertTriangle />
-        <span>
-          <b>No response yet</b> — re-sent as urgent at {formatTime(alert.escalated_at)}
-        </span>
+      <div className="rr-actions">
+        <div className="rr-handoff is-escalated">
+          <Icon.AlertTriangle />
+          <span>
+            <b>No response yet</b> — last sent as urgent at {formatTime(alert.escalated_at)}
+          </span>
+        </div>
+        <button type="button" className="qa-btn danger rr-resend" onClick={onResend} disabled={Boolean(busy)}>
+          <Icon.Bell />
+          {busy === 'resend' ? 'Re-sending…' : 'Re-send as urgent to lifeguards'}
+        </button>
       </div>
     )
   }
@@ -85,7 +92,7 @@ function describeSupervised(event) {
   return `${person} supervised${where}${distance}`
 }
 
-function ActiveAlert({ alert, supervised, busy, onDispatch }) {
+function ActiveAlert({ alert, supervised, busy, onDispatch, onResend }) {
   if (!alert) {
     return (
       <div className="active-alert-item is-clear">
@@ -124,7 +131,7 @@ function ActiveAlert({ alert, supervised, busy, onDispatch }) {
       </div>
 
       {alert.dispatched_at ? (
-        <HandoffStatus alert={alert} />
+        <HandoffStatus alert={alert} busy={busy} onResend={onResend} />
       ) : (
         <div className="rr-actions">
           <button type="button" className="qa-btn danger" onClick={onDispatch} disabled={Boolean(busy)}>
@@ -191,6 +198,21 @@ export default function RightRail({ onNavigate }) {
     load()
   }
 
+  const resend = async () => {
+    if (!alert) return
+    setBusy('resend')
+    const result = await resendEvent(alert.id)
+    setBusy(null)
+    if (!result.ok) {
+      setError(result.error || 'Could not re-send the alert.')
+      return
+    }
+    setNotice(result.recipients
+      ? `Re-sent as urgent to ${result.recipients} lifeguard${result.recipients === 1 ? '' : 's'}.`
+      : 'No active lifeguards to notify.')
+    load()
+  }
+
   const testAlert = async (kind) => {
     setBusy(`test-${kind}`)
     const result = await createTestAlert(kind)
@@ -239,6 +261,7 @@ export default function RightRail({ onNavigate }) {
           supervised={supervised}
           busy={busy}
           onDispatch={dispatch}
+          onResend={resend}
         />
         {notice ? <div className="rr-notice">{notice}</div> : null}
         {error ? <div className="rr-error">{error}</div> : null}

@@ -166,6 +166,8 @@
 }
 .rr-actions .qa-btn { justify-content: center; padding: 11px 12px; }
 .rr-actions .rr-text-btn { margin-top: 4px; }
+.rr-actions .rr-handoff { margin-top: 0; }
+.rr-actions .rr-resend { margin-top: 8px; }
 .rr-hint {
   margin: 2px 0 0;
   font-size: 11px;

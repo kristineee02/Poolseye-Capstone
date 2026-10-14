@@ -103,7 +103,7 @@ BOX_COLOR = {
     "clear": "clear",
 }
 
-# (from, to) → (hud text, counts as alert)
+# (from, to) → (hud text, counts as alert); leaving a zone is not logged
 CROSSING_EVENTS = {
     ("clear", "yellow"): ("ENTERED POOL AREA", False),
     ("clear", "red"): ("RED BOUNDARY CROSSED", True),
@@ -111,12 +111,6 @@ CROSSING_EVENTS = {
     ("yellow", "red"): ("RED BOUNDARY CROSSED", True),
     ("yellow", "orange"): ("DEEP POOL ENTRY", True),
     ("red", "orange"): ("DEEP POOL ENTRY", True),
-    ("orange", "red"): ("LEFT DEEP POOL", False),
-    ("orange", "yellow"): ("LEFT DEEP POOL", False),
-    ("orange", "clear"): ("LEFT POOL AREA", False),
-    ("red", "yellow"): ("LEFT RED ZONE", False),
-    ("red", "clear"): ("LEFT POOL AREA", False),
-    ("yellow", "clear"): ("LEFT POOL AREA", False),
 }
 
 
@@ -241,7 +235,7 @@ def check_supervision(people, supervision_cfg, frame_width_or_calibrator):
         calibrator = SpatialCalibrator(pool_width_m=pool_w, pool_length_m=pool_l, frame_size=(int(fw), int(fw * 9 / 16)))
 
     threshold = float(supervision_cfg.get('threshold_meters', 0.7))
-    check_zones = supervision_cfg.get('check_zones', ['yellow', 'red', 'orange'])
+    check_zones = supervision_cfg.get('check_zones', ['yellow'])
     supervisor_zones = supervision_cfg.get('supervisor_zones', ['clear', 'yellow', 'red', 'orange'])
 
     for p in people:
@@ -438,11 +432,32 @@ class PersonTracker:
     lost_sec: float = 2.0
     supervision_cooldown_sec: float = 10.0
     states: dict[int, PersonState] = field(default_factory=dict)
+    sightings: dict[int, list] = field(default_factory=dict)
+    confirmed: set = field(default_factory=set)
 
     def prune(self, now: float):
         dead = [i for i, s in self.states.items() if now - s.last_seen > self.lost_sec]
         for i in dead:
             del self.states[i]
+        for i in [i for i, seen in self.sightings.items() if not seen or now - seen[-1] > self.lost_sec]:
+            del self.sightings[i]
+            self.confirmed.discard(i)
+
+    def confirm(self, track_id: int, now: float, hits: int, window_sec: float) -> bool:
+        """True once a track has passed the person check `hits` times within `window_sec`.
+
+        process_result skips the body-shape check for confirmed tracks until they are
+        lost, so a person briefly turning away or ducking under does not drop out.
+        """
+        if hits <= 1 or track_id in self.confirmed:
+            return True
+        seen = [t for t in self.sightings.get(track_id, []) if now - t <= window_sec]
+        seen.append(now)
+        self.sightings[track_id] = seen
+        if len(seen) >= hits:
+            self.confirmed.add(track_id)
+            return True
+        return False
 
     def update(self, track_id: int, zone: str, foot, now: float):
         st = self.states.get(track_id)
@@ -535,7 +550,7 @@ class PersonTracker:
             if not st:
                 # Auto-register: person detected in zone but no state entry yet
                 # (happens when update_supervision is called before a zone crossing event)
-                check_zones_inner = supervision_cfg.get('check_zones', ['yellow', 'red', 'orange'])
+                check_zones_inner = supervision_cfg.get('check_zones', ['yellow'])
                 if person.get('zone') not in check_zones_inner:
                     continue
                 st = PersonState(
@@ -548,7 +563,7 @@ class PersonTracker:
                 self.states[pid] = st
 
             # Outside pool zones, person is safe
-            check_zones = supervision_cfg.get('check_zones', ['yellow', 'red', 'orange'])
+            check_zones = supervision_cfg.get('check_zones', ['yellow'])
             if person['zone'] not in check_zones:
                 st.supervised = True
                 st.in_check_zone = False
@@ -713,6 +728,9 @@ def supervision_label(person: dict, tracker: PersonTracker, enabled: bool = True
         return {**base, 'status': 'after_hours', 'supervised': False}
     # check_supervision only attaches supervision_data to people inside check_zones
     if not sup or st is None:
+        # Red/orange swimmers are in the pool but outside the supervision rule: no tag at all
+        if person.get('zone', 'clear') != 'clear':
+            return None
         return {**base, 'status': 'outside', 'supervised': True}
     return {**base, 'status': 'supervised' if st.supervised else 'unsupervised', 'supervised': st.supervised}
 
@@ -835,24 +853,84 @@ def people_from_result(result):
 
 HEAD_KEYPOINTS = slice(0, 5)  # nose, eyes, ears
 SHOULDER_KEYPOINTS = slice(5, 7)
+L_SHOULDER, R_SHOULDER, L_HIP, R_HIP = 5, 6, 11, 12
 
 
-def looks_like_person(box_conf, kcf, person_filter: dict | None) -> bool:
-    """Reject pose detections without a believable upper body.
+def person_filter_from_config(pose_cfg: dict) -> dict:
+    return {
+        "min_confidence": float(pose_cfg.get("person_confidence", 0.3)),
+        "require_upper_body": bool(pose_cfg.get("require_upper_body", True)),
+        "upper_body_keypoint_conf": float(pose_cfg.get("upper_body_keypoint_conf", 0.35)),
+        "min_keypoints": int(pose_cfg.get("min_keypoints", 5)),
+        "keypoint_conf": float(pose_cfg.get("keypoint_confidence", 0.3)),
+        "min_keypoint_spread": float(pose_cfg.get("min_keypoint_spread", 0.3)),
+        "min_box_px": float(pose_cfg.get("min_box_px", 12)),
+        "max_aspect": float(pose_cfg.get("max_box_aspect", 5.0)),
+        "confirm_hits": int(pose_cfg.get("confirm_hits", 3)),
+        "confirm_window_sec": float(pose_cfg.get("confirm_window_sec", 1.5)),
+        "nms_iou": float(pose_cfg.get("nms_iou", 0.5)),
+        "merge_nested": True,
+    }
 
-    The pose model readily matches curtains, chair stacks and railings to legs and
-    hips; real people (swimmers included) nearly always show shoulders or a head.
+
+def _sides_agree(kxy, ok, box_w: float) -> bool:
+    """Shoulders and hips must face the same way; objects matched to a skeleton often cross them."""
+    if not all(ok[i] for i in (L_SHOULDER, R_SHOULDER, L_HIP, R_HIP)):
+        return True
+    min_sep = 0.05 * box_w
+    shoulder_dx = float(kxy[L_SHOULDER][0] - kxy[R_SHOULDER][0])
+    hip_dx = float(kxy[L_HIP][0] - kxy[R_HIP][0])
+    if abs(shoulder_dx) < min_sep or abs(hip_dx) < min_sep:
+        return True
+    return (shoulder_dx > 0) == (hip_dx > 0)
+
+
+def looks_like_person(box_conf, kcf, person_filter: dict | None, xyxy=None, kxy=None) -> bool:
+    """Accept a pose detection only when its skeleton is shaped like a human body.
+
+    The pose model readily matches curtains, chair stacks, railings and pool toys
+    to a skeleton. Real people (swimmers included) show a head or shoulders, enough
+    confident joints spread across their box, and a torso whose left and right
+    sides agree.
     """
     if not person_filter:
         return True
     if box_conf is not None and box_conf < float(person_filter.get("min_confidence", 0.0)):
         return False
-    if not person_filter.get("require_upper_body", False) or kcf is None:
-        return True
-    thr = float(person_filter.get("upper_body_keypoint_conf", 0.35))
-    shoulders = int((np.asarray(kcf[SHOULDER_KEYPOINTS]) >= thr).sum())
-    head = int((np.asarray(kcf[HEAD_KEYPOINTS]) >= thr).sum())
-    return shoulders >= 2 or (shoulders >= 1 and head >= 1)
+
+    if xyxy is not None:
+        box_w, box_h = float(xyxy[2] - xyxy[0]), float(xyxy[3] - xyxy[1])
+        if min(box_w, box_h) < float(person_filter.get("min_box_px", 0.0)):
+            return False
+        max_aspect = float(person_filter.get("max_aspect", 0.0))
+        if max_aspect > 0 and max(box_w, box_h) > max_aspect * max(1.0, min(box_w, box_h)):
+            return False
+    else:
+        box_w = box_h = 0.0
+
+    if kcf is None:
+        return not person_filter.get("require_upper_body", False)
+    kcf = np.asarray(kcf)
+
+    if person_filter.get("require_upper_body", False):
+        thr = float(person_filter.get("upper_body_keypoint_conf", 0.35))
+        shoulders = int((kcf[SHOULDER_KEYPOINTS] >= thr).sum())
+        head = int((kcf[HEAD_KEYPOINTS] >= thr).sum())
+        if not (shoulders >= 2 or (shoulders >= 1 and head >= 1)):
+            return False
+
+    ok = kcf >= float(person_filter.get("keypoint_conf", 0.3))
+    if int(ok.sum()) < int(person_filter.get("min_keypoints", 0)):
+        return False
+
+    if kxy is not None and xyxy is not None and ok.any():
+        pts = np.asarray(kxy)[ok]
+        spread = max(float(np.ptp(pts[:, 0])), float(np.ptp(pts[:, 1])))
+        if spread < float(person_filter.get("min_keypoint_spread", 0.0)) * max(box_w, box_h):
+            return False
+        if not _sides_agree(np.asarray(kxy), ok, box_w):
+            return False
+    return True
 
 
 def _overlap_of_smaller(a, b) -> float:
@@ -861,6 +939,19 @@ def _overlap_of_smaller(a, b) -> float:
     inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
     smaller = min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]))
     return inter / smaller if smaller > 0 else 0.0
+
+
+def _same_skeleton(a, b, kpt_conf) -> bool:
+    """Two detections whose shared joints sit on top of each other are one person drawn twice."""
+    (_, _, xa, ka, ca, _), (_, _, xb, kb, cb, _) = a, b
+    if ka is None or kb is None or ca is None or cb is None:
+        return False
+    both = (np.asarray(ca) >= kpt_conf) & (np.asarray(cb) >= kpt_conf)
+    if int(both.sum()) < 3:
+        return False
+    scale = max(1.0, min(xa[3] - xa[1], xb[3] - xb[1], max(xa[2] - xa[0], xb[2] - xb[0])))
+    gaps = np.linalg.norm(np.asarray(ka)[both] - np.asarray(kb)[both], axis=1)
+    return float(np.median(gaps)) <= 0.1 * scale
 
 
 def process_result(result, zcfg, tracker: PersonTracker, kpt_conf, persist: bool,
@@ -878,16 +969,30 @@ def process_result(result, zcfg, tracker: PersonTracker, kpt_conf, persist: bool
         draw_zones(frame, zones_px)
     reports = []
     box_conf = result.boxes.conf.cpu().numpy() if result.boxes is not None and result.boxes.conf is not None else None
+    confirm_hits = int(person_filter.get("confirm_hits", 1)) if person_filter and persist else 1
+    confirm_window = float(person_filter.get("confirm_window_sec", 1.5)) if person_filter else 0.0
     candidates = []
     for i, (track_id, xyxy, kxy, kcf) in enumerate(people_from_result(result) or []):
         c = None if box_conf is None else float(box_conf[i])
-        if looks_like_person(c, kcf, person_filter):
-            candidates.append((i, track_id, xyxy, kxy, kcf, c or 0.0))
+        if confirm_hits > 1 and track_id in tracker.confirmed:
+            if c is not None and c < float(person_filter.get("min_confidence", 0.0)):
+                continue
+        elif not looks_like_person(c, kcf, person_filter, xyxy, kxy):
+            continue
+        elif not tracker.confirm(track_id, now, confirm_hits, confirm_window):
+            continue
+        candidates.append((i, track_id, xyxy, kxy, kcf, c or 0.0))
     if person_filter and person_filter.get("merge_nested", True):
-        # One swimmer often gets a second, nested box (e.g. upper body plus splash)
+        # One swimmer often gets a second, nested box (e.g. upper body plus splash),
+        # or a second skeleton laid over the first; either way only one is kept.
         kept = []
         for cand in sorted(candidates, key=lambda item: item[5], reverse=True):
-            if not any(_overlap_of_smaller(cand[2], k[2]) >= 0.7 for k in kept):
+            duplicate = any(
+                _overlap_of_smaller(cand[2], k[2]) >= 0.7
+                or (_overlap_of_smaller(cand[2], k[2]) >= 0.3 and _same_skeleton(cand, k, kpt_conf))
+                for k in kept
+            )
+            if not duplicate:
                 kept.append(cand)
         candidates = sorted(kept, key=lambda item: item[0])
     for i, track_id, xyxy, kxy, kcf, _ in candidates:
@@ -952,7 +1057,9 @@ def run_self_test() -> int:
     ev, alert = crossing_event("red", "orange")
     check("RED→ORANGE deep pool", ev == "DEEP POOL ENTRY" and alert is True)
     ev, alert = crossing_event("orange", "red")
-    check("ORANGE→RED no deep alert", ev == "LEFT DEEP POOL" and alert is False)
+    check("ORANGE→RED leaving is not logged", ev is None and alert is False)
+    ev, alert = crossing_event("yellow", "clear")
+    check("YELLOW→OUTSIDE leaving is not logged", ev is None and alert is False)
     ev, alert = crossing_event("red", "red")
     check("same zone no event", ev is None and alert is False)
 
@@ -1184,7 +1291,10 @@ def main():
     try:
         for result in results:
             n_frames += 1
-            frame, reports = process_result(result, zcfg, tracker, kpt_conf, persist=use_track)
+            frame, reports = process_result(
+                result, zcfg, tracker, kpt_conf, persist=use_track,
+                person_filter=person_filter_from_config(pose_cfg),
+            )
             n_people += len(reports)
             label = result.path or kind
             if not reports:

@@ -37,11 +37,8 @@ const TYPE_COLORS = {
   'Red Zone Intrusion': '#F97316',
   'Deep-Pool Entry': '#7C3AED',
   'After-Hours Presence': '#EAB308',
-  'Entered Monitored Area': '#2563EB',
-  'Left Pool Area': '#06B6D4',
+  'Yellow Zone Area': '#2563EB',
   'Person Supervised': '#16A34A',
-  'Left Deep Pool': '#A855F7',
-  'Left Red Zone': '#F59E0B',
 }
 const FALLBACK_TYPE_COLORS = ['#0EA5E9', '#EC4899', '#84CC16', '#14B8A6', '#6366F1', '#78716C']
 
@@ -63,7 +60,6 @@ function detectionGroup(title) {
   if (
     value.includes('zone')
     || value.includes('pool')
-    || value.includes('monitored area')
     || value.includes('after-hours')
     || value.includes('intrusion')
   ) return 'zone'

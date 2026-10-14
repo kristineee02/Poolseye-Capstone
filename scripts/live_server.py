@@ -42,7 +42,8 @@ from zone_check import (  # noqa: E402
     foot_point,
     is_after_hours,
     load_full_config,
-    people_from_result,
+    looks_like_person,
+    person_filter_from_config,
     process_result,
     supervision_label,
     validate_nesting,
@@ -135,30 +136,9 @@ EVENT_CATALOG = {
     "ENTERED POOL AREA": {
         "type": "info",
         "code": "YL",
-        "title": "Entered Monitored Area",
+        "title": "Yellow Zone Area",
         "severity": "LOW",
         "category": "yellow",
-    },
-    "LEFT DEEP POOL": {
-        "type": "info",
-        "code": "DP",
-        "title": "Left Deep Pool",
-        "severity": "LOW",
-        "category": "deep-water",
-    },
-    "LEFT RED ZONE": {
-        "type": "info",
-        "code": "INT",
-        "title": "Left Red Zone",
-        "severity": "LOW",
-        "category": "intrusion",
-    },
-    "LEFT POOL AREA": {
-        "type": "safe",
-        "code": "CLR",
-        "title": "Left Pool Area",
-        "severity": "LOW",
-        "category": "clear",
     },
     "UNSUPERVISED": {
         "type": "alarm",
@@ -558,6 +538,13 @@ class DrowningWatcher:
         self.behavior_aspect = float(cfg.get("behavior_min_aspect", 0.9))
         self.behavior_min_samples = max(2, int(cfg.get("behavior_min_samples", 3)))
         self.water_classes = {str(c).lower() for c in cfg.get("water_classes", ["Swimming", "Drowning", "Floating"])}
+        # The model often calls someone lying flat on the water "Normal"; those boxes are relabelled Floating.
+        self.floating_from = {str(c).lower() for c in cfg.get("floating_from_classes", ["Normal"])}
+        self.floating_aspect = float(cfg.get("floating_min_aspect", 1.4))
+        self.floating_conf = float(cfg.get("floating_confidence", 0.05))
+        # A box called Drowning keeps that label this long, so one frame of "Swimming" cannot flip it
+        self.latch_sec = float(cfg.get("drowning_latch_sec", 5.0))
+        self._latches: list[dict] = []
         self.boxes: list[dict] = []
         self.labels: list[dict] = []
         self.poses: list[dict] = []
@@ -584,9 +571,11 @@ class DrowningWatcher:
             self._streaks.clear()
             self._fired.clear()
             self._tracks.clear()
+            self._latches.clear()
 
-    def start(self, pose_model, kpt_conf: float):
+    def start(self, pose_model, kpt_conf: float, person_filter: dict | None = None):
         self._pose_model, self._kpt_conf = pose_model, kpt_conf
+        self._person_filter = {**person_filter, "min_confidence": self.pose_crop_conf} if person_filter else None
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
@@ -676,6 +665,72 @@ class DrowningWatcher:
             still.append(tr["last"])
         return still
 
+    def _relabel_floating(self, detections: list, zones_px, orange_px, use_zones: bool):
+        """Turn a person lying flat in the pool into Floating when the model called them Normal.
+
+        NMS runs per class, so the model's own Floating guess for the same person often
+        survives underneath at a lower score; that guess wins. Otherwise a box much
+        wider than tall is a body lying on the water, not someone standing.
+        """
+        floats = [
+            d for d in detections
+            if d["name"].lower() == "floating" and d["conf"] >= self.floating_conf
+        ]
+        pool_drawn = use_zones and any(z["enabled"] and len(z["points"]) >= 3 for z in zones_px.values())
+        for d in detections:
+            if d["alert"] or d["name"].lower() not in self.floating_from:
+                continue
+            x1, y1, x2, y2 = d["xyxy"]
+            if pool_drawn and classify_zone((x1 + x2) / 2, y2, zones_px, orange_px) == "clear":
+                continue
+            rival = any(_box_overlap_of_smaller(d["xyxy"], f["xyxy"]) >= 0.5 for f in floats)
+            flat = (x2 - x1) >= self.floating_aspect * max(1.0, y2 - y1)
+            if rival or flat:
+                d["name"] = "Floating"
+
+    def _latch_for(self, xyxy):
+        best, best_overlap = None, 0.5
+        for latch in self._latches:
+            overlap = _box_overlap_of_smaller(xyxy, latch["xyxy"])
+            if overlap >= best_overlap:
+                best, best_overlap = latch, overlap
+        return best
+
+    def _apply_drowning_latch(self, labels: list, boxes: list, now: float) -> tuple[list, list]:
+        """Hold the Drowning label on a person for latch_sec after the last real Drowning call.
+
+        The model's class for one person flickers between frames; without this a
+        drowning swimmer could read Drowning, Swimming, Drowning on consecutive runs.
+        Held boxes follow the person and stay up through brief detector misses
+        (up to gap_sec), but every real Drowning call is what extends the hold.
+        """
+        self._latches = [l for l in self._latches if now < l["until"]]
+        for box in boxes:
+            latch = self._latch_for(box["xyxy"])
+            if latch is None:
+                latch = {}
+                self._latches.append(latch)
+            latch.update(xyxy=box["xyxy"], until=now + self.latch_sec, conf=box["conf"], seen=now)
+
+        held_labels = []
+        for box in labels:
+            latch = None if box["alert"] else self._latch_for(box["xyxy"])
+            if latch is None:
+                held_labels.append(box)
+                continue
+            held = {**box, "name": "Drowning", "alert": True, "latched": True, "conf": latch["conf"]}
+            latch.update(xyxy=box["xyxy"], seen=now)
+            held_labels.append(held)
+            boxes.append(held)
+
+        for latch in self._latches:
+            if latch["seen"] == now or now - latch["seen"] > self.gap_sec:
+                continue
+            held = {"xyxy": latch["xyxy"], "conf": latch["conf"], "name": "Drowning", "alert": True, "latched": True}
+            held_labels.append(held)
+            boxes.append(held)
+        return held_labels, boxes
+
     def update(self, frame, reports: list, zcfg: dict, now: float, use_zones: bool = True) -> list[dict]:
         """Return {id, zone, conf} for each person whose distress just outlasted hold_sec."""
         if now - self._last_run < self.interval:
@@ -683,9 +738,14 @@ class DrowningWatcher:
         self._last_run = now
 
         min_conf = min(self.conf, self.display_conf) if self.show_all else self.conf
-        result = self.model.predict(frame, conf=min_conf, imgsz=self.imgsz, verbose=False)[0]
+        result = self.model.predict(
+            frame, conf=min(min_conf, self.floating_conf), imgsz=self.imgsz, verbose=False
+        )[0]
         boxes, labels, water = [], [], []
         detections = []
+        h, w = frame.shape[:2]
+        zones_px = zone_pixels(zcfg, w, h)
+        orange_px = zcfg.get("orange_proximity", 0.02) * w
         if result.boxes is not None and len(result.boxes):
             for xyxy, cls, c in zip(
                 result.boxes.xyxy.cpu().numpy(),
@@ -698,6 +758,8 @@ class DrowningWatcher:
                     "name": str(self.model.names.get(int(cls), cls)),
                     "alert": int(cls) in self.class_ids and c >= self.conf,
                 })
+        self._relabel_floating(detections, zones_px, orange_px, use_zones)
+        detections = [d for d in detections if d["conf"] >= min_conf]
         # YOLO's NMS keeps a smaller box nested inside a larger one on the same person,
         # so one swimmer showed two labels; keep the alert or most confident box of each.
         kept = []
@@ -713,9 +775,6 @@ class DrowningWatcher:
             elif self.show_all and box["conf"] >= self.display_conf:
                 labels.append(box)
 
-        h, w = frame.shape[:2]
-        zones_px = zone_pixels(zcfg, w, h)
-        orange_px = zcfg.get("orange_proximity", 0.02) * w
         if self.behavior:
             for box in self._still_in_water(water, zones_px, orange_px, use_zones, now):
                 if box["alert"]:
@@ -726,6 +785,7 @@ class DrowningWatcher:
                 if flagged_box not in labels:
                     labels.append(flagged_box)
                 boxes.append(flagged_box)
+        labels, boxes = self._apply_drowning_latch(labels, boxes, now)
         self.boxes, self.labels, self.boxes_at = boxes, labels, now
 
         seen: dict[int, dict] = {}
@@ -738,14 +798,19 @@ class DrowningWatcher:
                 pid = UNTRACKED_PERSON_ID
                 zone = classify_zone((x1 + x2) / 2, y2, zones_px, orange_px)
             if pid not in seen or box["conf"] > seen[pid]["conf"]:
-                seen[pid] = {"id": pid, "zone": zone, "conf": box["conf"], "behavior": False}
+                seen[pid] = {"id": pid, "zone": zone, "conf": box["conf"], "behavior": False, "latched": True}
             seen[pid]["behavior"] = seen[pid]["behavior"] or bool(box.get("behavior"))
+            seen[pid]["latched"] = seen[pid]["latched"] and bool(box.get("latched"))
 
         for pid in [p for p, (_, last) in self._streaks.items() if now - last > self.gap_sec]:
             del self._streaks[pid]
 
         flagged = []
         for pid, hit in seen.items():
+            latched = hit.pop("latched")
+            # A held label keeps a real streak going but never starts one on its own
+            if latched and pid not in self._streaks:
+                continue
             streak = self._streaks.setdefault(pid, [now, now])
             streak[1] = now
             # The behaviour check already waited behavior_hold seconds before flagging
@@ -813,7 +878,11 @@ class DrowningWatcher:
             points[:, 1] += oy
             point_conf = None if kcf is None else kcf[index]
             visible = len(points) if point_conf is None else int((point_conf >= kpt_conf).sum())
-            if visible >= 3:
+            box = xyxy[index]
+            global_box = np.array([box[0] + ox, box[1] + oy, box[2] + ox, box[3] + oy])
+            if visible >= 3 and looks_like_person(
+                float(confs[index]), point_conf, self._person_filter, global_box, points
+            ):
                 recovered.append({"kxy": points, "kcf": point_conf})
         self.poses = recovered
         return recovered
@@ -861,19 +930,39 @@ def match_activity_to_people(people: list, boxes: list) -> tuple[dict, list]:
     both stacked two rectangles and two labels on one person.
     """
     matched, claimed = {}, set()
-    for index, person in enumerate(people):
-        px = [float(v) for v in person["xyxy"]]
-        best, best_score = None, 0.5
-        for i, box in enumerate(boxes):
-            if i in claimed:
+    # Drowning boxes are paired first so an alert is never left as a second box beside a person
+    order = sorted(range(len(boxes)), key=lambda i: (bool(boxes[i].get("alert", True)), boxes[i]["conf"]), reverse=True)
+    pxs = [[float(v) for v in person["xyxy"]] for person in people]
+    for i in order:
+        best, best_score = None, 0.3
+        for index, px in enumerate(pxs):
+            if index in matched:
                 continue
-            score = _box_overlap_of_smaller(px, box["xyxy"])
+            score = _box_overlap_of_smaller(px, boxes[i]["xyxy"])
             if score >= best_score:
-                best, best_score = i, score
+                best, best_score = index, score
         if best is not None:
-            claimed.add(best)
-            matched[index] = boxes[best]
-    return matched, [box for i, box in enumerate(boxes) if i not in claimed]
+            claimed.add(i)
+            matched[best] = boxes[i]
+    # A leftover box on someone who already has one would draw a second, overlapping box
+    unmatched = [
+        box for i, box in enumerate(boxes)
+        if i not in claimed and not any(_box_overlap_of_smaller(px, box["xyxy"]) >= 0.3 for px in pxs)
+    ]
+    return matched, unmatched
+
+
+def _keypoint_box(kxy, kcf, kpt_conf):
+    if kxy is None:
+        return None
+    pts = np.asarray(kxy, float)
+    ok = (pts[:, 0] > 1) & (pts[:, 1] > 1)
+    if kcf is not None:
+        ok &= np.asarray(kcf) >= kpt_conf
+    if not ok.any():
+        return None
+    pts = pts[ok]
+    return [pts[:, 0].min(), pts[:, 1].min(), pts[:, 0].max(), pts[:, 1].max()]
 
 
 def resize_max_width(frame, max_width: int):
@@ -1027,6 +1116,8 @@ def annotate_frame(frame, model, zcfg, tracker, conf, kpt_conf, imgsz: int,
     results = model.track(
         source=frame,
         conf=conf,
+        # Stricter than YOLO's 0.7 so one swimmer is not returned as two overlapping people
+        iou=float((person_filter or {}).get("nms_iou", 0.7)),
         imgsz=imgsz,
         persist=True,
         verbose=False,
@@ -1060,7 +1151,7 @@ def annotate_frame(frame, model, zcfg, tracker, conf, kpt_conf, imgsz: int,
                     **p,
                     'supervision_data': {
                         **(p.get('supervision_data') or {}),
-                        'supervised': labels[p['id']]['supervised'],
+                        'supervised': (labels[p['id']] or {}).get('supervised', True),
                     },
                 }
                 for p in people
@@ -1069,25 +1160,23 @@ def annotate_frame(frame, model, zcfg, tracker, conf, kpt_conf, imgsz: int,
             "threshold": float(supervision_cfg.get('threshold_meters', 0.7)),
         }
 
+    # Only detections that passed the person check are drawn
     draw_cache = []
-    for track_id, xyxy, kxy, kcf in people_from_result(results[0]):
-        fx, fy, src, left, right = foot_point(xyxy, kxy, kcf, kpt_conf)
-        zone = next((r["zone"] for r in reports if r["id"] == track_id), "clear")
-        event = next((r.get("event") for r in reports if r["id"] == track_id), None)
-        item = {
-            "track_id": track_id,
-            "xyxy": xyxy,
+    for r in reports:
+        fx, fy, src, left, right = foot_point(r["xyxy"], r["kxy"], r["kcf"], kpt_conf)
+        draw_cache.append({
+            "track_id": r["id"],
+            "xyxy": r["xyxy"],
             "foot": (fx, fy),
             "src": src,
             "left": left,
             "right": right,
-            "kxy": kxy,
-            "kcf": kcf,
-            "zone": zone,
-            "event": event,
-            "supervision": labels.get(track_id),
-        }
-        draw_cache.append(item)
+            "kxy": r["kxy"],
+            "kcf": r["kcf"],
+            "zone": r["zone"],
+            "event": r.get("event"),
+            "supervision": labels.get(r["id"]),
+        })
 
     for r in reports:
         label = labels.get(r["id"])
@@ -1182,7 +1271,12 @@ def render_scene(frame, scene: dict, kpt_conf):
             supervision_data=item.get("supervision"),
             activity=activity.get(index),
         )
+    person_boxes = [[float(v) for v in item["xyxy"]] for item in people]
     for pose in scene.get("activity_poses", []):
+        kbox = _keypoint_box(pose["kxy"], pose["kcf"], kpt_conf)
+        if kbox is None or any(_box_overlap_of_smaller(kbox, px) >= 0.3 for px in person_boxes):
+            continue
+        person_boxes.append(kbox)
         draw_skeleton(out, pose["kxy"], pose["kcf"], kpt_conf)
     draw_drowning_boxes(out, unmatched)
     return out
@@ -1440,12 +1534,7 @@ def capture_loop(cfg: dict):
         pose_path = SCRIPTS_DIR / pose_path
     conf = float(pose_cfg.get("confidence_threshold", 0.25))
     kpt_conf = float(pose_cfg.get("keypoint_confidence", 0.3))
-    person_filter = {
-        "min_confidence": float(pose_cfg.get("person_confidence", 0.15)),
-        "require_upper_body": bool(pose_cfg.get("require_upper_body", True)),
-        "upper_body_keypoint_conf": float(pose_cfg.get("upper_body_keypoint_conf", 0.35)),
-        "merge_nested": True,
-    }
+    person_filter = person_filter_from_config(pose_cfg)
     imgsz = int(pose_cfg.get("imgsz", 416))
     max_width = int(pose_cfg.get("max_width", 960))
     jpeg_quality = int(pose_cfg.get("jpeg_quality", 65))
@@ -1482,7 +1571,7 @@ def capture_loop(cfg: dict):
             drowning = DrowningWatcher(drowning_model, drown_cfg)
             if drown_cfg.get("pose_crop_fallback", True):
                 activity_pose_model = YOLO(str(pose_path))
-            drowning.start(activity_pose_model, kpt_conf)
+            drowning.start(activity_pose_model, kpt_conf, person_filter)
             print(
                 f"[stream] drowning: classes={sorted(drowning.class_ids)} conf={drowning.conf:g} "
                 f"hold={drowning.hold_sec:g}s fps={1 / drowning.interval:g} "

@@ -1,6 +1,3 @@
-// PoolsEye alarm node — ESP32 + DFPlayer Mini + speaker (0001.mp3 on the microSD card).
-// Polls the backend's GET /api/alarm/device and sounds a siren while it returns "alarm": true
-// (an unresolved drowning alert, or the manual alarm switched on from the admin dashboard).
 
 #include <WiFi.h>
 #include <HTTPClient.h>

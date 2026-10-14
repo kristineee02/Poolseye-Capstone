@@ -88,6 +88,10 @@ export async function dispatchEvent(id) {
   return apiFetch(`/api/events/${encodeURIComponent(id)}/dispatch`, { method: 'POST' })
 }
 
+export async function resendEvent(id) {
+  return apiFetch(`/api/events/${encodeURIComponent(id)}/resend`, { method: 'POST' })
+}
+
 export async function fetchAlarm() {
   return apiFetch('/api/alarm')
 }

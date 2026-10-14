@@ -1,5 +1,5 @@
 const { get, all, run } = require('./db')
-const { eventsWithResponders, setEventStatus } = require('./events')
+const { HIDDEN_EVENTS_SQL, eventsWithResponders, setEventStatus } = require('./events')
 const { lifeguardAuthRequired } = require('./mobileAuth')
 const { parseNotificationPrefs, mutedCategories } = require('./lifeguards')
 
@@ -50,7 +50,7 @@ function registerMobileEventRoutes(app, db) {
       const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 40))
       const muted = await mutedFilter(db, req.lifeguard.id)
 
-      const conditions = []
+      const conditions = [HIDDEN_EVENTS_SQL]
       const params = []
 
       if (alertsOnly) {
