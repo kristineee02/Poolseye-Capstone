@@ -357,18 +357,6 @@ export default function GeofenceStage({
           </text>
         </g>
       )}
-
-      {!readOnly && (
-        <g>
-          <rect x={STAGE_W - 250} y="16" width="234" height="40" rx="8" fill="#FFFFFF" opacity="0.92" stroke="#E7E9EE" />
-          <text x={STAGE_W - 238} y="32" fill="#6B7385" fontFamily="Inter, sans-serif" fontSize="10">
-            {mode === 'add' ? 'CLICK STAGE TO ADD POINT' : mode === 'delete' ? 'CLICK POINT TO REMOVE' : 'DRAG POINTS TO ADJUST'}
-          </text>
-          <text x={STAGE_W - 238} y="46" fill="#1A2233" fontFamily="Inter, sans-serif" fontSize="11" fontWeight="600">
-            {activeMeta ? `${activeMeta.shortLabel} · ${activeMeta.geometry}` : `Edit mode: ${mode}`}
-          </text>
-        </g>
-      )}
     </svg>
   )
 }

@@ -9,6 +9,7 @@ import EventThumb from '../components/history/EventThumb'
 import SnapshotModal from '../components/history/SnapshotModal'
 import { eventKind, isAlertEvent, zoneLabel, formatDate, formatTime, cameraName, handlingNote } from '../components/history/eventKinds'
 import { fetchEvents } from '../api/events'
+import { downloadCsv } from '../utils/csv'
 import '../components/history/HistoryTable.css'
 import './HistoryPage.css'
 
@@ -92,10 +93,6 @@ function statusInfo(event) {
   if (event.status === 'dismissed') return { label: 'Dismissed', tone: 'muted' }
   if (!isAlertEvent(event)) return { label: 'Logged', tone: 'muted' }
   return { label: 'Unacknowledged', tone: 'alarm' }
-}
-
-function csvCell(value) {
-  return `"${String(value ?? '').replace(/"/g, '""')}"`
 }
 
 export default function HistoryPage() {
@@ -186,16 +183,9 @@ export default function HistoryPage() {
       formatTime(e.ts, true),
       statusInfo(e).label,
       e.acknowledged_by_name || e.responder_name || '',
-      e.acknowledged_at ? new Date(e.acknowledged_at * 1000).toLocaleString() : '',
+      e.acknowledged_at ? `${formatDate(e.acknowledged_at)} ${formatTime(e.acknowledged_at, true)}` : '',
     ])
-    const csv = [header, ...lines].map((row) => row.map(csvCell).join(',')).join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `poolseye-events-${dateRange}-${new Date().toISOString().slice(0, 10)}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
+    downloadCsv(`poolseye-events-${dateRange}-${new Date().toISOString().slice(0, 10)}.csv`, [header, ...lines])
     showStatus({ tone: 'success', title: 'Events exported', message: `${rows.length} events were downloaded as CSV.` })
   }, [since, exporting, search, kind, statusFilter, dateRange, showStatus])
 

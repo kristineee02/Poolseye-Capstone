@@ -325,22 +325,20 @@ def in_orange_shape(x, y, orange, orange_proximity_px) -> bool:
 
 
 def classify_zone(x, y, zones_px, orange_proximity_px) -> str:
-    # Nesting is only enforced against zones that are actually drawn, so a missing
-    # outer zone doesn't hide people standing in the inner ones.
-    yellow_on = zones_px["yellow"]["enabled"] and len(zones_px["yellow"]["points"]) >= 3
-    red_on = zones_px["red"]["enabled"] and len(zones_px["red"]["points"]) >= 3
-    in_yellow = yellow_on and point_in_polygon(x, y, zones_px["yellow"]["points"])
-    inside_outer = in_yellow or not yellow_on
-    in_red = red_on and inside_outer and point_in_polygon(x, y, zones_px["red"]["points"])
-    in_orange = (
-        (in_red or (not red_on and inside_outer))
-        and in_orange_shape(x, y, zones_px["orange"], orange_proximity_px)
-    )
-    if in_orange:
+    """Innermost zone whose own shape contains the point.
+
+    Each zone is tested on its own: a hand-drawn red or orange zone that pokes
+    outside yellow still counts, instead of reporting a swimmer as outside the pool.
+    """
+    def inside(key):
+        z = zones_px[key]
+        return z["enabled"] and len(z["points"]) >= 3 and point_in_polygon(x, y, z["points"])
+
+    if in_orange_shape(x, y, zones_px["orange"], orange_proximity_px):
         return "orange"
-    if in_red:
+    if inside("red"):
         return "red"
-    if in_yellow:
+    if inside("yellow"):
         return "yellow"
     return "clear"
 
@@ -832,13 +830,20 @@ def resolve_source(source: str, rtsp_url: str | None):
     return [str(p) for p in found], "folder"
 
 
-def people_from_result(result):
+def people_from_result(result, tracked: bool = False):
+    """Yield (id, box, keypoints, keypoint confidences) per detection.
+
+    When tracking, detections the tracker has not given an ID yet are skipped: numbering
+    them 0, 1, 2… would hand an existing person's ID (and box) to someone else.
+    """
     if result.boxes is None or len(result.boxes) == 0:
         return
     n = len(result.boxes)
     xyxy = result.boxes.xyxy.cpu().numpy()
     if result.boxes.id is not None:
         ids = result.boxes.id.cpu().numpy().astype(int)
+    elif tracked:
+        return
     else:
         ids = np.arange(n)
     kxy = result.keypoints.xy.cpu().numpy() if result.keypoints is not None else None
@@ -972,7 +977,7 @@ def process_result(result, zcfg, tracker: PersonTracker, kpt_conf, persist: bool
     confirm_hits = int(person_filter.get("confirm_hits", 1)) if person_filter and persist else 1
     confirm_window = float(person_filter.get("confirm_window_sec", 1.5)) if person_filter else 0.0
     candidates = []
-    for i, (track_id, xyxy, kxy, kcf) in enumerate(people_from_result(result) or []):
+    for i, (track_id, xyxy, kxy, kcf) in enumerate(people_from_result(result, tracked=persist) or []):
         c = None if box_conf is None else float(box_conf[i])
         if confirm_hits > 1 and track_id in tracker.confirmed:
             if c is not None and c < float(person_filter.get("min_confidence", 0.0)):
@@ -1049,6 +1054,9 @@ def run_self_test() -> int:
     check("point in red", classify_zone(30, 30, zcfg, 1) == "red")
     check("point in orange", classify_zone(50, 50, zcfg, 1) == "orange")
     check("point outside", classify_zone(200, 200, zcfg, 1) == "clear")
+    small_yellow = {**zcfg, "yellow": {"enabled": True, "points": [[0, 0], [20, 0], [20, 20], [0, 20]]}}
+    check("orange outside a smaller yellow still orange", classify_zone(50, 50, small_yellow, 1) == "orange")
+    check("red outside a smaller yellow still red", classify_zone(30, 30, small_yellow, 1) == "red")
 
     ev, alert = crossing_event("clear", "yellow")
     check("OUTSIDE→YELLOW monitor", ev == "ENTERED POOL AREA" and alert is False)

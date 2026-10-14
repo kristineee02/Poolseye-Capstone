@@ -1,0 +1,22 @@
+# BoT-SORT settings for the pool camera (POSE.tracker in config.json).
+# Inference runs at only a few frames per second, so swimmers move far between frames and
+# box overlap alone swaps IDs between people close together; appearance matching keeps
+# each ID on the same person.
+
+tracker_type: botsort
+track_high_thresh: 0.3
+track_low_thresh: 0.1
+# Higher than the 0.25 default so a weak detection does not open a new track (and a new box)
+new_track_thresh: 0.4
+# ~10 s at 6 inferences/s: a swimmer who ducks under keeps the same ID when they resurface
+track_buffer: 60
+match_thresh: 0.8
+fuse_score: True
+
+# Fixed CCTV camera: motion compensation only costs CPU and can drift
+gmc_method: none
+
+proximity_thresh: 0.5
+appearance_thresh: 0.8
+with_reid: True
+model: auto

@@ -7,6 +7,7 @@ import AlertsTimelineChart from '../components/analytics/AlertsTimelineChart'
 import PeakRiskHeatmap from '../components/analytics/PeakRiskHeatmap'
 import StatCard from '../components/analytics/StatCard'
 import { fetchAnalytics } from '../api/events'
+import { downloadCsv } from '../utils/csv'
 import '../components/analytics/Analytics.css'
 import '../components/ui/DataTable.css'
 import './AnalyticsPage.css'
@@ -120,11 +121,7 @@ function hourRange(h) {
   return `${fmt(h)} – ${fmt(h + 1)}`
 }
 
-function csvCell(value) {
-  return `"${String(value ?? '').replace(/"/g, '""')}"`
-}
-
-function buildCsv(data) {
+function buildCsvRows(data) {
   const { summary, responseTimes, timeline, byType, byHour, byResponder } = data
   const lines = [
     ['PoolsEye analytics report'],
@@ -149,8 +146,8 @@ function buildCsv(data) {
     ['Slowest', formatDuration(responseTimes.slowest)],
     [],
     ['Detections over time'],
-    ['Period', 'Total', 'High', 'Medium', 'Low'],
-    ...timeline.map((b) => [b.key, b.total, b.HIGH, b.MEDIUM, b.LOW]),
+    [data.range === '1d' ? 'Hour' : 'Date', 'Total', 'High', 'Medium', 'Low'],
+    ...timeline.map((b, h) => [data.range === '1d' ? hourRange(h) : b.key, b.total, b.HIGH, b.MEDIUM, b.LOW]),
     [],
     ['Detections by type'],
     ['Type', 'Severity', 'Detections', 'Alerts'],
@@ -171,7 +168,7 @@ function buildCsv(data) {
       formatDuration(r.fastestResponse),
     ]),
   ]
-  return lines.map((row) => row.map(csvCell).join(',')).join('\n')
+  return lines
 }
 
 export default function AnalyticsPage() {
@@ -201,13 +198,7 @@ export default function AnalyticsPage() {
 
   const exportCsv = () => {
     if (!data) return
-    const blob = new Blob([buildCsv(data)], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `poolseye-report-${data.range}-${new Date().toISOString().slice(0, 10)}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
+    downloadCsv(`poolseye-report-${data.range}-${new Date().toISOString().slice(0, 10)}.csv`, buildCsvRows(data))
     showStatus({ tone: 'success', title: 'Report exported', message: 'The CSV report was downloaded.' })
   }
 
