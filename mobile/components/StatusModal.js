@@ -1,5 +1,3 @@
-// PoolsEye — single-button status modal (matches web StatusModal)
-
 import React from 'react';
 import AlertDialog from './AlertDialog';
 

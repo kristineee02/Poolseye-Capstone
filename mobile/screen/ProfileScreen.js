@@ -1,6 +1,3 @@
-// PoolsEye — ProfileScreen
-// Profile card · account menu (camera / password) · notifications · no shift
-
 import React, { useEffect, useState } from 'react';
 import {
   View, ScrollView, StyleSheet, TouchableOpacity, Image,
@@ -17,17 +14,10 @@ import ConfirmModal from '../components/ConfirmModal';
 import ChangePasswordScreen from './ChangePasswordScreen';
 import EditProfileScreen from './EditProfileScreen';
 import CameraIcon from '../components/CameraIcon';
+import { getInitials } from '../utils/profile';
 
 const editProfileIcon = require('../assets/icons/camera.png');
 const changePasswordIcon = require('../assets/icons/change-password.png');
-
-function getInitials(name, fallback = 'LG') {
-  if (!name || typeof name !== 'string') return fallback;
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return fallback;
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-}
 
 function ProfileCard({ name, initials, role, siteName, photoUri, onChangePhoto }) {
   return (

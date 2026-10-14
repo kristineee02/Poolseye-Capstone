@@ -1,29 +1,22 @@
-// PoolsEye — Home dashboard
-// Header → Alarm card → Overview strip → Recent alerts
-
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View, ScrollView, StyleSheet, TouchableOpacity, LayoutAnimation,
-  RefreshControl, AppState,
+  RefreshControl,
 } from 'react-native';
 import { Text } from '../components/Typography';
 import Svg, { Path } from 'react-native-svg';
 import { colors, radius, spacing, typography, shadow } from '../theme/tokens';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import ProfileHero from '../components/ProfileHero';
 import ConfirmModal from '../components/ConfirmModal';
 import StatusModal from '../components/StatusModal';
 import { useAuth } from '../context/AuthContext';
 import { fetchMobileEvents, respondToMobileEvent, updateMobileEventStatus } from '../api/events';
+import { formatEventTime, localMidnightTimestamp } from '../utils/dateTime';
 
 const POLL_MS = 4000;
 const ZONE_CATEGORIES = ['intrusion', 'deep-water', 'supervision'];
-
-function localMidnightTs() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.getTime() / 1000;
-}
 
 function getAlertMeta(alert) {
   const isAlarm = alert.type === 'alarm';
@@ -35,24 +28,7 @@ function getAlertMeta(alert) {
   };
 }
 
-function formatDisplayTime(time) {
-  if (!time) return '';
-  const match = String(time).match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
-  if (match) {
-    return `${Number(match[1])}:${match[2]} ${match[3].toUpperCase()}`;
-  }
-  const parsed = new Date(`1970-01-01T${time}`);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  }
-  return time;
-}
-
-function ActiveAlertCard({ alert, busy, onOpen, onRespond, onAcknowledge, onDismiss }) {
+function ActiveAlertCard({ alert, busy, onRespond, onAcknowledge, onDismiss }) {
   if (!alert) {
     return (
       <View style={styles.clearCard}>
@@ -87,19 +63,19 @@ function ActiveAlertCard({ alert, busy, onOpen, onRespond, onAcknowledge, onDism
 
   return (
     <View style={[styles.activeCard, { borderColor }]}>
-      <TouchableOpacity onPress={() => onOpen(alert.id)} activeOpacity={0.9}>
+      <View>
         <View style={styles.activeTop}>
           <View style={[styles.alarmBadge, { backgroundColor: badgeBg, borderColor: badgeBorder }]}>
             <Text style={[styles.alarmBadgeText, { color: m.accent }]}>{m.badge}</Text>
           </View>
           <Text style={[styles.activeTime, { color: m.accent }]}>
-            {formatDisplayTime(alert.time)}
+            {formatEventTime(alert.time)}
           </Text>
         </View>
 
         <Text style={styles.activeTitle} numberOfLines={2}>{alert.title}</Text>
         <Text style={styles.activeZone}>{alert.zone}</Text>
-      </TouchableOpacity>
+      </View>
 
       {!alert.respondingAt ? (
         <TouchableOpacity
@@ -183,7 +159,7 @@ function RecentAlertRow({ alert, onPress, showDivider }) {
       <View style={styles.recentCopy}>
         <Text style={styles.recentTitle} numberOfLines={1}>{alert.title}</Text>
         <Text style={styles.recentMeta} numberOfLines={1}>
-          {alert.zone} · {formatDisplayTime(alert.time)}
+          {alert.zone} · {formatEventTime(alert.time)}
         </Text>
       </View>
       <ChevronRight />
@@ -235,7 +211,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
   const loadAlerts = useCallback(async () => {
     if (!token) return;
     const [pendingRes, recentRes] = await Promise.all([
-      fetchMobileEvents(token, { alertsOnly: true, status: 'pending', limit: 50, ackSince: localMidnightTs() }),
+      fetchMobileEvents(token, { alertsOnly: true, status: 'pending', limit: 50, ackSince: localMidnightTimestamp() }),
       fetchMobileEvents(token, { alertsOnly: true, status: 'all', limit: 8 }),
     ]);
 
@@ -261,18 +237,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
     }
   }, [token, onPendingCountChange]);
 
-  useEffect(() => {
-    loadAlerts();
-    if (!token) return undefined;
-    const id = setInterval(loadAlerts, POLL_MS);
-    const appStateSubscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') loadAlerts();
-    });
-    return () => {
-      clearInterval(id);
-      appStateSubscription.remove();
-    };
-  }, [loadAlerts, token]);
+  useAutoRefresh(loadAlerts, POLL_MS, Boolean(token));
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -354,7 +319,6 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
         <ActiveAlertCard
           alert={latest}
           busy={responding}
-          onOpen={() => {}}
           onRespond={handleRespond}
           onAcknowledge={handleAcknowledge}
           onDismiss={handleDismiss}
@@ -377,7 +341,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
         icon="bell"
         message={
           selectedAlert
-            ? `${selectedAlert.zone} · ${formatDisplayTime(selectedAlert.time)}\n\n${selectedAlert.detail || selectedAlert.meta || ''}`
+            ? `${selectedAlert.zone} · ${formatEventTime(selectedAlert.time)}\n\n${selectedAlert.detail || selectedAlert.meta || ''}`
             : ''
         }
         actions={[

@@ -1,5 +1,4 @@
-// PoolsEye React Native — Design Tokens
-// Sky Harmony blue brand · mobile-optimized scale
+// Canonical visual tokens shared by every mobile screen and component.
 
 export const colors = {
   // Surfaces

@@ -1,5 +1,3 @@
-// PoolsEye — centered alert dialog (mirrors web AlertDialog in frontend/src/components/ui/Modal.jsx)
-
 import React from 'react';
 import {
   Modal,

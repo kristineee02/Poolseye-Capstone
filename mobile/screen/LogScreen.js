@@ -1,14 +1,13 @@
-// PoolsEye — LogScreen (All Alerts)
-
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View, FlatList, StyleSheet, TouchableOpacity, Modal, Pressable,
-  RefreshControl, AppState,
+  RefreshControl,
 } from 'react-native';
 import { Text } from '../components/Typography';
 import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
 import { Tag } from '../components/Primitives';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { useAuth } from '../context/AuthContext';
 import { fetchMobileEvents } from '../api/events';
 
@@ -174,18 +173,7 @@ export default function LogScreen({ onPendingCountChange }) {
     onPendingCountChange?.(result.pendingCount || 0);
   }, [token, onPendingCountChange]);
 
-  useEffect(() => {
-    loadEvents();
-    if (!token) return undefined;
-    const id = setInterval(loadEvents, POLL_MS);
-    const appStateSubscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') loadEvents();
-    });
-    return () => {
-      clearInterval(id);
-      appStateSubscription.remove();
-    };
-  }, [loadEvents, token]);
+  useAutoRefresh(loadEvents, POLL_MS, Boolean(token));
 
   const onRefresh = async () => {
     setRefreshing(true);

@@ -1,34 +1,18 @@
-// PoolsEye — Forgot Password (verify email → reset)
-
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { Text, TextInput } from '../components/Typography';
-import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, radius, shadow, touch } from '../theme/tokens';
 import { GradientButton } from '../components/Primitives';
 import { useAuth } from '../context/AuthContext';
 import StatusModal from '../components/StatusModal';
 import ChangePasswordScreen from './ChangePasswordScreen';
+import { BackArrowIcon } from '../components/icons/FormIcons';
 
 const CODE_TTL_SEC = 10 * 60;
-
-function BackArrow({ color = colors.accent, size = 22 }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M15 6 9 12l6 6"
-        stroke={color}
-        strokeWidth={2.2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
 
 function CodeBoxes({ value, onChange }) {
   const refs = useRef([]);
@@ -177,7 +161,7 @@ export default function ForgotPasswordScreen({ onCancel }) {
             accessibilityRole="button"
             accessibilityLabel="Go back"
           >
-            <BackArrow />
+            <BackArrowIcon />
           </TouchableOpacity>
 
           <Text style={styles.title}>Forgot password</Text>

@@ -1,5 +1,3 @@
-// PoolsEye — Edit Profile (photo + name)
-
 import React, { useState } from 'react';
 import {
   View, ScrollView, StyleSheet, TouchableOpacity,
@@ -8,7 +6,6 @@ import {
 import { Text, TextInput } from '../components/Typography';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
 import { GradientButton } from '../components/Primitives';
@@ -16,28 +13,8 @@ import { useAuth } from '../context/AuthContext';
 import StatusModal from '../components/StatusModal';
 import { site } from '../data';
 import CameraIcon from '../components/CameraIcon';
-
-function getInitials(name, fallback = 'LG') {
-  if (!name || typeof name !== 'string') return fallback;
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return fallback;
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-}
-
-function BackArrow({ color = colors.accent, size = 22 }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M15 6 9 12l6 6"
-        stroke={color}
-        strokeWidth={2.2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
+import { BackArrowIcon } from '../components/icons/FormIcons';
+import { getInitials } from '../utils/profile';
 
 export default function EditProfileScreen({ onCancel }) {
   const insets = useSafeAreaInsets();
@@ -129,7 +106,7 @@ export default function EditProfileScreen({ onCancel }) {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <BackArrow />
+          <BackArrowIcon />
         </TouchableOpacity>
 
         <Text style={styles.title}>Edit Profile</Text>
