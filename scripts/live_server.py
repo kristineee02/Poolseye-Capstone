@@ -18,8 +18,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
-# Read by OpenCV's FFmpeg backend when an RTSP stream is opened: TCP avoids smeared frames
-# from dropped UDP packets, nobuffer/low_delay stop FFmpeg queueing seconds of video.
+# TCP and no buffering for RTSP: fewer smeared frames, less delay
 os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay")
 
 import cv2
@@ -67,8 +66,7 @@ SITE_TIME_ZONE = os.environ.get("SITE_TIMEZONE", "Asia/Manila")
 try:
     SITE_TZ = ZoneInfo(SITE_TIME_ZONE)
 except ZoneInfoNotFoundError:
-    # Philippines/Singapore site time is UTC+8 year-round (no DST). This keeps
-    # Windows installs accurate even when Python's optional tzdata is absent.
+    # UTC+8, no DST; avoids needing tzdata on Windows
     SITE_TZ = timezone(timedelta(hours=8), name="UTC+08:00")
 
 app = Flask(__name__)
@@ -95,28 +93,21 @@ _instance_lock_handle = None
 _hours_lock = threading.Lock()
 _operating_hours: dict | None = None
 _after_hours_active = False
-# Each event type is logged once per person for as long as that person stays in view.
-# YOLO often hands the same person a new track id after a brief occlusion, so a new id that
-# appears where a recently lost person stood inherits that person's history.
+# A new track id near a recently lost person inherits their history
 _PERSON_MEMORY_SEC = 10.0
 _REID_MAX_DIST_FRAC = 0.12  # of frame width
 _person_alias: dict[int, int] = {}  # track id -> person id
 _person_memory: dict[int, dict] = {}  # person id -> {"events": set, "foot": (x, y), "last_seen": t}
-# Track ids churn in the water, so per-person memory alone let one incident log again and
-# again. An event type is logged once, then stays quiet until it has gone undetected this long.
+# An event type stays quiet until it has gone undetected this long
 _event_quiet_sec = 120.0
 _event_last_seen: dict[tuple, float] = {}  # (event name, from upload) -> last time it was detected
-# The feed is shown this far behind capture (at most) so every frame is drawn with
-# detections from its own moment instead of boxes left over from an older frame.
 MAX_DISPLAY_DELAY_SEC = 2.5
-# Drowning-model boxes stay on screen this long after the frame they came from; crop skeletons less
 ACTIVITY_SHOW_SEC = 1.5
 ACTIVITY_POSE_SHOW_SEC = 0.5
-# With no fresh detections for this long, frames are shown without boxes rather than stale ones.
 STALE_RESULT_SEC = 3.0
-# Each alert saves the annotated frame plus this much of the feed leading up to it
+# Seconds of feed saved before an alert
 CLIP_SECONDS = 5.0
-# ...plus this much after it, so playback shows what happened next
+# Seconds of feed saved after an alert
 CLIP_AFTER_SECONDS = 5.0
 CLIP_MAX_WIDTH = 640  # VP8 encoding competes with inference for the CPU
 
@@ -185,7 +176,6 @@ def sync_event_to_backend(entry: dict):
     if secret:
         headers["X-Events-Secret"] = secret
     reason = "no response"
-    # A sleeping or busy Render instance can take well over a few seconds to answer
     for attempt in range(4):
         try:
             req = Request(EVENTS_INGEST_API, data=payload, headers=headers, method="POST")
@@ -203,10 +193,7 @@ def sync_event_to_backend(entry: dict):
 
 
 def upload_event_media(event_id: str, content_type: str, data: bytes) -> str | None:
-    """POST a snapshot or clip to the backend and return its /media path.
-
-    Retries while the event itself is still being ingested.
-    """
+    """POST a snapshot or clip to the backend and return its /media path."""
     headers = {"Content-Type": content_type}
     secret = os.environ.get("EVENTS_INGEST_SECRET")
     if secret:
@@ -271,13 +258,7 @@ def encode_clip(frames: list) -> bytes | None:
 
 
 class AlertMediaRecorder:
-    """Keeps the last few seconds of the annotated feed and saves evidence for each alert.
-
-    The feed is shown behind detection, so a request waits until the alert's own
-    frame has been published; the snapshot then shows exactly what triggered it.
-    The clip waits a little longer so it covers CLIP_SECONDS before that frame and
-    CLIP_AFTER_SECONDS after it.
-    """
+    """Keeps the last few seconds of the annotated feed and saves evidence for each alert."""
 
     def __init__(self):
         self._frames: deque = deque()
@@ -424,11 +405,7 @@ def reset_people():
 
 
 def push_event(person_id: int, zone: str, event_name: str, is_alert: bool, supervision_data: dict = None):
-    """Append a dashboard-ready event the first time this event type is detected.
-
-    Repeats are dropped until the event has gone undetected for _event_quiet_sec, so
-    one ongoing incident is logged and notified once.
-    """
+    """Append a dashboard-ready event the first time this event type is detected."""
     pid = int(person_id)
     from_upload = _source_kind == "video"
 
@@ -453,8 +430,6 @@ def push_event(person_id: int, zone: str, event_name: str, is_alert: bool, super
         "severity": "MEDIUM" if is_alert else "LOW",
         "category": "zone",
     })
-    # The event instant (`ts`) is timezone-independent; the companion text is
-    # explicitly formatted for the pool site rather than the PC/Tapo timezone.
     now = datetime.now(SITE_TZ)
     camera_id = UPLOAD_CAMERA_ID if from_upload else "CAM-01"
     source_label = "Uploaded video" if from_upload else "CAM-01"
@@ -478,7 +453,6 @@ def push_event(person_id: int, zone: str, event_name: str, is_alert: bool, super
         "ts": now.timestamp(),
     }
 
-    # Add supervision-specific data if provided
     if supervision_data:
         entry.update(supervision_data)
 
@@ -506,12 +480,7 @@ def _box_overlap_of_smaller(a, b) -> float:
 
 
 class DrowningWatcher:
-    """Runs the drowning detector beside the pose tracker and flags sustained distress.
-
-    One frame of "Drowning" is not enough: a swimmer ducking under looks the same for an
-    instant. A person is flagged only after the class keeps reappearing on them for
-    hold_sec, with gaps no longer than gap_sec.
-    """
+    """Runs the drowning detector beside the pose tracker and flags sustained distress."""
 
     def __init__(self, model, cfg: dict):
         self.model = model
@@ -524,28 +493,24 @@ class DrowningWatcher:
         self.match_iou = float(cfg.get("match_iou", 0.2))
         wanted = {str(c).lower() for c in cfg.get("alert_classes", ["Drowning"])}
         self.class_ids = {int(i) for i, name in model.names.items() if str(name).lower() in wanted}
-        # Swimming / Normal / Floating are labelled on the feed so viewers see the model working,
-        # but only alert_classes at confidence_threshold count toward an alert.
         self.show_all = bool(cfg.get("show_all_classes", True))
         self.display_conf = float(cfg.get("display_confidence", self.conf))
         self.pose_crop_conf = float(cfg.get("pose_crop_confidence", 0.1))
         self.max_pose_crops = max(1, int(cfg.get("max_pose_crops", 3)))
-        # Crops are small, so a smaller input size keeps the pose fallback cheap
         self.pose_crop_imgsz = int(cfg.get("pose_crop_imgsz", 320))
         self.duplicate_overlap = float(cfg.get("duplicate_overlap", 0.6))
-        # Behaviour check: the model often calls a struggling person "Swimming", but a
-        # swimmer travels while someone drowning stays upright and bobs in one place.
+        # Bigger activity boxes (share of frame) are walls or water, not swimmers
+        self.max_box_area = float(cfg.get("max_box_area", 0.35))
+        # A drowning person stays upright in one place; a swimmer travels
         self.behavior = bool(cfg.get("behavior_enabled", True))
         self.behavior_hold = float(cfg.get("behavior_hold_sec", 4.0))
         self.behavior_travel = float(cfg.get("behavior_max_travel", 0.35))
         self.behavior_aspect = float(cfg.get("behavior_min_aspect", 0.9))
         self.behavior_min_samples = max(2, int(cfg.get("behavior_min_samples", 3)))
         self.water_classes = {str(c).lower() for c in cfg.get("water_classes", ["Swimming", "Drowning", "Floating"])}
-        # The model often calls someone lying flat on the water "Normal"; those boxes are relabelled Floating.
         self.floating_from = {str(c).lower() for c in cfg.get("floating_from_classes", ["Normal"])}
         self.floating_aspect = float(cfg.get("floating_min_aspect", 1.4))
         self.floating_conf = float(cfg.get("floating_confidence", 0.05))
-        # A box called Drowning keeps that label this long, so one frame of "Swimming" cannot flip it
         self.latch_sec = float(cfg.get("drowning_latch_sec", 5.0))
         self._latches: list[dict] = []
         self.boxes: list[dict] = []
@@ -557,8 +522,6 @@ class DrowningWatcher:
         self._tracks: dict[int, dict] = {}  # water box track id -> {"box", "history", "seen"}
         self._next_track = 1
         self._last_run = 0.0
-        # Background runner: the activity model and crop poses take longer than the pose
-        # tracker, so they run on their own thread instead of holding up every frame.
         self._cond = threading.Condition()
         self._pending = None
         self._events: list[dict] = []
@@ -607,7 +570,6 @@ class DrowningWatcher:
             wait = self.interval - (time.time() - self._last_run)
             if wait > 0:
                 time.sleep(wait)
-            # Take the frame only after the rate-limit wait, so the newest one is processed
             with self._cond:
                 if self._pending is None:
                     continue
@@ -669,8 +631,6 @@ class DrowningWatcher:
         still = []
         for tid in matched:
             tr = self._tracks[tid]
-            # Sharing the CPU, the activity model runs slower than max_infer_fps; looking back
-            # one allowed gap past the hold keeps a 4 s hold reachable at ~1 run per second.
             window = [h for h in tr["history"] if now - h[0] <= self.behavior_hold + self.gap_sec]
             if len(window) < self.behavior_min_samples or window[-1][0] - window[0][0] < self.behavior_hold:
                 continue
@@ -688,12 +648,7 @@ class DrowningWatcher:
         return still
 
     def _relabel_floating(self, detections: list, zones_px, orange_px, use_zones: bool):
-        """Turn a person lying flat in the pool into Floating when the model called them Normal.
-
-        NMS runs per class, so the model's own Floating guess for the same person often
-        survives underneath at a lower score; that guess wins. Otherwise a box much
-        wider than tall is a body lying on the water, not someone standing.
-        """
+        """Turn a person lying flat in the pool into Floating when the model called them Normal."""
         floats = [
             d for d in detections
             if d["name"].lower() == "floating" and d["conf"] >= self.floating_conf
@@ -711,7 +666,7 @@ class DrowningWatcher:
                 d["name"] = "Floating"
 
     def _latch_for(self, xyxy):
-        # IoU, not overlap-of-smaller: a small box beside the drowning swimmer must not inherit the label
+        # IoU so a small box beside the swimmer doesn't inherit the label
         best, best_iou = None, 0.3
         for latch in self._latches:
             iou = _box_iou(xyxy, latch["xyxy"])
@@ -720,13 +675,7 @@ class DrowningWatcher:
         return best
 
     def _apply_drowning_latch(self, labels: list, boxes: list, now: float) -> tuple[list, list]:
-        """Hold the Drowning label on a person for latch_sec after the last real Drowning call.
-
-        The model's class for one person flickers between frames; without this a
-        drowning swimmer could read Drowning, Swimming, Drowning on consecutive runs.
-        Held boxes follow the person and stay up through brief detector misses
-        (up to gap_sec), but every real Drowning call is what extends the hold.
-        """
+        """Hold the Drowning label on a person for latch_sec after the last real Drowning call."""
         self._latches = [l for l in self._latches if now < l["until"]]
         for box in boxes:
             latch = self._latch_for(box["xyxy"])
@@ -781,10 +730,13 @@ class DrowningWatcher:
                     "name": str(self.model.names.get(int(cls), cls)),
                     "alert": int(cls) in self.class_ids and c >= self.conf,
                 })
+        max_area = self.max_box_area * w * h
+        detections = [
+            d for d in detections
+            if (d["xyxy"][2] - d["xyxy"][0]) * (d["xyxy"][3] - d["xyxy"][1]) <= max_area
+        ]
         self._relabel_floating(detections, zones_px, orange_px, use_zones)
         detections = [d for d in detections if d["conf"] >= min_conf]
-        # YOLO's NMS keeps a smaller box nested inside a larger one on the same person,
-        # so one swimmer showed two labels; keep the alert or most confident box of each.
         kept = []
         for box in sorted(detections, key=lambda b: (b["alert"], b["conf"]), reverse=True):
             if not any(_box_overlap_of_smaller(box["xyxy"], k["xyxy"]) >= self.duplicate_overlap for k in kept):
@@ -831,12 +783,10 @@ class DrowningWatcher:
         flagged = []
         for pid, hit in seen.items():
             latched = hit.pop("latched")
-            # A held label keeps a real streak going but never starts one on its own
             if latched and pid not in self._streaks:
                 continue
             streak = self._streaks.setdefault(pid, [now, now])
             streak[1] = now
-            # The behaviour check already waited behavior_hold seconds before flagging
             if now - streak[0] < self.hold_sec and not hit["behavior"]:
                 continue
             if now - self._fired.get(pid, -1e9) < self.rearm_sec:
@@ -846,13 +796,7 @@ class DrowningWatcher:
         return flagged
 
     def activity_poses(self, frame, pose_model, existing_people: list, kpt_conf: float, imgsz: int) -> list:
-        """Recover swimmer keypoints by enlarging activity-detector boxes.
-
-        A full-pool frame makes swimmers very small, so a generic pose model can miss
-        them while detecting large poolside objects. Activity boxes provide safe ROIs
-        that can be enlarged before pose inference. Existing full-frame poses are not
-        duplicated.
-        """
+        """Recover swimmer keypoints by enlarging activity-detector boxes."""
         if pose_model is None or not self.labels:
             self.poses = []
             return []
@@ -911,7 +855,6 @@ class DrowningWatcher:
         return recovered
 
 
-# BGR colours for the drowning model's classes; anything unknown falls back to grey
 ACTIVITY_COLORS = {
     "drowning": (0, 0, 255),
     "floating": (0, 140, 255),
@@ -930,14 +873,12 @@ def _draw_activity_label(frame, box: dict, x1: int, y1: int, y2: int, below_offs
     if alert:
         ty = max(th + 6, y1)
     else:
-        # Below the box, so it doesn't cover the pose tracker's person label above it
         ty = min(frame.shape[0] - 2, y2 + below_offset + th + 6)
     cv2.rectangle(frame, (x1, ty - th - 6), (x1 + tw + 6, ty), color, -1)
     cv2.putText(frame, label, (x1 + 3, ty - 4), cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), 2)
 
 
 def draw_drowning_boxes(frame, boxes: list):
-    # Alert boxes are drawn last so they stay on top of the activity labels
     for box in sorted(boxes, key=lambda b: bool(b.get("alert", True))):
         alert = bool(box.get("alert", True))
         color = ACTIVITY_COLORS.get(str(box.get("name") or "Drowning").lower(), (160, 160, 160))
@@ -947,15 +888,9 @@ def draw_drowning_boxes(frame, boxes: list):
 
 
 def match_activity_to_people(people: list, boxes: list) -> tuple[dict, list]:
-    """Pair each tracked person with the activity box covering them; return (index -> box, unmatched).
-
-    The pose tracker and the activity model both box the same swimmer, so drawing
-    both stacked two rectangles and two labels on one person.
-    """
+    """Pair each tracked person with the activity box covering them; return (index -> box, unmatched)."""
     matched, claimed = {}, set()
     pxs = [[float(v) for v in person["xyxy"]] for person in people]
-    # Best-fitting pairs are settled first, so a large box spanning two swimmers goes to the
-    # one it actually frames; Drowning boxes still pick before the other classes.
     pairs = [
         (bool(box.get("alert", True)), _box_iou(px, box["xyxy"]), i, index)
         for i, box in enumerate(boxes)
@@ -967,7 +902,6 @@ def match_activity_to_people(people: list, boxes: list) -> tuple[dict, list]:
             continue
         claimed.add(i)
         matched[index] = boxes[i]
-    # A leftover box on someone who already has one would draw a second, overlapping box
     unmatched = [
         box for i, box in enumerate(boxes)
         if i not in claimed and not any(_box_overlap_of_smaller(px, box["xyxy"]) >= 0.3 for px in pxs)
@@ -999,13 +933,7 @@ def resize_max_width(frame, max_width: int):
 
 
 class FrameGrabber:
-    """Reads a capture on its own thread and keeps a short history of recent frames.
-
-    Inference is far slower than the camera on a CPU, so reading frames in the
-    same loop lets FFmpeg's buffer grow and the dashboard drifts seconds behind.
-    Frames are kept at the stream rate only, so the display can hold them back
-    until the detections for that moment are ready.
-    """
+    """Reads a capture on its own thread and keeps a short history of recent frames."""
 
     def __init__(self, cap, kind: str, max_width: int, publish_fps: float, source_path: Path | None = None):
         self.cap = cap
@@ -1035,7 +963,6 @@ class FrameGrabber:
         next_frame_at = time.time()
         while not self._stop:
             if self._frame_interval:
-                # Files decode faster than real time; pace playback to the video's own FPS.
                 delay = next_frame_at - time.time()
                 if delay > 0:
                     time.sleep(delay)
@@ -1054,12 +981,9 @@ class FrameGrabber:
                     self.loops += 1
                 next_frame_at = time.time() + self._frame_interval
 
-                # Rewind at EOF instead of clearing the video override and silently
-                # switching back to the live camera.
+                # Loop the upload instead of falling back to the live camera
                 self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 ok, frame = self.cap.read()
-                # Some MP4/codec combinations cannot seek after EOF. Reopen the same
-                # uploaded file as a fallback while keeping it as the active source.
                 if (not ok or frame is None) and self.source_path:
                     self.cap.release()
                     self.cap = cv2.VideoCapture(str(self.source_path))
@@ -1128,19 +1052,10 @@ def annotate_frame(frame, model, zcfg, tracker, conf, kpt_conf, imgsz: int,
                    after_hours: bool = False,
                    person_filter: dict | None = None,
                    tracker_cfg: str = "botsort.yaml"):
-    """Run pose track + supervision; return reports, the scene to draw, and supervision events.
-
-    Drawing is left to render_scene so the display loop can paint the latest
-    people onto every new camera frame while the next inference runs. After
-    hours, everyone in view is flagged without the proximity check.
-
-    Zone boundaries are not burned into the frame — the dashboard draws them
-    as a toggleable SVG overlay from the Geofence Editor layout.
-    """
+    """Run pose track + supervision; return reports, the scene to draw, and supervision events."""
     results = model.track(
         source=frame,
         conf=conf,
-        # Stricter than YOLO's 0.7 so one swimmer is not returned as two overlapping people
         iou=float((person_filter or {}).get("nms_iou", 0.7)),
         imgsz=imgsz,
         tracker=tracker_cfg,
@@ -1185,7 +1100,6 @@ def annotate_frame(frame, model, zcfg, tracker, conf, kpt_conf, imgsz: int,
             "threshold": float(supervision_cfg.get('threshold_meters', 0.7)),
         }
 
-    # Only detections that passed the person check are drawn
     draw_cache = []
     for r in reports:
         fx, fy, src, left, right = foot_point(r["xyxy"], r["kxy"], r["kcf"], kpt_conf)
@@ -1217,11 +1131,7 @@ def _lerp_point(p, q, t: float):
 
 
 def _same_body(a, b) -> bool:
-    """Whether two boxes with the same track ID can be one person moving between inferences.
-
-    A jump of more than one body width means the ID moved to someone else; blending would
-    slide the box across the pool from one swimmer onto another.
-    """
+    """Whether two boxes with the same track ID can be one person moving between inferences."""
     a, b = [float(v) for v in a], [float(v) for v in b]
     size = max(1.0, min(a[2] - a[0], b[2] - b[0], a[3] - a[1], b[3] - b[1]))
     ca = ((a[0] + a[2]) / 2, (a[1] + a[3]) / 2)
@@ -1241,17 +1151,13 @@ def _blend_person(a: dict, b: dict, t: float, near: dict) -> dict:
         ka, kb = np.asarray(a["kxy"], float), np.asarray(b["kxy"], float)
         out["kxy"] = ka + (kb - ka) * t
         if a["kcf"] is not None and b["kcf"] is not None:
-            # A joint missing in either frame sits at (0, 0); blending it would fling bones across the image.
+            # Missing joints sit at (0, 0); don't blend them
             out["kcf"] = np.minimum(a["kcf"], b["kcf"])
     return out
 
 
 def attach_activity(results, result: dict | None, epoch: int):
-    """Store a drowning-model result on the scene of the frame it was computed from.
-
-    The activity model runs slower than the pose tracker; pinning its boxes and crop
-    skeletons to their own frame keeps them on the swimmer instead of trailing behind.
-    """
+    """Store a drowning-model result on the scene of the frame it was computed from."""
     if not result:
         return
     for scene in reversed(results):
@@ -1274,7 +1180,6 @@ def _activity_for(results: list, seq: int, ts: float) -> tuple[list, list]:
     if ts - src["ts"] > ACTIVITY_SHOW_SEC:
         return [], []
     labels = src.get("drowning") or []
-    # A skeleton drifts off a moving swimmer quickly, so it expires sooner than the boxes
     poses = (src.get("activity_poses") or []) if ts - src["ts"] <= ACTIVITY_POSE_SHOW_SEC else []
     return labels, poses
 
@@ -1285,8 +1190,7 @@ def scene_at(results: list, seq: int, ts: float) -> dict:
     scene = _pose_scene_at(results, seq, ts)
     people = scene["people"]
     if scene.get("video") and labels:
-        # Uploaded pool footage often contains large curtains or furniture that a generic
-        # pose model mistakes for people; keep full-frame poses an activity box confirms.
+        # Drop video poses no activity box confirms (curtains, furniture)
         people = [p for p in people if any(_box_iou(p["xyxy"], b["xyxy"]) >= 0.1 for b in labels)]
     return {**scene, "people": people, "drowning": labels, "activity_poses": poses}
 
@@ -1300,7 +1204,7 @@ def _pose_scene_at(results: list, seq: int, ts: float) -> dict:
         return a
     t = min(1.0, max(0.0, (ts - a["ts"]) / (b["ts"] - a["ts"])))
     if a.get("epoch") != b.get("epoch"):
-        # Track ids restart when a video loops; the same id on either side is a different person
+        # Track ids restart when a video loops
         return a if t < 0.5 else b
     near, far = (a, b) if t < 0.5 else (b, a)
     far_people = {p["track_id"]: p for p in far["people"]}
@@ -1349,12 +1253,20 @@ def render_scene(frame, scene: dict, kpt_conf):
             activity=activity.get(index),
         )
     person_boxes = [[float(v) for v in item["xyxy"]] for item in people]
+    crop_boxes = []
     for pose in scene.get("activity_poses", []):
         kbox = _keypoint_box(pose["kxy"], pose["kcf"], kpt_conf)
-        if kbox is None or any(_box_overlap_of_smaller(kbox, px) >= 0.3 for px in person_boxes):
+        if kbox is None:
+            continue
+        crop_boxes.append(kbox)
+        if any(_box_overlap_of_smaller(kbox, px) >= 0.3 for px in person_boxes):
             continue
         person_boxes.append(kbox)
         draw_skeleton(out, pose["kxy"], pose["kcf"], kpt_conf)
+    unmatched = [
+        box for box in unmatched
+        if box.get("alert", True) or any(_box_overlap_of_smaller(kb, box["xyxy"]) >= 0.5 for kb in crop_boxes)
+    ]
     draw_drowning_boxes(out, unmatched)
     return out
 
@@ -1619,7 +1531,6 @@ def capture_loop(cfg: dict):
     max_width = int(pose_cfg.get("max_width", 960))
     jpeg_quality = int(pose_cfg.get("jpeg_quality", 65))
     stream_fps = max(1.0, float(pose_cfg.get("stream_fps", 15)))
-    # Leaves CPU for decoding and encoding; uncapped inference starves them and video stutters.
     max_infer_fps = max(0.5, float(pose_cfg.get("max_infer_fps", 6)))
 
     if not pose_path.exists():
@@ -1668,8 +1579,6 @@ def capture_loop(cfg: dict):
         supervision_cooldown_sec=float(sup_cfg_init.get("alert_cooldown_sec", 10.0)),
     )
 
-    # Rebuilt whenever the frame size or the pool polygon changes: an uploaded video rarely
-    # matches the CCTV resolution, and metres-per-pixel depends on both.
     calibrator_box: dict = {"key": None, "calibrator": None}
 
     for warn in validate_nesting(current_zcfg(fallback_zcfg)):
@@ -1772,7 +1681,6 @@ def capture_loop(cfg: dict):
                     frame, model, zcfg, tracker, conf, kpt_conf, imgsz,
                     supervision_cfg=supervision_cfg,
                     calibrator=ensure_calibrator(frame, zcfg, supervision_cfg),
-                    # Uploaded footage was not recorded now, so the live clock's closing time doesn't apply
                     after_hours=grabber.kind != "video" and after_hours_now(),
                     person_filter=person_filter,
                     tracker_cfg=tracker_cfg,
@@ -1869,8 +1777,6 @@ def capture_loop(cfg: dict):
                 publish_jpeg(jpeg)
                 _media.add_frame(seq, ts, jpeg)
 
-        # Each frame is published once detections exist on both sides of it, `delay` seconds
-        # after capture; delay tracks how long inference currently takes to catch up.
         shown_seq = 0
         publish_interval = 1.0 / stream_fps
         delay = 0.5
@@ -1889,7 +1795,6 @@ def capture_loop(cfg: dict):
                 break
             if grabber.ended:
                 ended_at = ended_at or time.time()
-                # Show the last frames (and let their alerts save evidence) before switching back
                 if shown_seq >= grabber.newest_seq or time.time() - ended_at > MAX_DISPLAY_DELAY_SEC + 1.0:
                     print("[stream] uploaded video could not be replayed — returning to live CCTV")
                     with _lock:
@@ -1901,8 +1806,6 @@ def capture_loop(cfg: dict):
                 snapshot = list(results)
             now = time.time()
             if not snapshot and now - connected_at < STALE_RESULT_SEC:
-                # Hold the first frames for the first detections, so an alert in the
-                # opening second of a video still gets an annotated snapshot.
                 time.sleep(0.01)
                 continue
             if not snapshot or now - snapshot[-1]["ready_at"] > STALE_RESULT_SEC:
@@ -1918,7 +1821,6 @@ def capture_loop(cfg: dict):
                 newest_result_seq = snapshot[-1]["seq"]
                 needed = snapshot[-1]["ready_at"] - snapshot[-2]["ts"] + publish_interval
                 delay = min(MAX_DISPLAY_DELAY_SEC, max(needed, 0.95 * delay + 0.05 * needed))
-                # Wait for the slower drowning model too, so its boxes land on their own frame
                 activity = [r for r in snapshot if r.get("activity_ready_at")]
                 if activity:
                     activity_needed = activity[-1]["activity_ready_at"] - activity[-1]["ts"] + publish_interval
@@ -1928,7 +1830,6 @@ def capture_loop(cfg: dict):
                     delay_logged_at = now
 
             pending = grabber.frames_between(shown_seq, snapshot[-1]["seq"])
-            # Skip frames already too late to show so playback keeps pace with the camera
             while len(pending) > 1 and pending[0][1] + delay < now - publish_interval:
                 pending.pop(0)
             if not pending:
@@ -2098,12 +1999,7 @@ def events():
 
 
 def acquire_instance_lock() -> bool:
-    """Prevent two inference servers from competing for port 8000 and the same camera.
-
-    Windows can allow multiple Flask sockets to listen on the same port, which sends
-    upload, health, and stream requests to different model processes. Holding this
-    one-byte OS lock for the process lifetime makes startup deterministic.
-    """
+    """Prevent two inference servers from competing for port 8000 and the same camera."""
     global _instance_lock_handle
     lock_path = Path(tempfile.gettempdir()) / "poolseye-live-server.lock"
     handle = open(lock_path, "a+b")

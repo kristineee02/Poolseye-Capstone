@@ -8,7 +8,6 @@ const RANGES = {
 }
 
 const SEVERITIES = ['HIGH', 'MEDIUM', 'LOW']
-// Test alerts (camera = 'TEST') and admin broadcasts are not detections, so they stay out of the stats.
 const REAL_EVENTS_SQL = `COALESCE(e.camera, '') <> 'TEST' AND COALESCE(e.category, '') <> 'broadcast' AND ${HIDDEN_EVENTS_SQL.replace('title', 'e.title')}`
 
 function severityOf(row) {

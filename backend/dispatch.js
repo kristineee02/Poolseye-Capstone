@@ -63,7 +63,6 @@ async function escalateEvent(db, eventId) {
   )
   if (!claimed?.changes) return null
 
-  // Every active lifeguard was paged and nobody claimed it in time.
   await run(
     db,
     "UPDATE users SET missed_alerts = COALESCE(missed_alerts, 0) + 1 WHERE role = 'lifeguard' AND COALESCE(status, 'active') = 'active'"

@@ -1,5 +1,4 @@
 function csvCell(value) {
-  // Browsers put narrow/no-break spaces in formatted times ("3:04 PM"); Excel shows them as junk
   const text = String(value ?? '').replace(/[\u202F\u00A0]/g, ' ')
   return `"${text.replace(/"/g, '""')}"`
 }

@@ -26,12 +26,9 @@ function ingestAuthorized(req) {
   return (req.headers['x-events-secret'] || req.body?.secret) === secret
 }
 
-// Ids of the sample events earlier builds seeded into every new database.
-// Live events use evt-<10 hex chars>, so these never match real detections.
+// Sample events seeded by earlier builds
 const LEGACY_DEMO_EVENT_IDS = ['evt-1', 'evt-2', 'evt-3', 'evt-4', 'evt-5']
-// Test alerts only exist to exercise the lifeguard app; they are cleared on the next start after a day.
 const TEST_EVENT_TTL_SEC = 24 * 60 * 60
-// Zone-leave events from earlier builds stay in the database but are no longer shown or counted.
 const LEFT_ZONE_TITLES = ['Left Deep Pool', 'Left Red Zone', 'Left Pool Area']
 const HIDDEN_EVENTS_SQL = `COALESCE(title, '') NOT IN (${LEFT_ZONE_TITLES.map((t) => `'${t}'`).join(', ')})`
 // Event history and its counts only cover detections, not test alerts or admin broadcasts.
@@ -337,8 +334,6 @@ function registerEventRoutes(app, db, adminRequired) {
   app.get('/api/events/active', adminRequired, async (_req, res) => {
     try {
       const now = Date.now() / 1000
-      // Only detector alerts (and test alerts of the same kinds) that are still current;
-      // manual broadcasts and older unreviewed alerts stay in Event history.
       const row = await get(
         db,
         `SELECT * FROM events
@@ -492,7 +487,6 @@ function registerEventRoutes(app, db, adminRequired) {
   app.post('/api/events/ingest', async (req, res) => {
     try {
       if (!ingestAuthorized(req)) return res.status(401).json({ error: 'Unauthorized' })
-      // An older live_server.py still sends zone-leave events; they are not logged anymore
       if (LEFT_ZONE_TITLES.includes(String(req.body?.title || ''))) {
         return res.json({ ok: true, ignored: true })
       }
@@ -500,8 +494,6 @@ function registerEventRoutes(app, db, adminRequired) {
       const event = await insertEvent(db, req.body)
       res.status(201).json({ ok: true, event })
 
-      // The detector only flags drowning after the distress posture holds past its time
-      // threshold, so lifeguards are paged right away instead of waiting on an admin.
       if (event.category === 'drowning' && event.is_alert && event.status === 'pending') {
         dispatchEvent(db, event.id).catch((err) => console.error('Auto-dispatch failed:', err))
       }

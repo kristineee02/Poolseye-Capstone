@@ -8,7 +8,7 @@ def main():
         epochs=50,
         imgsz=640,
         batch=16,
-        device="cpu",  # <--- Change this from 0 to "cpu"
+        device="cpu",
         name="pool_person_pose_run"
     )
 

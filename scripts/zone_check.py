@@ -325,11 +325,7 @@ def in_orange_shape(x, y, orange, orange_proximity_px) -> bool:
 
 
 def classify_zone(x, y, zones_px, orange_proximity_px) -> str:
-    """Innermost zone whose own shape contains the point.
-
-    Each zone is tested on its own: a hand-drawn red or orange zone that pokes
-    outside yellow still counts, instead of reporting a swimmer as outside the pool.
-    """
+    """Innermost zone whose own shape contains the point."""
     def inside(key):
         z = zones_px[key]
         return z["enabled"] and len(z["points"]) >= 3 and point_in_polygon(x, y, z["points"])
@@ -373,11 +369,7 @@ def is_open_at(schedule: dict, day_key: str, minutes: int) -> bool:
 
 
 def site_clock(hours: dict, now: datetime | None = None) -> tuple[str, int]:
-    """(day key, minutes since midnight) at the site.
-
-    Uses the IANA zone when Python has tz data; Windows often lacks the tzdata
-    package, so fall back to the UTC offset the backend sends with the schedule.
-    """
+    """(day key, minutes since midnight) at the site."""
     now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     local = None
     tz_name = hours.get("timezone")
@@ -442,11 +434,7 @@ class PersonTracker:
             self.confirmed.discard(i)
 
     def confirm(self, track_id: int, now: float, hits: int, window_sec: float) -> bool:
-        """True once a track has passed the person check `hits` times within `window_sec`.
-
-        process_result skips the body-shape check for confirmed tracks until they are
-        lost, so a person briefly turning away or ducking under does not drop out.
-        """
+        """True once a track has passed the person check `hits` times within `window_sec`."""
         if hits <= 1 or track_id in self.confirmed:
             return True
         seen = [t for t in self.sightings.get(track_id, []) if now - t <= window_sec]
@@ -467,7 +455,6 @@ class PersonTracker:
             prev = st.zone
 
         event, is_alert = crossing_event(prev, zone)
-        # Suppress repeats of the same crossing (alerts and info) while in cooldown
         if event and st.last_event == event and (now - st.last_event_time) < self.cooldown_sec:
             event, is_alert = None, False
 
@@ -546,8 +533,6 @@ class PersonTracker:
             pid = person['id']
             st = self.states.get(pid)
             if not st:
-                # Auto-register: person detected in zone but no state entry yet
-                # (happens when update_supervision is called before a zone crossing event)
                 check_zones_inner = supervision_cfg.get('check_zones', ['yellow'])
                 if person.get('zone') not in check_zones_inner:
                     continue
@@ -560,7 +545,6 @@ class PersonTracker:
                 )
                 self.states[pid] = st
 
-            # Outside pool zones, person is safe
             check_zones = supervision_cfg.get('check_zones', ['yellow'])
             if person['zone'] not in check_zones:
                 st.supervised = True
@@ -667,8 +651,6 @@ def draw_skeleton(frame, kxy, kcf, kpt_conf):
         if ca < kpt_conf or cb < kpt_conf:
             continue
         cv2.line(frame, (int(xa), int(ya)), (int(xb), int(yb)), COLORS["bone"], 3, cv2.LINE_AA)
-    # Draw each visible joint as well as the connecting bones. The old renderer
-    # only drew lines, which made keypoints almost invisible on distant swimmers.
     for index, point in enumerate(kxy):
         x, y = float(point[0]), float(point[1])
         confidence = float(kcf[index]) if kcf is not None else 1.0
@@ -710,11 +692,7 @@ def draw_supervision_overlay(frame, people, calibrator: SpatialCalibrator | None
 
 
 def supervision_label(person: dict, tracker: PersonTracker, enabled: bool = True) -> dict | None:
-    """Per-person supervision status for the on-frame label.
-
-    Uses the tracker's debounced state so the label always agrees with the
-    SUPERVISED / UNSUPERVISED alerts. Call after tracker.update_supervision().
-    """
+    """Per-person supervision status for the on-frame label."""
     if not enabled:
         return None
     sup = person.get('supervision_data') or {}
@@ -724,9 +702,8 @@ def supervision_label(person: dict, tracker: PersonTracker, enabled: bool = True
     st = tracker.states.get(person['id'])
     if st is not None and st.after_hours:
         return {**base, 'status': 'after_hours', 'supervised': False}
-    # check_supervision only attaches supervision_data to people inside check_zones
     if not sup or st is None:
-        # Red/orange swimmers are in the pool but outside the supervision rule: no tag at all
+        # Red/orange swimmers get no supervision tag
         if person.get('zone', 'clear') != 'clear':
             return None
         return {**base, 'status': 'outside', 'supervised': True}
@@ -764,7 +741,6 @@ def draw_person(frame, track_id, xyxy, foot, src, left, right, kxy, kcf, kpt_con
         color = COLORS[BOX_COLOR.get(zone, "clear")]
     activity_text = f"{activity['name']} {activity['conf']:.2f}" if activity else None
     if activity and activity.get("alert"):
-        # Drowning outranks the supervision status, which moves into the details
         tag = ("DROWNING", (0, 0, 255))
         color = tag[1]
         activity_text = SUPERVISION_TAGS.get(status, ("", None))[0] or None
@@ -831,11 +807,7 @@ def resolve_source(source: str, rtsp_url: str | None):
 
 
 def people_from_result(result, tracked: bool = False):
-    """Yield (id, box, keypoints, keypoint confidences) per detection.
-
-    When tracking, detections the tracker has not given an ID yet are skipped: numbering
-    them 0, 1, 2… would hand an existing person's ID (and box) to someone else.
-    """
+    """Yield (id, box, keypoints, keypoint confidences) per detection."""
     if result.boxes is None or len(result.boxes) == 0:
         return
     n = len(result.boxes)
@@ -891,13 +863,7 @@ def _sides_agree(kxy, ok, box_w: float) -> bool:
 
 
 def looks_like_person(box_conf, kcf, person_filter: dict | None, xyxy=None, kxy=None) -> bool:
-    """Accept a pose detection only when its skeleton is shaped like a human body.
-
-    The pose model readily matches curtains, chair stacks, railings and pool toys
-    to a skeleton. Real people (swimmers included) show a head or shoulders, enough
-    confident joints spread across their box, and a torso whose left and right
-    sides agree.
-    """
+    """Accept a pose detection only when its skeleton is shaped like a human body."""
     if not person_filter:
         return True
     if box_conf is not None and box_conf < float(person_filter.get("min_confidence", 0.0)):
@@ -988,8 +954,7 @@ def process_result(result, zcfg, tracker: PersonTracker, kpt_conf, persist: bool
             continue
         candidates.append((i, track_id, xyxy, kxy, kcf, c or 0.0))
     if person_filter and person_filter.get("merge_nested", True):
-        # One swimmer often gets a second, nested box (e.g. upper body plus splash),
-        # or a second skeleton laid over the first; either way only one is kept.
+        # Keep one box per swimmer when boxes or skeletons overlap
         kept = []
         for cand in sorted(candidates, key=lambda item: item[5], reverse=True):
             duplicate = any(
