@@ -787,7 +787,7 @@ class DrowningWatcher:
                 continue
             streak = self._streaks.setdefault(pid, [now, now])
             streak[1] = now
-            if now - streak[0] < self.hold_sec and not hit["behavior"]:
+            if now - streak[0] < self.hold_sec:
                 continue
             if now - self._fired.get(pid, -1e9) < self.rearm_sec:
                 continue

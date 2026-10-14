@@ -29,5 +29,6 @@ env/
 backend/.env
 backend/data/*.db
 backend/data/*.db-journal
+backend/data/admin_password_backup*.json
 ai/.env
 mobile/.env
