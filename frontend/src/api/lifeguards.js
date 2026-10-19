@@ -45,12 +45,17 @@ export function isValidEmail(email) {
 }
 
 export async function fetchLifeguards() {
+  const result = await fetchLifeguardsResult()
+  return result.ok ? result.guards : []
+}
+
+export async function fetchLifeguardsResult() {
   const result = await apiFetch('/api/lifeguards')
   if (!result.ok) {
     console.warn('[lifeguards]', result.error)
-    return []
+    return result
   }
-  return result.guards || []
+  return { ok: true, guards: result.guards || [] }
 }
 
 export async function isEmailVerified(email) {

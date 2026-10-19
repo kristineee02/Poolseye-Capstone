@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../ui/Icon'
+import { CardListSkeleton } from '../ui/Skeleton'
 import { fetchEvents } from '../../api/events'
 import { DATA_RESET_EVENT } from '../../api/dataManagement'
 import { zoneLabel } from '../history/eventKinds'
@@ -29,18 +30,26 @@ export default function NotificationMenu({ onNavigate }) {
   const [items, setItems] = useState([])
   const [count, setCount] = useState(0)
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
   const rootRef = useRef(null)
 
   const load = useCallback(async () => {
     const result = await fetchEvents({ kind: 'alerts', status: 'unacknowledged', pageSize: LIMIT })
     if (!result.ok) {
       setError(result.error || 'Could not load notifications.')
+      setLoading(false)
       return
     }
     setError('')
     setItems(result.events || [])
     setCount(result.total || 0)
+    setLoading(false)
   }, [])
+
+  const retry = () => {
+    setLoading(true)
+    load()
+  }
 
   useEffect(() => {
     load()
@@ -95,9 +104,16 @@ export default function NotificationMenu({ onNavigate }) {
             {count > 0 ? <span className="notif-count">{count} unacknowledged</span> : null}
           </div>
 
-          {error ? <div className="notif-empty is-error">{error}</div> : null}
+          {loading && !items.length ? <div className="notif-skeleton"><CardListSkeleton rows={3} onRetry={retry} /></div> : null}
 
-          {!error && items.length === 0 ? (
+          {error && !loading ? (
+            <div className="notif-empty is-error">
+              <span>{error}</span>
+              <button type="button" className="notif-retry" onClick={retry}>Retry</button>
+            </div>
+          ) : null}
+
+          {!loading && !error && items.length === 0 ? (
             <div className="notif-empty">
               <Icon.CheckCircle />
               <span>You're all caught up. No active alerts.</span>

@@ -7,6 +7,7 @@ import { useGeofence } from '../../context/GeofenceContext'
 import { STREAM_BASE } from '../../config'
 import { ACCEPTED_VIDEO_TYPES, returnToLiveFeed, uploadVideo } from '../../api/videoSource'
 import { AlertDialog, StatusModal, useStatusModal } from '../ui/Modal'
+import { LoadingHint, Skeleton } from '../ui/Skeleton'
 import './CameraPanel.css'
 
 const GEOFENCE_VISIBLE_KEY = 'poolseye.live.showGeofences'
@@ -281,6 +282,15 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
             onError={() => setStreamStatus('offline')}
             onLoad={() => setStreamStatus('online')}
           />
+        ) : streamStatus === 'connecting' ? (
+          <div className="camera-feed-skeleton" role="status" aria-label="Connecting to CCTV feed">
+            <Skeleton className="camera-feed-skeleton-frame" width="100%" height="100%" />
+            <div className="camera-feed-skeleton-copy">
+              <Skeleton width={150} height={14} />
+              <Skeleton width={210} height={10} />
+              <LoadingHint onRetry={manualReconnect} compact />
+            </div>
+          </div>
         ) : reconnecting ? null : (
           <div className="camera-stage-offline" role="status">
             <Icon.VideoOff />
@@ -293,7 +303,7 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
             </button>
           </div>
         )}
-        {reconnecting ? (
+        {reconnecting && streamStatus !== 'connecting' ? (
           <div className="camera-stage-loading" role="status" aria-live="polite">
             <span className="feed-spinner" aria-hidden="true" />
             <p>Reconnecting to the CCTV feed…</p>

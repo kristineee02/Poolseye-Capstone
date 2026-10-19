@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '../ui/Icon'
 import { ConfirmModal } from '../ui/Modal'
 import Toggle from '../ui/Toggle'
+import { SettingsCardSkeleton } from '../ui/Skeleton'
 import { fetchOperatingHours, saveOperatingHours } from '../../api/operatingHours'
 
 const DAYS = [
@@ -126,7 +127,7 @@ export default function OperatingHoursCard({ showStatus }) {
   const disabled = loading || saving || !schedule
 
   return (
-    <section className="settings-card settings-hours-card">
+    <section className={`settings-card settings-hours-card${loading && !loadError ? ' is-data-loading' : ''}`}>
       <div className="settings-card-head">
         <div className="settings-card-title">
           <Icon.Clock />
@@ -144,6 +145,8 @@ export default function OperatingHoursCard({ showStatus }) {
           <button type="button" className="btn-secondary" onClick={load}>Retry</button>
         </div>
       ) : null}
+
+      {loading && !loadError ? <SettingsCardSkeleton rows={4} onRetry={load} /> : null}
 
       <div className="settings-hours-rule">
         <div>

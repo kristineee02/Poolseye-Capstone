@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Icon } from '../ui/Icon'
 import { Modal } from '../ui/Modal'
+import { SettingsCardSkeleton } from '../ui/Skeleton'
 import { DATA_RESET_EVENT, createBackup, fetchDataSummary, resetData } from '../../api/dataManagement'
 import './DataManagementCard.css'
 
@@ -77,6 +78,7 @@ export default function DataManagementCard({ showStatus }) {
   const [resetting, setResetting] = useState(false)
 
   const load = useCallback(async () => {
+    setLoading(true)
     const data = await fetchDataSummary()
     setLoading(false)
     if (!data.ok) {
@@ -175,7 +177,7 @@ export default function DataManagementCard({ showStatus }) {
 
   return (
     <div className="dm-grid">
-      <section className="settings-card dm-card">
+      <section className={`settings-card dm-card${loading && !loadError ? ' is-data-loading' : ''}`}>
         <div className="dm-card-heading">
           <span className="dm-heading-icon dm-heading-icon-backup"><Icon.Database /></span>
           <div>
@@ -183,6 +185,8 @@ export default function DataManagementCard({ showStatus }) {
             <p>Download a complete copy of the PoolsEye database.</p>
           </div>
         </div>
+
+        {loading && !loadError ? <SettingsCardSkeleton rows={3} onRetry={load} /> : null}
 
         <div className="dm-backup-contents">
           <p>This will create a downloadable <code>.sqlite3</code> file containing your system records, including:</p>
@@ -236,7 +240,7 @@ export default function DataManagementCard({ showStatus }) {
         </div>
       </section>
 
-      <section className="settings-card dm-card">
+      <section className={`settings-card dm-card${loading && !loadError ? ' is-data-loading' : ''}`}>
         <div className="dm-card-heading">
           <span className="dm-heading-icon dm-heading-icon-reset"><Icon.Trash /></span>
           <div>
@@ -256,6 +260,8 @@ export default function DataManagementCard({ showStatus }) {
             <button type="button" className="btn-secondary" onClick={load}>Retry</button>
           </div>
         ) : null}
+
+        {loading && !loadError ? <SettingsCardSkeleton rows={4} onRetry={load} /> : null}
 
         <div className="dm-select-heading">
           <h4>Select data to reset</h4>

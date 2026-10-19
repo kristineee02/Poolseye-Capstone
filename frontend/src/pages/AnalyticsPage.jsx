@@ -3,6 +3,7 @@ import { Icon } from '../components/ui/Icon'
 import { SelectDropdown, MenuDropdown, DropdownItem } from '../components/ui/Dropdown'
 import { StatusModal, useStatusModal } from '../components/ui/Modal'
 import { EmptyState } from '../components/ui/EmptyState'
+import { AnalyticsSkeleton } from '../components/ui/Skeleton'
 import AlertsTimelineChart from '../components/analytics/AlertsTimelineChart'
 import PeakRiskHeatmap from '../components/analytics/PeakRiskHeatmap'
 import StatCard from '../components/analytics/StatCard'
@@ -277,11 +278,14 @@ export default function AnalyticsPage() {
       </div>
 
       {error ? (
-        <div className="panel">
+        <div className="panel load-error-panel">
           <EmptyState icon={Icon.AlertCircle} title="Could not load analytics" description={error} />
+          <button type="button" className="btn-secondary load-retry" onClick={load}>
+            <Icon.Refresh /> Retry
+          </button>
         </div>
       ) : !data && loading ? (
-        <div className="panel analytics-loading">Loading analytics…</div>
+        <AnalyticsSkeleton onRetry={load} />
       ) : data ? (
         <div className={`analytics-body${loading ? ' is-refreshing' : ''}`}>
           {activeTab === 'overview' && (

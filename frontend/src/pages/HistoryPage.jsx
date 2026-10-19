@@ -3,6 +3,7 @@ import { Icon } from '../components/ui/Icon'
 import { SelectDropdown } from '../components/ui/Dropdown'
 import Pagination from '../components/ui/Pagination'
 import { EmptyState } from '../components/ui/EmptyState'
+import { LoadingHint, Skeleton } from '../components/ui/Skeleton'
 import { StatusModal, useStatusModal } from '../components/ui/Modal'
 import StatCard from '../components/analytics/StatCard'
 import EventThumb from '../components/history/EventThumb'
@@ -106,6 +107,8 @@ export default function HistoryPage() {
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
   const [exporting, setExporting] = useState(false)
   const [reviewing, setReviewing] = useState(null)
   const { status, showStatus, closeStatus } = useStatusModal()
@@ -123,6 +126,7 @@ export default function HistoryPage() {
     fetchEvents({ search, kind, status: statusFilter, since, page, pageSize: PAGE_SIZE }).then((result) => {
       if (cancelled) return
       if (result.ok) {
+        setLoadError('')
         const list = result.events || []
         setEvents(list)
         setTotal(result.total || 0)
@@ -133,18 +137,18 @@ export default function HistoryPage() {
         }
         pendingPick.current = null
       } else {
+        setLoadError(result.error || 'Failed to load events.')
         setEvents([])
         setTotal(0)
         setTotalPages(1)
         setSummary(null)
-        showStatus({ tone: 'error', title: 'Could not load events', message: result.error || 'Failed to load events.' })
       }
       setLoading(false)
     })
     return () => {
       cancelled = true
     }
-  }, [search, kind, statusFilter, since, page, showStatus])
+  }, [search, kind, statusFilter, since, page, showStatus, reloadKey])
 
   const exportCsv = useCallback(async () => {
     if (exporting) return
@@ -245,13 +249,19 @@ export default function HistoryPage() {
             tone={card.tone}
             icon={card.icon}
             label={card.label}
-            value={summary ? (summary[card.key] || 0).toLocaleString() : '—'}
-            hint={card.hint(summary)}
+            value={loading && !summary ? <Skeleton width={54} height={27} /> : summary ? (summary[card.key] || 0).toLocaleString() : '—'}
+            hint={loading && !summary ? <Skeleton width="72%" height={10} /> : card.hint(summary)}
           />
         ))}
       </div>
 
       <div className="panel">
+        {loadError ? (
+          <div className="settings-camera-error history-load-error" role="alert">
+            <span>{loadError}</span>
+            <button type="button" className="btn-secondary" onClick={() => setReloadKey((key) => key + 1)}>Retry</button>
+          </div>
+        ) : null}
         <div className="filter-bar">
           <label className="history-search">
             <Icon.Search />
@@ -292,9 +302,19 @@ export default function HistoryPage() {
             </thead>
             <tbody>
               {loading && !events.length ? (
-                <tr>
-                  <td colSpan={6} className="history-table-note">Loading events…</td>
-                </tr>
+                <>
+                  {Array.from({ length: 5 }, (_, row) => (
+                    <tr key={row} className="history-skeleton-row">
+                      <td><Skeleton width={72} height={44} /></td>
+                      <td><Skeleton width="78%" height={13} /></td>
+                      <td><Skeleton width="68%" height={12} /></td>
+                      <td><Skeleton width="65%" height={12} /></td>
+                      <td><Skeleton width={76} height={24} /></td>
+                      <td><Skeleton width={68} height={30} /></td>
+                    </tr>
+                  ))}
+                  <tr><td colSpan={6}><LoadingHint onRetry={() => setReloadKey((key) => key + 1)} compact /></td></tr>
+                </>
               ) : events.map((e) => {
                 const k = eventKind(e)
                 const KindIcon = k.icon

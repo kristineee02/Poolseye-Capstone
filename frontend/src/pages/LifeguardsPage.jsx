@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../components/ui/Icon'
 import { FormModal, ConfirmModal, StatusModal, useStatusModal } from '../components/ui/Modal'
 import { SelectDropdown } from '../components/ui/Dropdown'
 import { EmptyState } from '../components/ui/EmptyState'
+import { TableSkeleton } from '../components/ui/Skeleton'
 import Pagination from '../components/ui/Pagination'
 import {
   fetchLifeguards,
+  fetchLifeguardsResult,
   createLifeguard,
   updateLifeguard,
   archiveLifeguard,
@@ -220,10 +222,22 @@ export default function LifeguardsPage() {
   const [photoError, setPhotoError] = useState('')
   const [creating, setCreating] = useState(false)
   const [updating, setUpdating] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
 
-  useEffect(() => {
-    fetchLifeguards().then(setGuards)
+  const loadGuards = useCallback(async () => {
+    setLoading(true)
+    const result = await fetchLifeguardsResult()
+    if (result.ok) {
+      setGuards(result.guards)
+      setLoadError('')
+    } else {
+      setLoadError(result.error || 'Could not load lifeguard accounts.')
+    }
+    setLoading(false)
   }, [])
+
+  useEffect(() => { loadGuards() }, [loadGuards])
 
   const emailVerified = useMemo(() => {
     const email = formData.email.trim().toLowerCase()
@@ -576,7 +590,14 @@ export default function LifeguardsPage() {
       </div>
 
       <div className="panel lg-roster-panel">
-        {filtered.length === 0 ? (
+        {loading ? (
+          <TableSkeleton rows={5} columns={7} onRetry={loadGuards} />
+        ) : loadError ? (
+          <div className="lg-empty-panel load-error-panel" role="alert">
+            <EmptyState icon={Icon.AlertCircle} title="Could not load lifeguards" description={loadError} />
+            <button type="button" className="btn-secondary load-retry" onClick={loadGuards}><Icon.Refresh /> Retry</button>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="lg-empty-panel">
             <EmptyState
               icon={Icon.Users}
@@ -700,7 +721,7 @@ export default function LifeguardsPage() {
           </div>
         )}
 
-        {filtered.length > 0 ? (
+        {!loading && !loadError && filtered.length > 0 ? (
           <Pagination
             className="ui-pagination--inset"
             page={currentPage}

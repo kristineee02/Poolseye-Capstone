@@ -176,6 +176,24 @@
   text-align: center;
 }
 
+.camera-feed-skeleton {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #dce8f2;
+}
+.camera-feed-skeleton-frame { border-radius: 0; background: #d6e4ef; }
+.camera-feed-skeleton-copy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.camera-feed-skeleton-copy .loading-hint { color: #42566b; }
+
 .camera-stage-loading p {
   margin: 0;
   font-size: 13px;

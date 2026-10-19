@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '../ui/Icon'
 import { ConfirmModal } from '../ui/Modal'
+import { SettingsCardSkeleton } from '../ui/Skeleton'
 import { fetchCameraSettings, fetchStreamHealth, saveCameraSettings } from '../../api/cameraSettings'
 
 const IPV4_RE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/
@@ -109,7 +110,7 @@ export default function CameraSettingsCard({ showStatus }) {
   else if (health) streamLabel = `Connecting${connectedHost ? ` to ${connectedHost}` : ''}…`
 
   return (
-    <section className="settings-card settings-camera-card">
+    <section className={`settings-card settings-camera-card${loading && !loadError ? ' is-data-loading' : ''}`}>
       <div className="settings-card-head">
         <div className="settings-card-title">
           <Icon.Camera />
@@ -127,6 +128,8 @@ export default function CameraSettingsCard({ showStatus }) {
           <button type="button" className="btn-secondary" onClick={load}>Retry</button>
         </div>
       ) : null}
+
+      {loading && !loadError ? <SettingsCardSkeleton rows={2} onRetry={load} /> : null}
 
       <div className="settings-fields">
         <label className={`settings-field${errors.ip ? ' is-invalid' : ''}`}>

@@ -11,6 +11,7 @@ import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import ProfileHero from '../components/ProfileHero';
 import ConfirmModal from '../components/ConfirmModal';
 import StatusModal from '../components/StatusModal';
+import { AlertsHomeSkeleton, DataLoadError } from '../components/Skeleton';
 import { useAuth } from '../context/AuthContext';
 import { fetchMobileEvents, respondToMobileEvent, updateMobileEventStatus } from '../api/events';
 import { formatEventTime, localMidnightTimestamp } from '../utils/dateTime';
@@ -207,6 +208,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
   const [connected, setConnected] = useState(true);
   const [status, setStatus] = useState(null);
   const [responding, setResponding] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const loadAlerts = useCallback(async () => {
     if (!token) return;
@@ -218,6 +220,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
     if (!pendingRes.ok) {
       setConnected(false);
       setError(pendingRes.error || 'Could not load alerts');
+      setLoading(false);
       return;
     }
 
@@ -235,7 +238,13 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
         setSelectedAlert(null);
       }
     }
+    setLoading(false);
   }, [token, onPendingCountChange]);
+
+  const retryLoad = () => {
+    setLoading(true);
+    loadAlerts();
+  };
 
   useAutoRefresh(loadAlerts, POLL_MS, Boolean(token));
 
@@ -314,23 +323,31 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
       >
         <ProfileHero online={connected} />
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {loading && !activeAlerts.length && !recentAlerts.length ? (
+          <AlertsHomeSkeleton onRetry={retryLoad} />
+        ) : error && !activeAlerts.length && !recentAlerts.length ? (
+          <DataLoadError message={error} onRetry={retryLoad} />
+        ) : (
+          <>
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-        <ActiveAlertCard
-          alert={latest}
-          busy={responding}
-          onRespond={handleRespond}
-          onAcknowledge={handleAcknowledge}
-          onDismiss={handleDismiss}
-        />
+            <ActiveAlertCard
+              alert={latest}
+              busy={responding}
+              onRespond={handleRespond}
+              onAcknowledge={handleAcknowledge}
+              onDismiss={handleDismiss}
+            />
 
-        <OverviewSection stats={stats} />
+            <OverviewSection stats={stats} />
 
-        <RecentAlertsSection
-          alerts={recent}
-          onViewAll={onViewAllAlerts}
-          onOpenAlert={openRecentAlert}
-        />
+            <RecentAlertsSection
+              alerts={recent}
+              onViewAll={onViewAllAlerts}
+              onOpenAlert={openRecentAlert}
+            />
+          </>
+        )}
       </ScrollView>
 
       <ConfirmModal

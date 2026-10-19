@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '../ui/Icon'
+import { LoadingHint, Skeleton } from '../ui/Skeleton'
 import {
   createTestAlert,
   dispatchEvent,
@@ -155,19 +156,27 @@ export default function RightRail({ onNavigate }) {
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(null)
   const [alarm, setAlarm] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
     const [active, totals, alarmState] = await Promise.all([fetchActiveAlert(), fetchEventSummary(), fetchAlarm()])
     if (alarmState.ok) setAlarm(alarmState)
     if (!active.ok || !totals.ok) {
       setError(active.error || totals.error || 'Could not load alerts.')
+      setLoading(false)
       return
     }
     setError('')
     setAlert(active.active)
     setSupervised(active.supervised || null)
     setSummary(totals)
+    setLoading(false)
   }, [])
+
+  const retryLoad = () => {
+    setLoading(true)
+    load()
+  }
 
   useEffect(() => {
     load()
@@ -256,15 +265,24 @@ export default function RightRail({ onNavigate }) {
             </button>
           ) : null}
         </div>
-        <ActiveAlert
-          alert={alert}
-          supervised={supervised}
-          busy={busy}
-          onDispatch={dispatch}
-          onResend={resend}
-        />
+        {loading ? (
+          <div className="rr-loading" role="status" aria-label="Loading active alert">
+            <Skeleton width="42%" height={22} />
+            <Skeleton width="86%" height={13} />
+            <Skeleton width="100%" height={38} />
+            <LoadingHint onRetry={retryLoad} compact />
+          </div>
+        ) : (
+          <ActiveAlert
+            alert={alert}
+            supervised={supervised}
+            busy={busy}
+            onDispatch={dispatch}
+            onResend={resend}
+          />
+        )}
         {notice ? <div className="rr-notice">{notice}</div> : null}
-        {error ? <div className="rr-error">{error}</div> : null}
+        {error ? <div className="rr-error"><span>{error}</span><button type="button" onClick={retryLoad}>Retry</button></div> : null}
       </section>
 
       <section className="rr-card">
@@ -302,7 +320,7 @@ export default function RightRail({ onNavigate }) {
           {stats.map((s) => (
             <div className="mini-stat" key={s.label}>
               <div className="ml">{s.label}</div>
-              <div className="mv">{s.value ?? '—'}</div>
+              <div className="mv">{loading ? <Skeleton width={38} height={24} /> : s.value ?? '—'}</div>
             </div>
           ))}
         </div>

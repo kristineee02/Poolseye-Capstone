@@ -10,6 +10,7 @@ import { useLayoutInsets } from '../hooks/useLayoutInsets';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { useAuth } from '../context/AuthContext';
 import { fetchMobileEvents } from '../api/events';
+import { AlertListSkeleton, DataLoadError } from '../components/Skeleton';
 
 const POLL_MS = 5000;
 
@@ -156,6 +157,7 @@ export default function LogScreen({ onPendingCountChange }) {
   const [events, setEvents] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
 
   const loadEvents = useCallback(async () => {
     if (!token) return;
@@ -166,12 +168,19 @@ export default function LogScreen({ onPendingCountChange }) {
     });
     if (!result.ok) {
       setError(result.error || 'Could not load alerts');
+      setLoading(false);
       return;
     }
     setError('');
     setEvents(result.events || []);
     onPendingCountChange?.(result.pendingCount || 0);
+    setLoading(false);
   }, [token, onPendingCountChange]);
+
+  const retryLoad = () => {
+    setLoading(true);
+    loadEvents();
+  };
 
   useAutoRefresh(loadEvents, POLL_MS, Boolean(token));
 
@@ -195,7 +204,7 @@ export default function LogScreen({ onPendingCountChange }) {
         <FilterDropdown value={filter} onChange={setFilter} />
       </View>
 
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {error && events.length ? <Text style={styles.errorText}>{error}</Text> : null}
 
       <FlatList
         data={filtered}
@@ -207,16 +216,16 @@ export default function LogScreen({ onPendingCountChange }) {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
         }
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>
-              {error ? 'Alerts unavailable' : 'No alerts match this filter'}
-            </Text>
-            <Text style={styles.emptySub}>
-              {error
-                ? 'Pull to refresh once the backend and CCTV stream are running.'
-                : 'Try another option in the filter dropdown.'}
-            </Text>
-          </View>
+          loading ? (
+            <AlertListSkeleton onRetry={retryLoad} />
+          ) : error ? (
+            <DataLoadError message={error} onRetry={retryLoad} />
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>No alerts match this filter</Text>
+              <Text style={styles.emptySub}>Try another option in the filter dropdown.</Text>
+            </View>
+          )
         }
       />
     </View>
