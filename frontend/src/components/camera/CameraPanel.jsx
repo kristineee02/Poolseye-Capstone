@@ -7,7 +7,6 @@ import { useGeofence } from '../../context/GeofenceContext'
 import { STREAM_BASE } from '../../config'
 import { ACCEPTED_VIDEO_TYPES, returnToLiveFeed, uploadVideo } from '../../api/videoSource'
 import { AlertDialog, StatusModal, useStatusModal } from '../ui/Modal'
-import { LoadingHint, Skeleton } from '../ui/Skeleton'
 import './CameraPanel.css'
 
 const GEOFENCE_VISIBLE_KEY = 'poolseye.live.showGeofences'
@@ -17,6 +16,10 @@ const STREAM_IS_LOCAL = /\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(STREAM_BASE)
 
 /** Ask live_server.py for its health and classify why the feed is (not) available. */
 async function probeStream() {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return { kind: 'browser-offline' }
+  }
+
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS)
   try {
@@ -33,10 +36,15 @@ async function probeStream() {
 
 function reconnectFailure(result) {
   switch (result.kind) {
+    case 'browser-offline':
+      return {
+        title: 'No internet connection',
+        message: 'This device appears to be offline. Check your Wi-Fi or network connection, then try reconnecting to the CCTV feed.',
+      }
     case 'timeout':
       return {
         title: 'Stream server is not responding',
-        message: `${STREAM_BASE} did not answer within ${PROBE_TIMEOUT_MS / 1000} seconds. The CCTV computer may be busy or its internet connection slow. Try again in a moment.`,
+        message: `The connection took longer than ${PROBE_TIMEOUT_MS / 1000} seconds. Your Wi-Fi may be weak or unstable, or the CCTV computer may be busy. Move closer to the router or check the CCTV network, then try again.`,
       }
     case 'http':
       return {
@@ -56,8 +64,8 @@ function reconnectFailure(result) {
       return {
         title: 'Could not reach the stream server',
         message: STREAM_IS_LOCAL
-          ? `Nothing is answering at ${STREAM_BASE}. Start it on this computer with "python scripts/live_server.py", then try again.`
-          : `Nothing is answering at ${STREAM_BASE}. Make sure live_server.py and the Cloudflare tunnel are running on the CCTV computer. Quick-tunnel addresses change every restart, so the site's VITE_STREAM_URL may need the new address.`,
+          ? 'The CCTV service is not responding. Check that this device is connected to the correct Wi-Fi and that the stream server is running, then try again.'
+          : 'The CCTV service could not be reached. Possible causes include weak or unstable Wi-Fi, the CCTV computer being offline, or the stream tunnel not running. Check the connection and try again.',
       }
   }
 }
@@ -143,7 +151,15 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
     applyProbe(result)
     setReconnecting(false)
     setReconnectToken((n) => n + 1)
-    if (result.kind !== 'ok') showStatus({ tone: 'error', ...reconnectFailure(result) })
+    if (result.kind === 'ok') {
+      showStatus({
+        tone: 'success',
+        title: 'CCTV feed connected',
+        message: 'The live monitoring feed is connected and ready.',
+      })
+    } else {
+      showStatus({ tone: 'error', ...reconnectFailure(result) })
+    }
   }
 
   const onVideoSelected = async (e) => {
@@ -283,15 +299,12 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
             onLoad={() => setStreamStatus('online')}
           />
         ) : streamStatus === 'connecting' ? (
-          <div className="camera-feed-skeleton" role="status" aria-label="Connecting to CCTV feed">
-            <Skeleton className="camera-feed-skeleton-frame" width="100%" height="100%" />
-            <div className="camera-feed-skeleton-copy">
-              <Skeleton width={150} height={14} />
-              <Skeleton width={210} height={10} />
-              <LoadingHint onRetry={manualReconnect} compact />
-            </div>
+          <div className="camera-stage-loading" role="status" aria-live="polite">
+            <span className="feed-spinner" aria-hidden="true" />
+            <p>{reconnecting ? 'Reconnecting to the CCTV feed…' : 'Connecting to the CCTV feed…'}</p>
+            <span className="camera-connection-hint">Please wait while we check the camera connection.</span>
           </div>
-        ) : reconnecting ? null : (
+        ) : (
           <div className="camera-stage-offline" role="status">
             <Icon.VideoOff />
             <p className="feed-unavailable-copy">
@@ -303,12 +316,6 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
             </button>
           </div>
         )}
-        {reconnecting && streamStatus !== 'connecting' ? (
-          <div className="camera-stage-loading" role="status" aria-live="polite">
-            <span className="feed-spinner" aria-hidden="true" />
-            <p>Reconnecting to the CCTV feed…</p>
-          </div>
-        ) : null}
         {online && showGeofences ? (
           <>
             <svg
