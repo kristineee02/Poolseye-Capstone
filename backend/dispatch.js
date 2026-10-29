@@ -23,19 +23,81 @@ function pushBody(event) {
   return `${event.title}${zone}${event.person_id != null ? ` · ${person}` : ''}`
 }
 
-async function pushToLifeguards(db, event, title) {
+const SEVERITY_RANK = { drowning: 0, intrusion: 1, 'deep-water': 2, supervision: 3 }
+
+function collapseKey(event) {
+  if (event.category === 'broadcast') return `broadcast-${event.id}`
+  if (event.person_id != null) return `person-${event.person_id}`
+  return `event-${event.id}`
+}
+
+function bySeverity(a, b) {
+  return (SEVERITY_RANK[a.category] ?? 9) - (SEVERITY_RANK[b.category] ?? 9)
+}
+
+function groupTitle(events, urgent) {
+  const primary = [...events].sort(bySeverity)[0]
+  if (events.length === 1) {
+    const label = PUSH_TITLES[primary.category] || primary.title || 'Pool alert'
+    return urgent ? `URGENT — no response yet: ${label}` : label
+  }
+  const person = primary.person_id != null ? `Person #${primary.person_id}` : 'One swimmer'
+  const label = `${events.length} alerts · ${person}`
+  return urgent ? `URGENT — no response yet: ${label}` : label
+}
+
+function groupBody(events) {
+  if (events.length === 1) return pushBody(events[0])
+  const titles = []
+  for (const event of [...events].sort(bySeverity)) {
+    const label = PUSH_TITLES[event.category] || event.title
+    if (label && !titles.includes(label)) titles.push(label)
+  }
+  return titles.join(' · ')
+}
+
+async function openAlertsFor(db, event) {
+  if (event.person_id == null || event.category === 'broadcast') return [event]
+  const rows = await all(
+    db,
+    `SELECT * FROM events
+     WHERE status = 'pending' AND is_alert = 1
+       AND person_id = ?
+       AND dispatched_at IS NOT NULL
+       AND responding_at IS NULL
+       AND COALESCE(category, '') <> 'broadcast'`,
+    [event.person_id]
+  )
+  return rows.length ? rows : [event]
+}
+
+async function pushToLifeguards(db, events, { urgent = false } = {}) {
+  const group = [...events].sort(bySeverity)
+  const primary = group[0]
   const guards = await all(
     db,
     "SELECT push_token FROM users WHERE role = 'lifeguard' AND COALESCE(status, 'active') = 'active'"
   )
   const tokens = guards.map((g) => g.push_token).filter(Boolean)
+  const key = collapseKey(primary)
   const pushed = await sendPush(db, tokens, {
-    title,
-    body: pushBody(event),
-    data: { eventId: event.id, category: event.category },
+    title: groupTitle(group, urgent),
+    body: groupBody(group),
+    data: {
+      eventId: primary.id,
+      eventIds: group.map((event) => event.id),
+      category: primary.category,
+      personId: primary.person_id ?? null,
+      collapseKey: key,
+    },
     urgent: true,
+    collapseId: key,
   })
   return { recipients: guards.length, pushed }
+}
+
+async function pushOpenGroup(db, event, { urgent = false } = {}) {
+  return pushToLifeguards(db, await openAlertsFor(db, event), { urgent })
 }
 
 /**
@@ -52,24 +114,7 @@ async function dispatchEvent(db, eventId, { userId = null } = {}) {
   if (!claimed?.changes) return null
 
   const event = await get(db, 'SELECT * FROM events WHERE id = ?', [eventId])
-  return pushToLifeguards(db, event, PUSH_TITLES[event.category] || event.title || 'Pool alert')
-}
-
-async function escalateEvent(db, eventId) {
-  const claimed = await run(
-    db,
-    'UPDATE events SET escalated_at = ? WHERE id = ? AND escalated_at IS NULL AND responding_at IS NULL',
-    [Date.now() / 1000, eventId]
-  )
-  if (!claimed?.changes) return null
-
-  await run(
-    db,
-    "UPDATE users SET missed_alerts = COALESCE(missed_alerts, 0) + 1 WHERE role = 'lifeguard' AND COALESCE(status, 'active') = 'active'"
-  )
-
-  const event = await get(db, 'SELECT * FROM events WHERE id = ?', [eventId])
-  return pushToLifeguards(db, event, `URGENT — no response yet: ${PUSH_TITLES[event.category] || event.title}`)
+  return pushOpenGroup(db, event, { urgent: false })
 }
 
 /**
@@ -85,7 +130,7 @@ async function resendUrgent(db, eventId) {
   if (!claimed?.changes) return null
 
   const event = await get(db, 'SELECT * FROM events WHERE id = ?', [eventId])
-  return pushToLifeguards(db, event, `URGENT — no response yet: ${PUSH_TITLES[event.category] || event.title}`)
+  return pushOpenGroup(db, event, { urgent: true })
 }
 
 async function escalationTick(db) {
@@ -97,7 +142,25 @@ async function escalationTick(db) {
     `SELECT id FROM events WHERE ${base} AND dispatched_at IS NULL AND ts BETWEEN ? AND ?`,
     [now - LOOKBACK_SEC, now - AUTO_SEND_AFTER_SEC]
   )
-  for (const row of unsent) await dispatchEvent(db, row.id)
+  const dispatched = []
+  for (const row of unsent) {
+    const claimed = await run(
+      db,
+      'UPDATE events SET dispatched_at = ?, dispatched_by = ? WHERE id = ? AND dispatched_at IS NULL',
+      [now, null, row.id]
+    )
+    if (claimed?.changes) {
+      const event = await get(db, 'SELECT * FROM events WHERE id = ?', [row.id])
+      if (event) dispatched.push(event)
+    }
+  }
+  const dispatchedKeys = new Set()
+  for (const event of dispatched) {
+    const key = collapseKey(event)
+    if (dispatchedKeys.has(key)) continue
+    dispatchedKeys.add(key)
+    await pushOpenGroup(db, event, { urgent: false })
+  }
 
   const silent = await all(
     db,
@@ -107,7 +170,28 @@ async function escalationTick(db) {
        AND dispatched_at <= ? - CASE WHEN category = 'drowning' THEN ? ELSE ? END`,
     [now - LOOKBACK_SEC, now, NO_RESPONSE_SEC.drowning, NO_RESPONSE_SEC.default]
   )
-  for (const row of silent) await escalateEvent(db, row.id)
+  const escalated = []
+  for (const row of silent) {
+    const claimed = await run(
+      db,
+      'UPDATE events SET escalated_at = ? WHERE id = ? AND escalated_at IS NULL AND responding_at IS NULL',
+      [now, row.id]
+    )
+    if (!claimed?.changes) continue
+    await run(
+      db,
+      "UPDATE users SET missed_alerts = COALESCE(missed_alerts, 0) + 1 WHERE role = 'lifeguard' AND COALESCE(status, 'active') = 'active'"
+    )
+    const event = await get(db, 'SELECT * FROM events WHERE id = ?', [row.id])
+    if (event) escalated.push(event)
+  }
+  const escalatedKeys = new Set()
+  for (const event of escalated) {
+    const key = collapseKey(event)
+    if (escalatedKeys.has(key)) continue
+    escalatedKeys.add(key)
+    await pushOpenGroup(db, event, { urgent: true })
+  }
 }
 
 function startEscalation(db) {

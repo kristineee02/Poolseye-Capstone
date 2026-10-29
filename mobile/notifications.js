@@ -1,6 +1,6 @@
 // Push + local alert notifications for the lifeguard app.
 
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import { apiFetch } from './api/client';
@@ -16,12 +16,16 @@ const Notifications =
   Platform.OS === 'web' || IS_EXPO_GO_ANDROID ? null : require('expo-notifications');
 
 Notifications?.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async () => {
+    // The Home card is the place to acknowledge. Don't stack an OS banner on top of it.
+    const foreground = AppState.currentState === 'active';
+    return {
+      shouldShowBanner: !foreground,
+      shouldShowList: !foreground,
+      shouldPlaySound: !foreground,
+      shouldSetBadge: false,
+    };
+  },
 });
 
 async function ensureChannels() {
@@ -81,21 +85,92 @@ export async function unregisterFromNotifications(apiToken) {
   await apiFetch('/api/mobile/push-token', { method: 'DELETE', token: apiToken });
 }
 
-/** Show a banner right away for an alert the app found while polling. */
-export async function showAlertNotification(alert) {
+export function alertCollapseKey(alert) {
+  if (alert.category === 'broadcast') return `broadcast-${alert.id}`;
+  if (alert.personId != null) return `person-${alert.personId}`;
+  return `event-${alert.id}`;
+}
+
+function notificationData(alert, extra = {}) {
+  const eventIds = extra.eventIds || [alert.id];
+  return {
+    eventId: extra.eventId || alert.id,
+    eventIds,
+    category: alert.category,
+    personId: alert.personId ?? null,
+    collapseKey: extra.collapseKey || alertCollapseKey(alert),
+  };
+}
+
+/** Show one banner. The same identifier replaces the previous banner instead of stacking. */
+export async function showAlertNotification(alert, extra = {}) {
   if (!Notifications) return;
+  const data = notificationData(alert, extra);
+  const identifier = extra.identifier || `poolseye-${data.collapseKey}`;
   try {
+    await Notifications.dismissNotificationAsync(identifier).catch(() => {});
+    await Notifications.cancelScheduledNotificationAsync(identifier).catch(() => {});
     await Notifications.scheduleNotificationAsync({
+      identifier,
       content: {
-        title: alert.category === 'broadcast' ? 'Emergency alert' : alert.title,
-        body: alert.category === 'broadcast' ? alert.title : `${alert.zone} · ${alert.time || 'now'}`,
+        title: extra.title || (alert.category === 'broadcast' ? 'Emergency alert' : alert.title),
+        body: extra.body || (alert.category === 'broadcast' ? alert.title : `${alert.zone} · ${alert.time || 'now'}`),
         sound: 'default',
-        data: { eventId: alert.id, category: alert.category },
+        data,
       },
       trigger: Platform.OS === 'android' ? { channelId: ALERT_CHANNEL } : null,
     });
   } catch {
     // Notification permission revoked; the in-app alert list still shows it.
+  }
+}
+
+function idsIn(data) {
+  if (Array.isArray(data?.eventIds) && data.eventIds.length) return data.eventIds.map(String);
+  if (data?.eventId) return [String(data.eventId)];
+  return [];
+}
+
+export async function presentedCollapseKeys() {
+  if (!Notifications?.getPresentedNotificationsAsync) return new Set();
+  try {
+    const presented = await Notifications.getPresentedNotificationsAsync();
+    return new Set(
+      presented.map((notification) => notification.request.content.data?.collapseKey).filter(Boolean)
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+/** Drop tray notifications whose alerts are closed or already claimed by someone else. */
+export async function dismissStaleAlertNotifications(actionableIds) {
+  if (!Notifications?.getPresentedNotificationsAsync) return;
+  try {
+    const presented = await Notifications.getPresentedNotificationsAsync();
+    const byKey = new Map();
+    await Promise.all(presented.map(async (notification) => {
+      const data = notification.request.content.data || {};
+      const ids = idsIn(data);
+      if (!ids.length) return;
+      const stillOpen = ids.some((id) => actionableIds.has(id));
+      if (!stillOpen) {
+        await Notifications.dismissNotificationAsync(notification.request.identifier).catch(() => {});
+        return;
+      }
+      const key = data.collapseKey || ids[0];
+      const group = byKey.get(key) || [];
+      group.push(notification);
+      byKey.set(key, group);
+    }));
+    await Promise.all([...byKey.values()].map(async (group) => {
+      group.sort((a, b) => (b.date || 0) - (a.date || 0));
+      await Promise.all(group.slice(1).map((old) => (
+        Notifications.dismissNotificationAsync(old.request.identifier).catch(() => {})
+      )));
+    }));
+  } catch {
+    // Tray cleanup is best-effort; the in-app list is the source of truth.
   }
 }
 

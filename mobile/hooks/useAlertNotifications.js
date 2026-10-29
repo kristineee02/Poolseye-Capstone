@@ -1,36 +1,72 @@
 import { useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 import { fetchMobileEvents } from '../api/events';
 import {
+  alertCollapseKey,
   clearAlertNotifications,
+  dismissStaleAlertNotifications,
   onNotificationTapped,
+  presentedCollapseKeys,
   registerForNotifications,
   showAlertNotification,
 } from '../notifications';
-import { AppState } from 'react-native';
 
 const POLL_MS = 5000;
-const MAX_BANNERS_PER_POLL = 3;
+
+const TITLES = {
+  drowning: 'Possible drowning',
+  intrusion: 'Red zone intrusion',
+  'deep-water': 'Deep-water entry',
+  supervision: 'Unsupervised swimmer',
+};
+
+function isActionable(alert) {
+  return !alert.respondingAt || alert.respondingMine;
+}
+
+function bannerCopy(group) {
+  const primary = group[0];
+  const urgent = group.some((alert) => alert.escalatedAt);
+  let title;
+  let body;
+  if (group.length === 1) {
+    title = primary.category === 'broadcast' ? 'Emergency alert' : (TITLES[primary.category] || primary.title);
+    body = primary.category === 'broadcast'
+      ? primary.title
+      : `${primary.zone || 'Pool'} · ${primary.time || 'now'}`;
+  } else {
+    const person = primary.personId != null ? `Person #${primary.personId}` : 'One swimmer';
+    const titles = [];
+    for (const alert of group) {
+      const label = TITLES[alert.category] || alert.title;
+      if (label && !titles.includes(label)) titles.push(label);
+    }
+    title = `${group.length} alerts · ${person}`;
+    body = titles.join(' · ');
+  }
+  if (urgent && primary.category !== 'broadcast') title = `URGENT — no response yet: ${title}`;
+  return { title, body };
+}
 
 /**
- * Keeps the lifeguard notified while signed in, whichever tab is open:
- * registers for push, polls for new pending alerts, shows a banner for each,
- * and reports the pending count for the tab badge.
- *
- * Broadcasts arrive as a remote push when push is set up, so they only get a
- * local banner when it isn't (e.g. Expo Go on Android).
+ * Keeps the lifeguard notified while signed in.
+ * The Home card is where an alert is acknowledged. An OS banner is only a
+ * fallback when the app is in the background and remote push is unavailable,
+ * and only after the alert has been sent to lifeguards. One banner per person.
  */
 export function useAlertNotifications(token, { onPendingCount, onOpenAlert } = {}) {
-  const seen = useRef(null);
   const lastPendingCount = useRef(null);
   const pushReady = useRef(false);
+  const appState = useRef(AppState.currentState);
+  const announced = useRef(new Map());
   const callbacks = useRef({ onPendingCount, onOpenAlert });
   callbacks.current = { onPendingCount, onOpenAlert };
 
   useEffect(() => {
     if (!token) return undefined;
     let cancelled = false;
-    seen.current = null;
     lastPendingCount.current = null;
+    announced.current = new Map();
 
     registerForNotifications(token).then((status) => {
       if (!cancelled) pushReady.current = status.push;
@@ -43,28 +79,56 @@ export function useAlertNotifications(token, { onPendingCount, onOpenAlert } = {
       callbacks.current.onPendingCount?.(pendingCount);
 
       const events = result.events || [];
+      const actionable = events.filter(isActionable);
       if (pendingCount === 0 && lastPendingCount.current !== 0) {
         clearAlertNotifications().catch(() => {});
+        announced.current = new Map();
+      } else {
+        dismissStaleAlertNotifications(new Set(actionable.map((alert) => String(alert.id)))).catch(() => {});
       }
       lastPendingCount.current = pendingCount;
 
-      if (seen.current === null) {
-        // Alerts already waiting at sign-in are shown in the list, not re-announced.
-        seen.current = new Set(events.map((e) => e.id));
-        return;
+      const foreground = appState.current === 'active';
+      if (foreground) return;
+
+      const alreadyShown = pushReady.current ? await presentedCollapseKeys() : new Set();
+      const groups = new Map();
+      for (const alert of actionable) {
+        if (!alert.dispatchedAt) continue;
+        const key = alertCollapseKey(alert);
+        const group = groups.get(key) || [];
+        group.push(alert);
+        groups.set(key, group);
       }
-      const fresh = events.filter((e) => !seen.current.has(e.id));
-      // Rebuild from the server response so a reset removes stale local ids too.
-      seen.current = new Set(events.map((e) => e.id));
-      fresh
-        .filter((e) => !(e.category === 'broadcast' && pushReady.current))
-        .slice(0, MAX_BANNERS_PER_POLL)
-        .forEach(showAlertNotification);
+
+      const liveKeys = new Set(groups.keys());
+      for (const key of announced.current.keys()) {
+        if (!liveKeys.has(key)) announced.current.delete(key);
+      }
+
+      for (const [key, group] of groups) {
+        const copy = bannerCopy(group);
+        const signature = `${copy.title}|${copy.body}`;
+        if (alreadyShown.has(key) || announced.current.get(key) === signature) {
+          announced.current.set(key, signature);
+          continue;
+        }
+        announced.current.set(key, signature);
+        showAlertNotification(group[0], {
+          identifier: `poolseye-${key}`,
+          collapseKey: key,
+          title: copy.title,
+          body: copy.body,
+          eventId: group[0].id,
+          eventIds: group.map((alert) => alert.id),
+        });
+      }
     };
 
     poll();
     const id = setInterval(poll, POLL_MS);
     const appStateSubscription = AppState.addEventListener('change', (state) => {
+      appState.current = state;
       if (state === 'active') poll();
     });
     const unsubscribe = onNotificationTapped((data) => callbacks.current.onOpenAlert?.(data));

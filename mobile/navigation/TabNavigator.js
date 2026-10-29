@@ -141,11 +141,18 @@ const TABS = [
 export default function TabNavigator() {
   const [active, setActive] = useState('home');
   const [alertBadgeCount, setAlertBadgeCount] = useState(0);
+  const [focusAlert, setFocusAlert] = useState(null);
   const { tabBarPaddingBottom, horizontalInset } = useLayoutInsets();
   const { token } = useAuth();
   useAlertNotifications(token, {
     onPendingCount: setAlertBadgeCount,
-    onOpenAlert: () => setActive('home'),
+    onOpenAlert: (data) => {
+      setFocusAlert({
+        eventId: data?.eventId || null,
+        eventIds: Array.isArray(data?.eventIds) ? data.eventIds : [],
+      });
+      setActive('home');
+    },
   });
 
   const screens = {
@@ -153,6 +160,7 @@ export default function TabNavigator() {
       <AlertsScreen
         onViewAllAlerts={() => setActive('alerts')}
         onPendingCountChange={setAlertBadgeCount}
+        focusAlert={focusAlert}
       />
     ),
     alerts: <LogScreen onPendingCountChange={setAlertBadgeCount} />,

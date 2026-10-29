@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, ScrollView, StyleSheet, TouchableOpacity, LayoutAnimation,
   RefreshControl,
@@ -196,7 +196,16 @@ function RecentAlertsSection({ alerts, onViewAll, onOpenAlert }) {
   );
 }
 
-export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) {
+function pickFocusedAlert(alerts, focus) {
+  const ids = [focus?.eventId, ...(Array.isArray(focus?.eventIds) ? focus.eventIds : [])].filter(Boolean);
+  for (const id of ids) {
+    const found = alerts.find((alert) => alert.id === id);
+    if (found) return found;
+  }
+  return null;
+}
+
+export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, focusAlert }) {
   const { tabBarClearance } = useLayoutInsets();
   const { token } = useAuth();
   const [activeAlerts, setActiveAlerts] = useState([]);
@@ -209,6 +218,12 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
   const [status, setStatus] = useState(null);
   const [responding, setResponding] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [pinnedId, setPinnedId] = useState(null);
+
+  useEffect(() => {
+    const focused = pickFocusedAlert(activeAlerts, focusAlert);
+    if (focused) setPinnedId(focused.id);
+  }, [focusAlert, activeAlerts]);
 
   const loadAlerts = useCallback(async () => {
     if (!token) return;
@@ -296,7 +311,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange }) 
 
   const closeRecentAlert = () => setSelectedAlert(null);
 
-  const latest = activeAlerts[0] || null;
+  const latest = activeAlerts.find((alert) => alert.id === pinnedId) || activeAlerts[0] || null;
   const recent = (recentAlerts.length ? recentAlerts : activeAlerts).slice(0, 4);
 
   const stats = useMemo(() => {
