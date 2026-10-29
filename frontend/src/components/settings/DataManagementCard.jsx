@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Icon } from '../ui/Icon'
 import { Modal } from '../ui/Modal'
 import { SettingsCardSkeleton } from '../ui/Skeleton'
-import { DATA_RESET_EVENT, createBackup, fetchDataSummary, resetData } from '../../api/dataManagement'
+import { DATA_RESET_EVENT, createBackup, fetchDataSummary, resetData, restoreDeletedData } from '../../api/dataManagement'
 import './DataManagementCard.css'
 
 const CATEGORIES = [
@@ -69,6 +69,7 @@ export default function DataManagementCard({ showStatus }) {
   const [backup, setBackup] = useState(null)
   const [backingUp, setBackingUp] = useState(false)
   const [backupProgress, setBackupProgress] = useState({ percent: null, stage: '', indeterminate: true })
+  const [backupSelected, setBackupSelected] = useState(() => new Set(CATEGORIES.map((category) => category.key)))
   const [now, setNow] = useState(() => Date.now())
 
   const [selected, setSelected] = useState(() => new Set())
@@ -76,6 +77,10 @@ export default function DataManagementCard({ showStatus }) {
   const [typed, setTyped] = useState('')
   const [understood, setUnderstood] = useState(false)
   const [resetting, setResetting] = useState(false)
+  const [restoreFile, setRestoreFile] = useState(null)
+  const [restoreOpen, setRestoreOpen] = useState(false)
+  const [restoreTyped, setRestoreTyped] = useState('')
+  const [restoring, setRestoring] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -99,20 +104,22 @@ export default function DataManagementCard({ showStatus }) {
 
   const maxAgeMs = (summary?.backupMaxAgeSec || 1800) * 1000
   const backupValid = Boolean(backup?.verifiedAt) && now - backup.createdAt < maxAgeMs
-  const minutesLeft = backupValid ? Math.max(1, Math.ceil((backup.createdAt + maxAgeMs - now) / 60000)) : 0
+  const backupCategorySet = new Set(backup?.categories || CATEGORIES.map((category) => category.key))
+  const backupCoversResetSelection = [...selected].every((category) => backupCategorySet.has(category))
 
   const counts = summary?.counts || {}
   const selectedList = CATEGORIES.filter((c) => selected.has(c.key))
   const allSelected = selected.size === CATEGORIES.length
+  const allBackupSelected = backupSelected.size === CATEGORIES.length
   const notes = useMemo(() => dependencyNotes(selected), [selected])
   const totalRecords = selectedList.reduce((sum, c) => sum + (c.unit === 'records' ? counts[c.key] || 0 : 0), 0)
   const canConfirm = typed === 'RESET' && (!notes.length || understood) && !resetting
 
   const runBackup = async () => {
-    if (backingUp) return
+    if (backingUp || !backupSelected.size) return
     setBackupProgress({ percent: null, stage: 'Starting backup…', indeterminate: true })
     setBackingUp(true)
-    const result = await createBackup(setBackupProgress)
+    const result = await createBackup([...backupSelected], setBackupProgress)
     setBackingUp(false)
     if (!result.ok) {
       showStatus({ tone: 'error', title: 'Backup failed', message: result.error })
@@ -123,8 +130,21 @@ export default function DataManagementCard({ showStatus }) {
     showStatus({
       tone: 'success',
       title: 'Backup saved',
-      message: `${result.backup.fileName} was downloaded and verified. Reset Data is unlocked for 30 minutes.`,
+      message: `${result.backup.fileName} was downloaded with ${backupSelected.size} selected data categories and verified.`,
     })
+  }
+
+  const toggleBackupCategory = (key) => {
+    setBackupSelected((previous) => {
+      const next = new Set(previous)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const toggleAllBackupCategories = () => {
+    setBackupSelected(allBackupSelected ? new Set() : new Set(CATEGORIES.map((category) => category.key)))
   }
 
   const toggle = (key) => {
@@ -175,9 +195,53 @@ export default function DataManagementCard({ showStatus }) {
     showStatus({ tone: 'success', title: 'Data reset complete', message: cleared })
   }
 
+  const chooseRestoreFile = (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (!/\.(sqlite3?|db)$/i.test(file.name)) {
+      setRestoreFile(null)
+      showStatus({ tone: 'error', title: 'Invalid backup file', message: 'Choose a PoolsEye .sqlite3 backup file.' })
+      return
+    }
+    if (file.size > 128 * 1024 * 1024) {
+      setRestoreFile(null)
+      showStatus({ tone: 'error', title: 'Backup is too large', message: 'The maximum restore file size is 128 MB.' })
+      return
+    }
+    setRestoreFile(file)
+  }
+
+  const reviewRestore = () => {
+    if (!restoreFile) return
+    setRestoreTyped('')
+    setRestoreOpen(true)
+  }
+
+  const runRestore = async () => {
+    if (!restoreFile || restoreTyped !== 'RESTORE' || restoring) return
+    setRestoring(true)
+    const result = await restoreDeletedData(restoreFile, restoreTyped)
+    setRestoring(false)
+    if (!result.ok) {
+      showStatus({ tone: 'error', title: 'Restore not completed', message: result.error || 'No data was changed.' })
+      return
+    }
+    setRestoreOpen(false)
+    setRestoreFile(null)
+    setRestoreTyped('')
+    window.dispatchEvent(new CustomEvent(DATA_RESET_EVENT))
+    await load()
+    const restored = result.restoredCounts || {}
+    showStatus({
+      tone: 'success',
+      title: 'Deleted data restored',
+      message: `${restored.events || 0} event records and ${restored.responseStats || 0} lifeguard response records were recovered. Existing data was preserved.`,
+    })
+  }
+
   return (
     <div className="dm-grid">
-      <section className={`settings-card dm-card${loading && !loadError ? ' is-data-loading' : ''}`}>
+      <section className={`settings-card dm-card dm-card-backup${loading && !loadError ? ' is-data-loading' : ''}`}>
         <div className="dm-card-heading">
           <span className="dm-heading-icon dm-heading-icon-backup"><Icon.Database /></span>
           <div>
@@ -189,15 +253,43 @@ export default function DataManagementCard({ showStatus }) {
         {loading && !loadError ? <SettingsCardSkeleton rows={3} onRetry={load} /> : null}
 
         <div className="dm-backup-contents">
-          <p>This will create a downloadable <code>.sqlite3</code> file containing your system records, including:</p>
-          <ul>
-            <li>Event history and detections</li>
-            <li>Alerts and acknowledgments</li>
-            <li>Analytics and reports</li>
-            <li>Lifeguard records</li>
-            <li>CCTV camera settings and operating hours</li>
-            <li>Geofence zones and configurations</li>
-          </ul>
+          <div className="dm-backup-scope-head">
+            <div>
+              <strong>Choose data to include</strong>
+              <span>Accounts and system settings are always included.</span>
+            </div>
+            <button
+              type="button"
+              className={`dm-scope-toggle${allBackupSelected ? ' is-checked' : ''}`}
+              onClick={toggleAllBackupCategories}
+              disabled={backingUp}
+            >
+              <strong>{allBackupSelected ? 'Clear All' : 'Select All'}</strong>
+              <span>{backupSelected.size} out of {CATEGORIES.length}</span>
+            </button>
+          </div>
+          <div className="dm-backup-choices">
+            {CATEGORIES.map((category) => (
+              <label key={category.key} className={`dm-backup-choice${backupSelected.has(category.key) ? ' is-selected' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={backupSelected.has(category.key)}
+                  onChange={() => toggleBackupCategory(category.key)}
+                  disabled={backingUp}
+                />
+                <span className="dm-check-box" aria-hidden="true"><Icon.Check /></span>
+                <span>{category.label}</span>
+                <small>{(counts[category.key] || 0).toLocaleString()}</small>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="settings-card-actions dm-backup-action">
+          <button type="button" className="btn-primary" onClick={runBackup} disabled={backingUp || loading || !backupSelected.size}>
+            {backingUp ? <span className="btn-spinner" aria-hidden="true" /> : <Icon.Download />}
+            {backingUp ? 'Creating backup…' : 'Download Backup'}
+          </button>
         </div>
 
         <div className="dm-media-note">
@@ -228,19 +320,56 @@ export default function DataManagementCard({ showStatus }) {
         {backup ? (
           <p className={`dm-last-backup${backupValid ? ' is-valid' : ''}`}>
             {backupValid ? <Icon.CheckCircle /> : <Icon.Info />}
-            <span>Last verified backup: <strong>{backup.fileName}</strong> · {formatDateTime(backup.createdAt)}</span>
+            <span>
+              Last verified backup: <strong>{backup.fileName}</strong> · {formatDateTime(backup.createdAt)}
+              {backup.totalRows != null ? ` · ${backup.totalRows.toLocaleString()} live database rows` : ''}
+            </span>
           </p>
         ) : null}
 
-        <div className="settings-card-actions dm-backup-action">
-          <button type="button" className="btn-primary" onClick={runBackup} disabled={backingUp || loading}>
-            {backingUp ? <span className="btn-spinner" aria-hidden="true" /> : <Icon.Download />}
-            {backingUp ? 'Creating backup…' : 'Backup & Download'}
-          </button>
+      </section>
+
+      <section className="settings-card dm-card dm-card-restore">
+        <div className="dm-card-heading">
+          <span className="dm-heading-icon dm-heading-icon-restore"><Icon.Upload /></span>
+          <div>
+            <h3>Restore Deleted Data</h3>
+            <p>Recover deleted monitoring records from a verified PoolsEye database backup.</p>
+          </div>
+        </div>
+
+        <div className="dm-restore-layout">
+          <div className="dm-restore-copy">
+            <p>Restore adds missing events, alerts, broadcasts, and cleared lifeguard response statistics from the selected backup.</p>
+            <div className="dm-media-note">
+              <Icon.Shield />
+              <span><strong>Current records are protected.</strong> Existing events, accounts, passwords, camera settings, geofences, and newer response statistics are not overwritten.</span>
+            </div>
+          </div>
+          <div className="dm-restore-picker">
+            <label className="dm-file-picker">
+              <input
+                type="file"
+                accept=".sqlite,.sqlite3,.db,application/vnd.sqlite3,application/octet-stream"
+                onClick={(event) => { event.currentTarget.value = '' }}
+                onChange={chooseRestoreFile}
+                disabled={restoring}
+              />
+              <Icon.Upload />
+              <strong>{restoreFile ? restoreFile.name : 'Select a backup file to restore'}</strong>
+              <span>{restoreFile ? `${(restoreFile.size / 1024 / 1024).toFixed(2)} MB selected` : 'Upload a valid PoolsEye .sqlite3 backup file'}</span>
+              <span className="dm-file-cta"><Icon.FileText />{restoreFile ? 'Change File' : 'Choose File'}</span>
+            </label>
+            {restoreFile ? (
+              <button type="button" className="btn-primary" onClick={reviewRestore} disabled={restoring}>
+                <Icon.Upload /> Review Restore
+              </button>
+            ) : null}
+          </div>
         </div>
       </section>
 
-      <section className={`settings-card dm-card${loading && !loadError ? ' is-data-loading' : ''}`}>
+      <section className={`settings-card dm-card dm-card-reset${loading && !loadError ? ' is-data-loading' : ''}`}>
         <div className="dm-card-heading">
           <span className="dm-heading-icon dm-heading-icon-reset"><Icon.Trash /></span>
           <div>
@@ -251,7 +380,7 @@ export default function DataManagementCard({ showStatus }) {
 
         <div className="dm-danger-note">
           <Icon.AlertTriangle />
-          <span><strong>This will permanently delete the selected records.</strong> {PRESERVED}</span>
+          <span><strong>This removes the selected records from the live system.</strong> They can only be recovered from a valid backup. {PRESERVED}</span>
         </div>
 
         {loadError ? (
@@ -264,16 +393,20 @@ export default function DataManagementCard({ showStatus }) {
         {loading && !loadError ? <SettingsCardSkeleton rows={4} onRetry={load} /> : null}
 
         <div className="dm-select-heading">
-          <h4>Select data to reset</h4>
-          <p>Choose exactly which records you want to clear.</p>
+          <div>
+            <h4>Select data to reset</h4>
+            <p>Choose exactly which records you want to clear.</p>
+          </div>
+          <button
+            type="button"
+            className={`dm-scope-toggle${allSelected ? ' is-checked' : ''}`}
+            onClick={toggleAll}
+            title={allSelected ? 'Clear selection' : 'Select all'}
+          >
+            <strong>{allSelected ? 'Clear All' : 'Select All'}</strong>
+            <span>{selected.size} out of {CATEGORIES.length}</span>
+          </button>
         </div>
-
-        <label className={`dm-check dm-select-all${allSelected ? ' is-checked' : ''}`}>
-          <input type="checkbox" checked={allSelected} onChange={toggleAll} />
-          <span className="dm-check-box" aria-hidden="true"><Icon.Check /></span>
-          <span className="dm-check-label">Select All</span>
-          <span className="dm-select-count">{selected.size} of {CATEGORIES.length} selected</span>
-        </label>
 
         <div className="dm-inline-check-list">
           {CATEGORIES.map((c) => (
@@ -284,25 +417,22 @@ export default function DataManagementCard({ showStatus }) {
                 <span className="dm-check-label">{c.label}</span>
                 <span className="dm-check-desc">{c.description}</span>
               </span>
+              <span className="dm-record-count">{(counts[c.key] || 0).toLocaleString()}</span>
             </label>
           ))}
         </div>
 
         <div className="dm-reset-footer">
-          <div className={`dm-reset-lock${backupValid ? ' is-ready' : ''}`}>
-            {backupValid ? <Icon.Shield /> : <Icon.Lock />}
-            <span>
-              <strong>{backupValid ? 'Verified backup ready.' : 'A verified backup is required before resetting.'}</strong>
-              {backupValid
-                ? ` Reset is available for ${minutesLeft} more minute${minutesLeft === 1 ? '' : 's'}.`
-                : ' Reset will be available for 30 minutes after a successful backup.'}
-            </span>
-          </div>
           <button
             type="button"
             className="btn-danger dm-reset-button"
             onClick={goToConfirm}
-            disabled={!backupValid || !selected.size || loading || resetting}
+            disabled={!backupValid || !backupCoversResetSelection || !selected.size || loading || resetting}
+            title={!backupValid
+              ? 'Download a verified backup before resetting data'
+              : !backupCoversResetSelection
+                ? 'Create a backup that includes every selected reset category'
+                : undefined}
           >
             <Icon.Trash />
             Reset Selected Data
@@ -372,6 +502,45 @@ export default function DataManagementCard({ showStatus }) {
             <button type="button" className="btn-danger" onClick={runReset} disabled={!canConfirm}>
               {resetting ? <span className="btn-spinner" aria-hidden="true" /> : null}
               {resetting ? 'Resetting…' : 'Reset data'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={restoreOpen}
+        onClose={restoring ? undefined : () => setRestoreOpen(false)}
+        title="Confirm data restore"
+        size="md"
+        elevated
+      >
+        <div className="dm-modal">
+          <div className="dm-confirm-scope">
+            <Icon.Shield />
+            <p>The server will verify the SQLite file first, then recover only missing or reset monitoring records in one transaction.</p>
+          </div>
+          <p className="dm-backup-line"><Icon.Database /> Backup file: <strong>{restoreFile?.name || '—'}</strong></p>
+          <div className="dm-media-note dm-restore-warning">
+            <Icon.Info />
+            <span>Records created after this backup stay in the system. Media links are restored, but deleted image or video files cannot be recreated from the database file.</span>
+          </div>
+          <label className="settings-field">
+            <span className="field-label">Type <strong>RESTORE</strong> to confirm</span>
+            <input
+              className="field-input"
+              value={restoreTyped}
+              onChange={(event) => setRestoreTyped(event.target.value)}
+              placeholder="RESTORE"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={restoring}
+            />
+          </label>
+          <div className="form-modal-actions">
+            <button type="button" className="btn-secondary" onClick={() => setRestoreOpen(false)} disabled={restoring}>Cancel</button>
+            <button type="button" className="btn-primary" onClick={runRestore} disabled={restoreTyped !== 'RESTORE' || restoring}>
+              {restoring ? <span className="btn-spinner" aria-hidden="true" /> : <Icon.Upload />}
+              {restoring ? 'Verifying and restoring…' : 'Restore deleted data'}
             </button>
           </div>
         </div>

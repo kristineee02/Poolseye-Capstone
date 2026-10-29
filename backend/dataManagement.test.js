@@ -70,6 +70,18 @@ test('backup is an accessible exact snapshot and reset is selective, verified, a
     await close(backup)
     backup = null
 
+    const selectiveCounts = await __test.filterBackupFile(backupFile, ['alerts'])
+    assert.equal(selectiveCounts.events, 1)
+    backup = await openDatabase(backupFile)
+    assert.equal((await get(backup, "SELECT COUNT(*) AS count FROM events WHERE is_alert = 1")).count, 1)
+    assert.equal((await get(backup, "SELECT COUNT(*) AS count FROM events WHERE is_alert = 0")).count, 0)
+    assert.deepEqual(
+      await get(backup, 'SELECT acknowledged_alerts, missed_alerts, response_time FROM users LIMIT 1'),
+      { acknowledged_alerts: 0, missed_alerts: 0, response_time: null }
+    )
+    await close(backup)
+    backup = null
+
     const firstReset = await __test.executeVerifiedReset(source, ['detections'])
     assert.equal(firstReset.deletedCounts.detections, 1)
     assert.equal(firstReset.counts.detections, 0)
@@ -133,6 +145,101 @@ test('backup is an accessible exact snapshot and reset is selective, verified, a
     assert.deepEqual(selectAllReset.preservedCounts, {})
   } finally {
     if (backup) await close(backup)
+    if (source) await close(source)
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  }
+})
+
+test('restore recovers deleted records from a real backup without overwriting current data', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'poolseye-restore-test-'))
+  const sourceFile = path.join(tempDir, 'source.sqlite3')
+  const backupFile = path.join(tempDir, 'backup.sqlite3')
+  let source
+
+  try {
+    source = await openDatabase(sourceFile)
+    await exec(source, fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'))
+    await run(
+      source,
+      `INSERT INTO users
+        (email, password_hash, name, role, acknowledged_alerts, missed_alerts, response_time, last_alert_acknowledged_at)
+       VALUES (?, 'hash', 'Guard', 'lifeguard', 4, 2, '00:18', '2026-01-01')`,
+      ['guard@example.test']
+    )
+    await run(
+      source,
+      `INSERT INTO events (id, type, title, category, is_alert, ts) VALUES
+       ('old-detection', 'detection', 'Old detection', NULL, 0, 1),
+       ('old-alert', 'drowning', 'Old alert', 'drowning', 1, 2)`
+    )
+    await __test.buildBackupFile(source, backupFile)
+
+    await __test.executeVerifiedReset(source, ['detections', 'alerts', 'responseStats'])
+    await run(
+      source,
+      `INSERT INTO events (id, type, title, category, is_alert, ts)
+       VALUES ('new-alert', 'drowning', 'New alert', 'drowning', 1, 3)`
+    )
+
+    const restored = await __test.restoreDeletedData(source, backupFile)
+    assert.deepEqual(restored, { events: 2, responseStats: 1, skippedExistingEvents: 0 })
+    assert.equal((await get(source, 'SELECT COUNT(*) AS count FROM events')).count, 3)
+    assert.equal((await get(source, "SELECT COUNT(*) AS count FROM events WHERE id = 'new-alert'")).count, 1)
+
+    const guard = await get(
+      source,
+      `SELECT acknowledged_alerts, missed_alerts, response_time, last_alert_acknowledged_at
+       FROM users WHERE email = 'guard@example.test'`
+    )
+    assert.deepEqual(guard, {
+      acknowledged_alerts: 4,
+      missed_alerts: 2,
+      response_time: '00:18',
+      last_alert_acknowledged_at: '2026-01-01',
+    })
+
+    const repeated = await __test.restoreDeletedData(source, backupFile)
+    assert.deepEqual(repeated, { events: 0, responseStats: 0, skippedExistingEvents: 2 })
+  } finally {
+    if (source) await close(source)
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  }
+})
+
+test('reset accepts only a fresh verified backup that covers every selected category', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'poolseye-scope-test-'))
+  const sourceFile = path.join(tempDir, 'source.sqlite3')
+  let source
+
+  try {
+    source = await openDatabase(sourceFile)
+    await exec(source, fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'))
+    const now = Date.now() / 1000
+    await run(
+      source,
+      `INSERT INTO data_backups
+        (id, admin_id, file_name, size_bytes, sha256, table_counts, created_at, verified_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'selective-backup',
+        7,
+        'selective.sqlite3',
+        100,
+        'test-hash',
+        JSON.stringify({ tables: { events: 3 }, categories: ['alerts', 'responseStats'] }),
+        now,
+        now,
+      ]
+    )
+
+    const accepted = await __test.requireUsableBackup(source, 'selective-backup', 7, ['alerts'])
+    assert.equal(accepted.id, 'selective-backup')
+
+    await assert.rejects(
+      __test.requireUsableBackup(source, 'selective-backup', 7, ['alerts', 'detections']),
+      (err) => err.status === 412 && err.code === 'backup_required'
+    )
+  } finally {
     if (source) await close(source)
     fs.rmSync(tempDir, { recursive: true, force: true })
   }

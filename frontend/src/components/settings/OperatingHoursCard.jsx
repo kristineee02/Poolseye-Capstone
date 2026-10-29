@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '../ui/Icon'
 import { ConfirmModal } from '../ui/Modal'
+import { SelectDropdown } from '../ui/Dropdown'
 import Toggle from '../ui/Toggle'
 import { SettingsCardSkeleton } from '../ui/Skeleton'
 import { fetchOperatingHours, saveOperatingHours } from '../../api/operatingHours'
@@ -21,6 +22,19 @@ function formatTime(hhmm) {
   const [h, m] = hhmm.split(':').map(Number)
   const suffix = h >= 12 ? 'PM' : 'AM'
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${suffix}`
+}
+
+const TIME_OPTIONS = Array.from({ length: 96 }, (_, index) => {
+  const hours = Math.floor(index / 4)
+  const minutes = (index % 4) * 15
+  const value = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+  return { value, label: formatTime(value) }
+})
+
+function timeOptionsFor(value) {
+  if (!TIME_RE.test(value || '') || TIME_OPTIONS.some((option) => option.value === value)) return TIME_OPTIONS
+  return [...TIME_OPTIONS, { value, label: formatTime(value) }]
+    .sort((a, b) => a.value.localeCompare(b.value))
 }
 
 function validate(schedule) {
@@ -165,7 +179,7 @@ export default function OperatingHoursCard({ showStatus }) {
             <span role="columnheader">Day</span>
             <span role="columnheader">Opens</span>
             <span role="columnheader">Closes</span>
-            <span role="columnheader">Closed all day</span>
+            <span role="columnheader">Availability</span>
           </div>
           {DAYS.map(({ key, label }) => {
             const day = schedule[key]
@@ -173,28 +187,29 @@ export default function OperatingHoursCard({ showStatus }) {
             return (
               <div key={key} className={`settings-hours-row${errors[key] ? ' is-invalid' : ''}`} role="row">
                 <span className="settings-hours-day" role="cell">{label}</span>
-                <span role="cell">
-                  <input
-                    type="time"
-                    className="field-input"
+                <span className="settings-hours-time-cell" role="cell" data-label="Opens">
+                  <SelectDropdown
+                    className="settings-time-dropdown"
                     value={day.open}
-                    onChange={(e) => updateDay(key, { open: e.target.value })}
+                    onChange={(value) => updateDay(key, { open: value })}
+                    options={timeOptionsFor(day.open)}
                     disabled={disabled || day.closed}
-                    aria-label={`${label} opening time`}
+                    ariaLabel={`${label} opening time`}
                   />
                 </span>
-                <span role="cell">
-                  <input
-                    type="time"
-                    className="field-input"
+                <span className="settings-hours-time-cell" role="cell" data-label="Closes">
+                  <SelectDropdown
+                    className="settings-time-dropdown"
                     value={day.close}
-                    onChange={(e) => updateDay(key, { close: e.target.value })}
+                    onChange={(value) => updateDay(key, { close: value })}
+                    options={timeOptionsFor(day.close)}
                     disabled={disabled || day.closed}
-                    aria-label={`${label} closing time`}
+                    ariaLabel={`${label} closing time`}
                   />
                   {overnight ? <span className="settings-hours-hint">next day</span> : null}
                 </span>
-                <span role="cell">
+                <span className="settings-hours-availability" role="cell">
+                  <label className="settings-hours-closed">
                   <input
                     type="checkbox"
                     className="settings-hours-check"
@@ -203,6 +218,9 @@ export default function OperatingHoursCard({ showStatus }) {
                     disabled={disabled}
                     aria-label={`${label} closed all day`}
                   />
+                    <span className="settings-hours-check-box" aria-hidden="true"><Icon.Check /></span>
+                    <span>{day.closed ? 'Closed' : 'Open'}</span>
+                  </label>
                 </span>
                 {errors[key] ? <span className="field-error settings-hours-error">{errors[key]}</span> : null}
               </div>

@@ -3,6 +3,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const sqlite3 = require('sqlite3')
+const express = require('express')
 const { get, run, all, transaction } = require('./db')
 
 // A reset must follow a backup made by the same admin within this window.
@@ -41,6 +42,7 @@ const SKIP_ROWS = new Set(['email_verifications'])
 
 let backupInProgress = false
 let resetInProgress = false
+let restoreInProgress = false
 
 function httpError(status, message, code) {
   const err = new Error(message)
@@ -255,13 +257,31 @@ async function countCategories(db) {
 
 function backupPayload(row) {
   if (!row) return null
+  const metadata = parseBackupMetadata(row.table_counts)
+  const tableCounts = metadata.tables
   return {
     id: row.id,
     fileName: row.file_name,
     sizeBytes: row.size_bytes,
     createdAt: Math.round(row.created_at * 1000),
     verifiedAt: row.verified_at ? Math.round(row.verified_at * 1000) : null,
+    tableCounts,
+    totalRows: Object.values(tableCounts).reduce((sum, count) => sum + Number(count || 0), 0),
+    categories: metadata.categories,
   }
+}
+
+function parseBackupMetadata(value) {
+  let parsed = {}
+  try { parsed = JSON.parse(value || '{}') } catch { /* keep empty */ }
+  if (parsed?.tables && typeof parsed.tables === 'object') {
+    return {
+      tables: parsed.tables,
+      categories: Array.isArray(parsed.categories) ? parsed.categories : CATEGORY_KEYS,
+    }
+  }
+  // Backups created before selective scope support were always complete.
+  return { tables: parsed && typeof parsed === 'object' ? parsed : {}, categories: CATEGORY_KEYS }
 }
 
 function resetLogPayload(row) {
@@ -291,7 +311,43 @@ function parseCategories(input) {
   return CATEGORY_KEYS.filter((key) => unique.includes(key))
 }
 
-async function requireUsableBackup(db, backupId, adminId) {
+function parseBackupCategories(input) {
+  if (input == null || input === '') return CATEGORY_KEYS
+  const values = Array.isArray(input) ? input : String(input).split(',').filter(Boolean)
+  return parseCategories(values)
+}
+
+async function filterBackupFile(file, categories) {
+  if (categories.length === CATEGORY_KEYS.length) return inspectBackupFile(file)
+  const target = await openFile(file)
+  try {
+    await fileRun(target, 'BEGIN IMMEDIATE')
+    try {
+      for (const [key, category] of Object.entries(EVENT_CATEGORIES)) {
+        if (!categories.includes(key)) {
+          await fileRun(target, `DELETE FROM events WHERE ${category.where}`)
+        }
+      }
+      if (!categories.includes('responseStats')) {
+        await fileRun(
+          target,
+          `UPDATE users SET acknowledged_alerts = 0, missed_alerts = 0,
+             response_time = NULL, last_alert_acknowledged_at = NULL
+           WHERE role = 'lifeguard'`
+        )
+      }
+      await fileRun(target, 'COMMIT')
+    } catch (err) {
+      try { await fileRun(target, 'ROLLBACK') } catch { /* already rolled back */ }
+      throw err
+    }
+  } finally {
+    await closeFile(target)
+  }
+  return inspectBackupFile(file)
+}
+
+async function requireUsableBackup(db, backupId, adminId, requiredCategories = []) {
   const backup = backupId
     ? await get(db, 'SELECT * FROM data_backups WHERE id = ?', [String(backupId)])
     : null
@@ -311,6 +367,15 @@ async function requireUsableBackup(db, backupId, adminId) {
   )
   if (used) {
     throw httpError(412, 'That backup was already used for a reset. Create a new backup first.', 'backup_required')
+  }
+  const backupCategories = parseBackupMetadata(backup.table_counts).categories
+  const missing = requiredCategories.filter((category) => !backupCategories.includes(category))
+  if (missing.length) {
+    throw httpError(
+      412,
+      'That backup does not include every category selected for reset. Create a new backup with matching categories.',
+      'backup_required'
+    )
   }
   return backup
 }
@@ -370,6 +435,106 @@ async function executeVerifiedReset(db, categories) {
   }, 'write')
 }
 
+async function tableColumns(target, table, sourceFile = false) {
+  const rows = sourceFile
+    ? await fileAll(target, `PRAGMA table_info(${quoteIdent(table)})`)
+    : await all(target, `PRAGMA table_info(${quoteIdent(table)})`)
+  return rows.map((column) => column.name)
+}
+
+async function restoreDeletedData(db, file) {
+  const source = await openFile(file)
+  try {
+    const integrity = await fileAll(source, 'PRAGMA integrity_check')
+    if (integrity[0]?.integrity_check !== 'ok') {
+      throw httpError(400, 'The selected file is not a valid, intact SQLite backup.')
+    }
+    const foreignKeyErrors = await fileAll(source, 'PRAGMA foreign_key_check')
+    if (foreignKeyErrors.length) {
+      throw httpError(400, 'The selected backup contains invalid or incomplete related records.')
+    }
+
+    const sourceTables = new Set(
+      (await fileAll(source, "SELECT name FROM sqlite_master WHERE type = 'table'")).map((row) => row.name)
+    )
+    if (!sourceTables.has('events') || !sourceTables.has('users')) {
+      throw httpError(400, 'This is not a compatible PoolsEye backup (events or users table is missing).')
+    }
+
+    const sourceEventColumns = await tableColumns(source, 'events', true)
+    const liveEventColumns = await tableColumns(db, 'events')
+    const eventColumns = liveEventColumns.filter((column) => sourceEventColumns.includes(column))
+    for (const required of ['id', 'type', 'title', 'ts']) {
+      if (!eventColumns.includes(required)) {
+        throw httpError(400, `This backup is missing the required events.${required} field.`)
+      }
+    }
+
+    const sourceUserColumns = await tableColumns(source, 'users', true)
+    const statColumns = ['email', 'role', 'acknowledged_alerts', 'missed_alerts', 'response_time', 'last_alert_acknowledged_at']
+    const canRestoreStats = statColumns.every((column) => sourceUserColumns.includes(column))
+    const insertEventSql = `INSERT OR IGNORE INTO events (${eventColumns.map(quoteIdent).join(', ')})
+      VALUES (${eventColumns.map(() => '?').join(', ')})`
+
+    return await transaction(db, async () => {
+      let sourceEvents = 0
+      let restoredEvents = 0
+      for (let offset = 0; ; offset += PAGE_SIZE) {
+        const rows = await fileAll(
+          source,
+          `SELECT ${eventColumns.map(quoteIdent).join(', ')} FROM events ORDER BY rowid LIMIT ? OFFSET ?`,
+          [PAGE_SIZE, offset]
+        )
+        for (const row of rows) {
+          const result = await run(db, insertEventSql, eventColumns.map((column) => toSqliteValue(row[column])))
+          restoredEvents += Number(result?.changes || 0)
+        }
+        sourceEvents += rows.length
+        if (rows.length < PAGE_SIZE) break
+      }
+
+      let restoredResponseStats = 0
+      if (canRestoreStats) {
+        const guards = await fileAll(
+          source,
+          `SELECT ${statColumns.map(quoteIdent).join(', ')} FROM users WHERE role = 'lifeguard'`
+        )
+        for (const guard of guards) {
+          const hasStats = Number(guard.acknowledged_alerts || 0) !== 0
+            || Number(guard.missed_alerts || 0) !== 0
+            || guard.response_time != null
+            || guard.last_alert_acknowledged_at != null
+          if (!hasStats) continue
+          // Do not overwrite newer statistics. Only profiles still in the reset/empty state are recovered.
+          const result = await run(
+            db,
+            `UPDATE users SET acknowledged_alerts = ?, missed_alerts = ?, response_time = ?, last_alert_acknowledged_at = ?
+             WHERE email = ? AND role = 'lifeguard'
+               AND COALESCE(acknowledged_alerts, 0) = 0 AND COALESCE(missed_alerts, 0) = 0
+               AND response_time IS NULL AND last_alert_acknowledged_at IS NULL`,
+            [
+              Number(guard.acknowledged_alerts || 0),
+              Number(guard.missed_alerts || 0),
+              guard.response_time,
+              guard.last_alert_acknowledged_at,
+              guard.email,
+            ]
+          )
+          restoredResponseStats += Number(result?.changes || 0)
+        }
+      }
+
+      return {
+        events: restoredEvents,
+        responseStats: restoredResponseStats,
+        skippedExistingEvents: sourceEvents - restoredEvents,
+      }
+    }, 'write')
+  } finally {
+    await closeFile(source)
+  }
+}
+
 async function writeResetLog(db, { admin, categories, deletedCounts, backupId, status, error }) {
   try {
     await run(
@@ -389,6 +554,30 @@ async function writeResetLog(db, { admin, categories, deletedCounts, backupId, s
     )
   } catch (err) {
     console.error('[data] could not write reset audit log:', err)
+  }
+}
+
+async function writeRestoreLog(db, { admin, fileName, sha256, size, restoredCounts, status, error }) {
+  try {
+    await run(
+      db,
+      `INSERT INTO data_restore_log
+        (admin_id, admin_email, file_name, file_sha256, file_size_bytes, restored_counts, status, error, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        admin.id,
+        admin.email || null,
+        fileName,
+        sha256,
+        size,
+        restoredCounts ? JSON.stringify(restoredCounts) : null,
+        status,
+        error || null,
+        Date.now() / 1000,
+      ]
+    )
+  } catch (err) {
+    console.error('[data] could not write restore audit log:', err)
   }
 }
 
@@ -417,8 +606,8 @@ function registerDataManagementRoutes(app, db, adminRequired) {
   })
 
   app.post('/api/admin/data/backup', adminRequired, async (req, res) => {
-    if (backupInProgress) {
-      return res.status(409).json({ error: 'A backup is already being created. Please wait.' })
+    if (backupInProgress || restoreInProgress) {
+      return res.status(409).json({ error: 'Another backup or restore operation is already running. Please wait.' })
     }
     backupInProgress = true
     const id = crypto.randomUUID()
@@ -428,14 +617,27 @@ function registerDataManagementRoutes(app, db, adminRequired) {
     const cleanup = () => fs.rm(file, { force: true }, () => {})
 
     try {
-      const counts = await buildBackupFile(db, file)
+      const categories = parseBackupCategories(req.query.categories)
+      const snapshotCounts = await buildBackupFile(db, file)
+      const counts = categories.length === CATEGORY_KEYS.length
+        ? snapshotCounts
+        : await filterBackupFile(file, categories)
       const { size } = fs.statSync(file)
       const sha256 = await sha256File(file)
       await run(
         db,
         `INSERT INTO data_backups (id, admin_id, admin_email, file_name, size_bytes, sha256, table_counts, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, req.user.id, req.user.email || null, fileName, size, sha256, JSON.stringify(counts), createdAt.getTime() / 1000]
+        [
+          id,
+          req.user.id,
+          req.user.email || null,
+          fileName,
+          size,
+          sha256,
+          JSON.stringify({ tables: counts, categories }),
+          createdAt.getTime() / 1000,
+        ]
       )
       console.log(`[data] backup ${fileName} created by admin #${req.user.id} (${size} bytes)`)
 
@@ -484,9 +686,50 @@ function registerDataManagementRoutes(app, db, adminRequired) {
     }
   })
 
+  app.post(
+    '/api/admin/data/restore',
+    adminRequired,
+    express.raw({ type: ['application/octet-stream', 'application/vnd.sqlite3'], limit: '128mb' }),
+    async (req, res) => {
+      if (restoreInProgress || backupInProgress || resetInProgress) {
+        return res.status(409).json({ error: 'Another data operation is already running. Please wait.' })
+      }
+      restoreInProgress = true
+      const admin = { id: req.user.id, email: req.user.email }
+      const fileName = path.basename(String(req.query.fileName || 'poolseye-backup.sqlite3')).slice(0, 180)
+      const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0)
+      const sha256 = crypto.createHash('sha256').update(bytes).digest('hex')
+      const file = path.join(os.tmpdir(), `poolseye-restore-${crypto.randomUUID()}.sqlite3`)
+
+      try {
+        if (String(req.query.confirm || '') !== 'RESTORE') {
+          throw httpError(400, 'Type RESTORE to confirm.')
+        }
+        if (bytes.length < 16 || bytes.subarray(0, 16).toString('binary') !== 'SQLite format 3\u0000') {
+          throw httpError(400, 'Select a valid PoolsEye .sqlite3 backup file.')
+        }
+        fs.writeFileSync(file, bytes, { flag: 'wx' })
+        const restoredCounts = await restoreDeletedData(db, file)
+        await writeRestoreLog(db, {
+          admin, fileName, sha256, size: bytes.length, restoredCounts, status: 'completed',
+        })
+        console.log(`[data] restore by admin #${admin.id} from ${fileName}: ${JSON.stringify(restoredCounts)}`)
+        res.json({ ok: true, fileName, restoredCounts, verified: true })
+      } catch (err) {
+        await writeRestoreLog(db, {
+          admin, fileName, sha256, size: bytes.length, status: 'failed', error: err.message,
+        })
+        sendError(res, err, 'Restore failed. No data was changed.')
+      } finally {
+        fs.rm(file, { force: true }, () => {})
+        restoreInProgress = false
+      }
+    }
+  )
+
   app.post('/api/admin/data/reset', adminRequired, async (req, res) => {
-    if (resetInProgress) {
-      return res.status(409).json({ error: 'A reset is already running. Please wait.' })
+    if (resetInProgress || restoreInProgress) {
+      return res.status(409).json({ error: 'A reset or restore is already running. Please wait.' })
     }
     resetInProgress = true
     const admin = { id: req.user.id, email: req.user.email }
@@ -498,7 +741,7 @@ function registerDataManagementRoutes(app, db, adminRequired) {
       if (String(req.body?.confirm || '') !== 'RESET') {
         throw httpError(400, 'Type RESET to confirm.')
       }
-      const backup = await requireUsableBackup(db, req.body?.backupId, admin.id)
+      const backup = await requireUsableBackup(db, req.body?.backupId, admin.id, categories)
       backupId = backup.id
 
       // Delete, count, and verify inside one transaction. Any mismatch rolls the
@@ -536,5 +779,11 @@ module.exports = {
   EVENT_CATEGORIES,
   CATEGORY_KEYS,
   // Exported for isolated database verification tests only.
-  __test: { buildBackupFile, executeVerifiedReset },
+  __test: {
+    buildBackupFile,
+    filterBackupFile,
+    requireUsableBackup,
+    executeVerifiedReset,
+    restoreDeletedData,
+  },
 }

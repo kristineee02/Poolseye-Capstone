@@ -150,6 +150,19 @@ CREATE TABLE IF NOT EXISTS data_reset_log (
   created_at REAL NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS data_restore_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_id INTEGER NOT NULL,
+  admin_email TEXT,
+  file_name TEXT NOT NULL,
+  file_sha256 TEXT NOT NULL,
+  file_size_bytes INTEGER NOT NULL,
+  restored_counts TEXT,
+  status TEXT NOT NULL,
+  error TEXT,
+  created_at REAL NOT NULL
+);
+
 CREATE TRIGGER IF NOT EXISTS data_reset_log_no_update
 BEFORE UPDATE ON data_reset_log
 BEGIN
@@ -160,4 +173,16 @@ CREATE TRIGGER IF NOT EXISTS data_reset_log_no_delete
 BEFORE DELETE ON data_reset_log
 BEGIN
   SELECT RAISE(ABORT, 'data_reset_log is append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS data_restore_log_no_update
+BEFORE UPDATE ON data_restore_log
+BEGIN
+  SELECT RAISE(ABORT, 'data_restore_log is append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS data_restore_log_no_delete
+BEFORE DELETE ON data_restore_log
+BEGIN
+  SELECT RAISE(ABORT, 'data_restore_log is append-only');
 END;

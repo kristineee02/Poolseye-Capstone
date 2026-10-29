@@ -122,14 +122,15 @@ export function fetchResetLog(limit = 5) {
  * Downloads a fresh backup, saves it to the computer, then has the server confirm
  * the saved bytes match what it produced. Only a verified backup unlocks Reset.
  */
-export async function createBackup(onProgress = () => {}) {
+export async function createBackup(categories, onProgress = () => {}) {
   // Snapshot creation has no meaningful byte total yet, so show an honest
   // indeterminate state instead of a simulated percentage.
   onProgress({ percent: null, stage: 'Preparing a consistent database snapshot…', indeterminate: true })
 
   let res
   try {
-    res = await fetch(`${API_BASE}/api/admin/data/backup`, {
+    const query = new URLSearchParams({ categories: categories.join(',') })
+    res = await fetch(`${API_BASE}/api/admin/data/backup?${query}`, {
       method: 'POST',
       headers: authHeaders(),
       cache: 'no-store',
@@ -186,4 +187,22 @@ export function resetData({ categories, backupId, confirm }) {
     method: 'POST',
     body: JSON.stringify({ categories, backupId, confirm }),
   })
+}
+
+export async function restoreDeletedData(file, confirm) {
+  let res
+  try {
+    const query = new URLSearchParams({ fileName: file.name, confirm })
+    res = await fetch(`${API_BASE}/api/admin/data/restore?${query}`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/octet-stream' },
+      body: file,
+      cache: 'no-store',
+    })
+  } catch {
+    return { ok: false, error: 'Cannot reach backend server.' }
+  }
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) return { ok: false, status: res.status, error: data.error || `Restore failed (${res.status})` }
+  return { ok: true, ...data }
 }
