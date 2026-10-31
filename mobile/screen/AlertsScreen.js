@@ -29,6 +29,43 @@ function getAlertMeta(alert) {
   };
 }
 
+function responseStatusLabel(alert) {
+  if (!alert?.respondingAt) return 'Needs response';
+  if (alert.respondingMine) return 'You are responding';
+  return `${alert.responderName || 'A lifeguard'} is responding`;
+}
+
+const CATEGORY_PRIORITY = {
+  drowning: 0,
+  intrusion: 1,
+  'deep-water': 2,
+  supervision: 3,
+};
+
+function byCategoryPriority(a, b) {
+  return (CATEGORY_PRIORITY[a.category] ?? 9) - (CATEGORY_PRIORITY[b.category] ?? 9);
+}
+
+/** Prefer drowning, then the alert this lifeguard can still act on. */
+function pickPrimaryAlert(alerts, pinnedId) {
+  if (!alerts.length) return null;
+  const ranked = [...alerts].sort(byCategoryPriority);
+  const drowning = ranked.filter((alert) => alert.category === 'drowning');
+  const pool = drowning.length ? drowning : ranked;
+
+  const pinned = pinnedId ? pool.find((alert) => alert.id === pinnedId) : null;
+  if (pinned && (!pinned.respondingAt || pinned.respondingMine)) return pinned;
+
+  const mine = pool.find((alert) => alert.respondingMine);
+  if (mine) return mine;
+
+  const unclaimed = pool.find((alert) => !alert.respondingAt);
+  if (unclaimed) return unclaimed;
+
+  if (pinned) return pinned;
+  return pool[0];
+}
+
 function ActiveAlertCard({ alert, busy, onRespond, onAcknowledge, onDismiss }) {
   if (!alert) {
     return (
@@ -110,9 +147,14 @@ function ActiveAlertCard({ alert, busy, onRespond, onAcknowledge, onDismiss }) {
           </View>
         </>
       ) : (
-        <Text style={styles.handoffText}>
-          {alert.responderName || 'Another lifeguard'} is responding
-        </Text>
+        <>
+          <Text style={styles.handoffText}>
+            {alert.responderName || 'Another lifeguard'} is responding
+          </Text>
+          <Text style={styles.handoffHint}>
+            You can still handle other open alerts below.
+          </Text>
+        </>
       )}
     </View>
   );
@@ -165,6 +207,62 @@ function RecentAlertRow({ alert, onPress, showDivider }) {
       </View>
       <ChevronRight />
     </TouchableOpacity>
+  );
+}
+
+function OpenAlertRow({ alert, onPress, showDivider }) {
+  const m = getAlertMeta(alert);
+  const status = responseStatusLabel(alert);
+  const statusColor = !alert.respondingAt
+    ? m.accent
+    : alert.respondingMine
+      ? colors.safe
+      : colors.textSecondary;
+
+  return (
+    <TouchableOpacity
+      style={[styles.recentRow, showDivider && styles.recentRowDivider]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={[styles.recentStripe, { backgroundColor: m.accent }]} />
+      <View style={styles.recentCopy}>
+        <Text style={styles.recentTitle} numberOfLines={1}>{alert.title}</Text>
+        <Text style={styles.recentMeta} numberOfLines={1}>
+          {alert.zone} · {formatEventTime(alert.time)}
+        </Text>
+        <Text style={[styles.openStatus, { color: statusColor }]} numberOfLines={1}>
+          {status}
+        </Text>
+      </View>
+      <ChevronRight />
+    </TouchableOpacity>
+  );
+}
+
+function OtherOpenAlertsSection({ alerts, onSelect }) {
+  if (!alerts.length) return null;
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Other open alerts</Text>
+        <Text style={styles.openCount}>{alerts.length}</Text>
+      </View>
+      <Text style={styles.sectionHint}>
+        Open alerts that still need handling. Tap one to bring it to the top.
+      </Text>
+      <View style={styles.recentCard}>
+        {alerts.map((alert, index) => (
+          <OpenAlertRow
+            key={alert.id}
+            alert={alert}
+            showDivider={index < alerts.length - 1}
+            onPress={() => onSelect?.(alert)}
+          />
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -274,7 +372,15 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
     const result = await respondToMobileEvent(token, id);
     setResponding(false);
     if (!result.ok) {
-      setStatus({ tone: 'error', title: 'Could not respond', message: result.error || 'Failed to claim this alert.' });
+      const taken = result.event?.respondingAt && !result.event?.respondingMine;
+      if (taken) {
+        // No popup — Home shows "{name} is responding" and jumps to the next open alert.
+        setPinnedId(null);
+      } else {
+        setStatus({ tone: 'error', title: 'Could not respond', message: result.error || 'Failed to claim this alert.' });
+      }
+    } else {
+      setPinnedId(id);
     }
     await loadAlerts();
   };
@@ -282,6 +388,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
   const handleAcknowledge = async (id) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
+    setPinnedId((current) => (current === id ? null : current));
     const result = await updateMobileEventStatus(token, id, 'resolved');
     if (!result.ok) {
       setStatus({ tone: 'error', title: 'Could not acknowledge', message: result.error || 'Failed to acknowledge this alert.' });
@@ -295,6 +402,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
   const handleDismiss = async (id) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
+    setPinnedId((current) => (current === id ? null : current));
     const result = await updateMobileEventStatus(token, id, 'dismissed');
     if (!result.ok) {
       setStatus({ tone: 'error', title: 'Could not dismiss', message: result.error || 'Failed to dismiss this alert.' });
@@ -311,17 +419,28 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
 
   const closeRecentAlert = () => setSelectedAlert(null);
 
-  const latest = activeAlerts.find((alert) => alert.id === pinnedId) || activeAlerts[0] || null;
+  const selectOpenAlert = (alert) => {
+    setPinnedId(alert.id);
+  };
+
+  const primary = pickPrimaryAlert(activeAlerts, pinnedId);
+  const otherOpenAlerts = activeAlerts.filter((alert) => alert.id !== primary?.id);
   const recent = (recentAlerts.length ? recentAlerts : activeAlerts).slice(0, 4);
+
+  useEffect(() => {
+    if (pinnedId && !activeAlerts.some((alert) => alert.id === pinnedId)) {
+      setPinnedId(null);
+    }
+  }, [activeAlerts, pinnedId]);
 
   const stats = useMemo(() => {
     const intrusion = activeAlerts.filter((a) => ZONE_CATEGORIES.includes(a.category)).length;
     const drowning = activeAlerts.filter((a) => a.category === 'drowning').length;
-    const responding = activeAlerts.filter((a) => a.respondingAt).length;
+    const respondingCount = activeAlerts.filter((a) => a.respondingAt).length;
     return [
       { key: 'intrusion', label: 'Intrusion', value: String(intrusion), color: intrusion > 0 ? colors.alarm : colors.textPrimary },
       { key: 'drowning', label: 'Drowning', value: String(drowning), color: drowning > 0 ? colors.alarm : colors.textPrimary },
-      { key: 'responding', label: 'Responding', value: String(responding), color: responding > 0 ? colors.warn : colors.textPrimary },
+      { key: 'responding', label: 'Responding', value: String(respondingCount), color: respondingCount > 0 ? colors.warn : colors.textPrimary },
       { key: 'ack', label: 'Acknowledged', value: String(ackCount), color: colors.safe },
     ];
   }, [activeAlerts, ackCount]);
@@ -347,7 +466,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
             <ActiveAlertCard
-              alert={latest}
+              alert={primary}
               busy={responding}
               onRespond={handleRespond}
               onAcknowledge={handleAcknowledge}
@@ -355,6 +474,11 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
             />
 
             <OverviewSection stats={stats} />
+
+            <OtherOpenAlertsSection
+              alerts={otherOpenAlerts}
+              onSelect={selectOpenAlert}
+            />
 
             <RecentAlertsSection
               alerts={recent}
@@ -502,7 +626,13 @@ const styles = StyleSheet.create({
     fontSize: typography.sm,
     fontWeight: '700',
     color: colors.textSecondary,
-    marginBottom: 10,
+    marginBottom: 4,
+  },
+  handoffHint: {
+    fontSize: typography.xs,
+    fontWeight: '500',
+    color: colors.textTertiary,
+    marginBottom: 4,
   },
   ackBtn: {
     flex: 1.55,
@@ -583,6 +713,29 @@ const styles = StyleSheet.create({
     fontSize: typography.sm,
     fontWeight: '700',
     color: colors.accent,
+  },
+  openCount: {
+    minWidth: 24,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+    overflow: 'hidden',
+    textAlign: 'center',
+    fontSize: typography.sm,
+    fontWeight: '800',
+    color: colors.accent,
+    backgroundColor: colors.accentTint || 'rgba(30, 111, 255, 0.12)',
+  },
+  sectionHint: {
+    marginTop: -4,
+    fontSize: typography.sm,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  openStatus: {
+    marginTop: 4,
+    fontSize: typography.xs,
+    fontWeight: '700',
   },
 
   recentCard: {

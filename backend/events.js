@@ -171,9 +171,28 @@ async function insertEvent(db, payload) {
       nearest_person_id, nearest_confidence
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
-      status = excluded.status,
+      type = excluded.type,
+      code = excluded.code,
+      title = excluded.title,
       meta = excluded.meta,
-      ts = excluded.ts`,
+      event_time = excluded.event_time,
+      event_date = excluded.event_date,
+      status = excluded.status,
+      severity = excluded.severity,
+      category = excluded.category,
+      confidence = excluded.confidence,
+      camera = excluded.camera,
+      person_id = excluded.person_id,
+      zone = excluded.zone,
+      zone_label = excluded.zone_label,
+      event_name = excluded.event_name,
+      is_alert = excluded.is_alert,
+      ts = excluded.ts,
+      separation_distance = excluded.separation_distance,
+      supervision_threshold = excluded.supervision_threshold,
+      boundary_direction = excluded.boundary_direction,
+      nearest_person_id = excluded.nearest_person_id,
+      nearest_confidence = excluded.nearest_confidence`,
     [
       e.id,
       e.type,
@@ -210,6 +229,14 @@ const DETECTION_CATEGORIES = ['intrusion', 'deep-water', 'supervision', 'drownin
 // Matches LOOKBACK_SEC in dispatch.js: alerts older than this are no longer auto-sent either.
 const ACTIVE_ALERT_WINDOW_SEC = 15 * 60
 const SUPERVISED_WINDOW_SEC = 5 * 60
+// Possible drowning always outranks zone / unsupervised alerts on the Active Alert card.
+const ACTIVE_ALERT_ORDER_SQL = `CASE category
+  WHEN 'drowning' THEN 0
+  WHEN 'intrusion' THEN 1
+  WHEN 'deep-water' THEN 2
+  WHEN 'supervision' THEN 3
+  ELSE 4
+END`
 
 const TEST_ALERTS = {
   intrusion: {
@@ -334,16 +361,35 @@ function registerEventRoutes(app, db, adminRequired) {
   app.get('/api/events/active', adminRequired, async (_req, res) => {
     try {
       const now = Date.now() / 1000
+      const since = now - ACTIVE_ALERT_WINDOW_SEC
       const row = await get(
         db,
         `SELECT * FROM events
          WHERE status = 'pending' AND is_alert = 1
            AND category IN (${DETECTION_CATEGORIES.map(() => '?').join(', ')})
            AND ts >= ?
-         ORDER BY ts DESC
+         ORDER BY ${ACTIVE_ALERT_ORDER_SQL}, ts DESC
          LIMIT 1`,
-        [...DETECTION_CATEGORIES, now - ACTIVE_ALERT_WINDOW_SEC]
+        [...DETECTION_CATEGORIES, since]
       )
+      let group = null
+      if (row) {
+        const peers = await all(
+          db,
+          `SELECT id, title, person_id, zone_label, meta, category FROM events
+           WHERE status = 'pending' AND is_alert = 1
+             AND category = ?
+             AND ts >= ?
+           ORDER BY ts DESC`,
+          [row.category, since]
+        )
+        group = {
+          category: row.category,
+          count: peers.length,
+          personIds: [...new Set(peers.map((p) => p.person_id).filter((id) => id != null))],
+          titles: [...new Set(peers.map((p) => p.title).filter(Boolean))],
+        }
+      }
       const supervisedRow = row
         ? null
         : await get(
@@ -356,6 +402,7 @@ function registerEventRoutes(app, db, adminRequired) {
           )
       res.json({
         active: row ? await eventWithResponder(db, row) : null,
+        group,
         supervised: rowToEvent(supervisedRow),
       })
     } catch (err) {

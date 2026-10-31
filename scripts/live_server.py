@@ -167,6 +167,121 @@ EVENT_CATALOG = {
 # Person id used when the drowning model sees distress the pose model has no track for
 UNTRACKED_PERSON_ID = 0
 
+# Live digests: one actionable alert per category instead of one row per person.
+_digest_lock = threading.Lock()
+_open_unsupervised: dict[int, dict] = {}  # person id -> {zone, zone_label}
+_open_drowning: dict[int, dict] = {}  # person id -> {zone, zone_label, conf}
+_digest_signature: dict[str, str] = {}  # category -> last pushed signature
+
+
+def _camera_id() -> str:
+    return UPLOAD_CAMERA_ID if _source_kind == "video" else "CAM-01"
+
+
+def _format_person_list(ids: list[int]) -> str:
+    return ", ".join(f"#{pid}" for pid in ids)
+
+
+def _zone_summary(people: list[dict]) -> str:
+    labels = []
+    for person in people:
+        label = person.get("zone_label") or ZONE_LABEL.get(person.get("zone"), person.get("zone") or "Pool")
+        if label and label not in labels:
+            labels.append(label)
+    return " · ".join(labels) if labels else "Pool area"
+
+
+def push_category_digest(category: str, event_name: str, people: list[dict], *, clear: bool = False):
+    """Upsert a single pending alert for many people, or clear it when the scene is safe."""
+    camera = _camera_id()
+    digest_id = f"digest-{category}-{camera}"
+    meta_catalog = EVENT_CATALOG.get(event_name, {})
+    now = datetime.now(SITE_TZ)
+    source_label = "Uploaded video" if camera == UPLOAD_CAMERA_ID else camera
+
+    if clear or not people:
+        with _digest_lock:
+            prev = _digest_signature.get(category)
+            if prev == "clear":
+                return None
+            _digest_signature[category] = "clear"
+        entry = {
+            "id": digest_id,
+            "type": meta_catalog.get("type", "info"),
+            "code": meta_catalog.get("code", "EVT"),
+            "title": meta_catalog.get("title", event_name),
+            "meta": f"All clear · {source_label}",
+            "time": now.strftime("%I:%M:%S %p").lstrip("0"),
+            "date": "Today",
+            "status": "resolved",
+            "severity": "LOW",
+            "category": category,
+            "camera": camera,
+            "person_id": None,
+            "zone": None,
+            "zone_label": None,
+            "event": event_name,
+            "is_alert": False,
+            "ts": now.timestamp(),
+            "digest": True,
+        }
+        with _lock:
+            _event_log.appendleft(entry)
+        threading.Thread(target=sync_event_to_backend, args=(dict(entry),), daemon=True).start()
+        return entry
+
+    ids = sorted({int(p["id"]) for p in people})
+    zones = [p.get("zone") for p in people if p.get("zone")]
+    zone = zones[0] if zones else None
+    zone_label = _zone_summary(people)
+    signature = f"{len(ids)}|{','.join(map(str, ids))}|{zone_label}"
+    with _digest_lock:
+        if _digest_signature.get(category) == signature:
+            return None
+        _digest_signature[category] = signature
+
+    if category == "drowning":
+        title = "Possible Drowning" if len(ids) == 1 else f"Possible drowning · {len(ids)} people"
+        meta = (
+            f"{zone_label} · Person {_format_person_list(ids)} · {source_label}"
+            if len(ids) == 1
+            else f"{zone_label} · Persons {_format_person_list(ids)} · {source_label}"
+        )
+    else:
+        title = "Unsupervised Person" if len(ids) == 1 else f"Unsupervised swimmers · {len(ids)}"
+        meta = (
+            f"{zone_label} · Person {_format_person_list(ids)} · {source_label}"
+            if len(ids) == 1
+            else f"{zone_label} · Persons {_format_person_list(ids)} · needs closer supervision · {source_label}"
+        )
+
+    confs = [p.get("conf") for p in people if p.get("conf") is not None]
+    entry = {
+        "id": digest_id,
+        "type": "alarm",
+        "code": meta_catalog.get("code", "EVT"),
+        "title": title,
+        "meta": meta,
+        "time": now.strftime("%I:%M:%S %p").lstrip("0"),
+        "date": "Today",
+        "status": "pending",
+        "severity": "HIGH",
+        "category": category,
+        "camera": camera,
+        "person_id": ids[0] if len(ids) == 1 else None,
+        "zone": zone,
+        "zone_label": zone_label,
+        "event": event_name,
+        "is_alert": True,
+        "ts": now.timestamp(),
+        "confidence": max(confs) if confs else None,
+        "digest": True,
+    }
+    with _lock:
+        _event_log.appendleft(entry)
+    threading.Thread(target=sync_event_to_backend, args=(dict(entry),), daemon=True).start()
+    return entry
+
 
 def sync_event_to_backend(entry: dict):
     """Persist live detection events to the Express backend for Event history."""
@@ -402,6 +517,10 @@ def reset_people():
     with _lock:
         _person_alias.clear()
         _person_memory.clear()
+    with _digest_lock:
+        _open_unsupervised.clear()
+        _open_drowning.clear()
+        _digest_signature.clear()
 
 
 def push_event(person_id: int, zone: str, event_name: str, is_alert: bool, supervision_data: dict = None):
@@ -557,6 +676,23 @@ class DrowningWatcher:
         with self._cond:
             events, self._events = self._events, []
         return events
+
+    def open_alert_people(self) -> list[dict]:
+        """People currently in a sustained drowning streak (for the digest roster)."""
+        now = time.time()
+        open_people = []
+        for pid, (started, last) in list(self._streaks.items()):
+            if now - last > self.gap_sec:
+                continue
+            if now - started < self.hold_sec:
+                continue
+            open_people.append({
+                "id": int(pid),
+                "zone": "orange",
+                "zone_label": ZONE_LABEL.get("orange", "Deep pool"),
+                "conf": None,
+            })
+        return open_people
 
     def latest_result(self) -> dict | None:
         """Boxes and crop poses of the newest processed frame, tagged with that frame's seq/ts."""
@@ -1623,39 +1759,100 @@ def capture_loop(cfg: dict):
 
     def log_events(supervision_events, reports, seq: int, ts: float, drowning_events=()):
         def logged(entry):
-            if entry and entry["is_alert"]:
+            if entry and entry.get("is_alert"):
                 _media.request(entry["id"], seq, ts)
             return entry
 
         conf_by_id = {r["id"]: r.get("conf") for r in reports}
+        digest_supervision = False
+        digest_drowning = False
+
         for sev in supervision_events:
-            supervision_data = dict(sev.get('supervision_data') or {})
-            nearest = supervision_data.get('nearest_person_id')
-            supervision_data['confidence'] = conf_by_id.get(sev['id'])
-            supervision_data['nearest_confidence'] = conf_by_id.get(nearest) if nearest is not None else None
-            if nearest is not None:
-                with _lock:
-                    supervision_data['nearest_person_id'] = _person_alias.get(nearest, nearest)
-            if logged(push_event(sev['id'], sev['zone'], sev['event'], bool(sev['is_alert']), supervision_data)):
-                sep = supervision_data.get('separation_distance')
-                thr = supervision_data.get('supervision_threshold', 0.7)
-                sep_str = f"{sep:.2f}m" if sep is not None else "N/A"
-                print(
-                    f"  [{sev['event']}] Person #{sev['id']} "
-                    f"| Zone: {sev['zone']} | Dist: {sep_str} vs {thr}m threshold"
-                )
+            event_name = sev.get("event")
+            pid = int(sev["id"])
+            zone = sev.get("zone")
+            zone_label = ZONE_LABEL.get(zone, zone)
+            if event_name == "UNSUPERVISED" and sev.get("is_alert"):
+                with _digest_lock:
+                    _open_unsupervised[pid] = {"id": pid, "zone": zone, "zone_label": zone_label}
+                digest_supervision = True
+                print(f"  [UNSUPERVISED] Person #{pid} | Zone: {zone} (digest)")
+            elif event_name in ("SUPERVISED",) or (event_name == "UNSUPERVISED" and not sev.get("is_alert")):
+                with _digest_lock:
+                    if pid in _open_unsupervised:
+                        del _open_unsupervised[pid]
+                        digest_supervision = True
+                # Keep a non-alert history row for supervised transitions only.
+                if event_name == "SUPERVISED":
+                    supervision_data = dict(sev.get("supervision_data") or {})
+                    nearest = supervision_data.get("nearest_person_id")
+                    supervision_data["confidence"] = conf_by_id.get(sev["id"])
+                    supervision_data["nearest_confidence"] = conf_by_id.get(nearest) if nearest is not None else None
+                    if nearest is not None:
+                        with _lock:
+                            supervision_data["nearest_person_id"] = _person_alias.get(nearest, nearest)
+                    push_event(sev["id"], sev["zone"], "SUPERVISED", False, supervision_data)
+            elif event_name == "AFTER_HOURS_PRESENCE" and sev.get("is_alert"):
+                with _digest_lock:
+                    _open_unsupervised[pid] = {
+                        "id": pid, "zone": zone, "zone_label": zone_label or "After hours",
+                    }
+                digest_supervision = True
+                print(f"  [AFTER_HOURS] Person #{pid} (digest)")
+            elif sev.get("is_alert"):
+                # Any other supervision alert still folds into the digest roster.
+                with _digest_lock:
+                    _open_unsupervised[pid] = {"id": pid, "zone": zone, "zone_label": zone_label}
+                digest_supervision = True
+
         for r in reports:
             if r.get("event") and logged(push_event(r["id"], r["zone"], r["event"], bool(r.get("is_alert")))):
                 print(
                     f"  Person #{r['id']} | Zone: {ZONE_LABEL.get(r['zone'], r['zone'])} "
                     f"| Event: {r['event']}"
                 )
+
         for d in drowning_events:
-            if logged(push_event(d["id"], d["zone"], "POSSIBLE_DROWNING", True, {"confidence": d["conf"]})):
-                print(
-                    f"  [POSSIBLE_DROWNING] Person #{d['id']} "
-                    f"| Zone: {ZONE_LABEL.get(d['zone'], d['zone'])} | conf {d['conf']:.2f}"
-                )
+            if d.get("_sync_only"):
+                continue
+            pid = int(d["id"])
+            zone = d.get("zone")
+            with _digest_lock:
+                _open_drowning[pid] = {
+                    "id": pid,
+                    "zone": zone,
+                    "zone_label": ZONE_LABEL.get(zone, zone),
+                    "conf": d.get("conf"),
+                }
+            digest_drowning = True
+            print(
+                f"  [POSSIBLE_DROWNING] Person #{pid} "
+                f"| Zone: {ZONE_LABEL.get(zone, zone)} | conf {float(d.get('conf') or 0):.2f} (digest)"
+            )
+
+        if digest_supervision:
+            with _digest_lock:
+                people = list(_open_unsupervised.values())
+            entry = push_category_digest(
+                "supervision",
+                "UNSUPERVISED",
+                people,
+                clear=not people,
+            )
+            if logged(entry):
+                print(f"  [DIGEST supervision] {entry['title']} · {entry['meta']}")
+
+        if digest_drowning or any(d.get("_sync_only") for d in drowning_events):
+            with _digest_lock:
+                people = list(_open_drowning.values())
+            entry = push_category_digest(
+                "drowning",
+                "POSSIBLE_DROWNING",
+                people,
+                clear=not people,
+            )
+            if logged(entry):
+                print(f"  [DIGEST drowning] {entry['title']} · {entry['meta']}")
 
     def inference_worker(grabber: FrameGrabber, results: deque, scene_lock: threading.Lock,
                          stop: threading.Event):
@@ -1695,6 +1892,28 @@ def capture_loop(cfg: dict):
                         use_zones=grabber.kind != "video",
                     )
                     drowning_events = drowning.drain_events()
+                    open_drown = drowning.open_alert_people()
+                    with _digest_lock:
+                        merged = {}
+                        for hit in open_drown:
+                            prev = _open_drowning.get(int(hit["id"])) or {}
+                            merged[int(hit["id"])] = {
+                                **hit,
+                                "conf": prev.get("conf") if prev.get("conf") is not None else hit.get("conf"),
+                            }
+                        for hit in drowning_events:
+                            pid = int(hit["id"])
+                            merged[pid] = {
+                                "id": pid,
+                                "zone": hit.get("zone"),
+                                "zone_label": ZONE_LABEL.get(hit.get("zone"), hit.get("zone")),
+                                "conf": hit.get("conf"),
+                            }
+                        roster_changed = set(merged) != set(_open_drowning)
+                        _open_drowning.clear()
+                        _open_drowning.update(merged)
+                    if roster_changed and not drowning_events:
+                        drowning_events = [{"id": -1, "zone": None, "conf": 0, "_sync_only": True}]
                 scene.update(seq=seq, ts=ts, ready_at=time.time(), epoch=loops, video=grabber.kind == "video")
                 with scene_lock:
                     results.append(scene)
@@ -1704,8 +1923,8 @@ def capture_loop(cfg: dict):
                     _latest_reports = [{**r, "event": None, "is_alert": False} for r in reports]
                 if loops == 0:
                     log_events(supervision_events, reports, seq, ts)
-                    for d in drowning_events:
-                        log_events([], [], d["seq"], d["ts"], [d])
+                    if drowning_events:
+                        log_events([], [], seq, ts, drowning_events)
             except Exception as exc:
                 print(f"[stream] annotate error: {exc}")
             elapsed = time.time() - started

@@ -27,6 +27,10 @@ const SEVERITY_RANK = { drowning: 0, intrusion: 1, 'deep-water': 2, supervision:
 
 function collapseKey(event) {
   if (event.category === 'broadcast') return `broadcast-${event.id}`
+  // Digests (and same-category drowning/supervision pages) share one tray notification.
+  if (String(event.id || '').startsWith('digest-') || event.category === 'drowning' || event.category === 'supervision') {
+    return `category-${event.category}-${event.camera || 'cam'}`
+  }
   if (event.person_id != null) return `person-${event.person_id}`
   return `event-${event.id}`
 }
@@ -37,8 +41,17 @@ function bySeverity(a, b) {
 
 function groupTitle(events, urgent) {
   const primary = [...events].sort(bySeverity)[0]
-  if (events.length === 1) {
-    const label = PUSH_TITLES[primary.category] || primary.title || 'Pool alert'
+  // Digest rows already carry the count in the title ("Possible drowning · 3 people").
+  if (String(primary.id || '').startsWith('digest-') || events.length === 1) {
+    const label = primary.title || PUSH_TITLES[primary.category] || 'Pool alert'
+    return urgent ? `URGENT — no response yet: ${label}` : label
+  }
+  if (primary.category === 'drowning') {
+    const label = `Possible drowning · ${events.length} people`
+    return urgent ? `URGENT — no response yet: ${label}` : label
+  }
+  if (primary.category === 'supervision') {
+    const label = `Unsupervised swimmers · ${events.length}`
     return urgent ? `URGENT — no response yet: ${label}` : label
   }
   const person = primary.person_id != null ? `Person #${primary.person_id}` : 'One swimmer'
@@ -47,7 +60,13 @@ function groupTitle(events, urgent) {
 }
 
 function groupBody(events) {
-  if (events.length === 1) return pushBody(events[0])
+  const primary = [...events].sort(bySeverity)[0]
+  if (String(primary.id || '').startsWith('digest-') || events.length === 1) {
+    return primary.meta || pushBody(primary)
+  }
+  if (primary.category === 'drowning' || primary.category === 'supervision') {
+    return primary.meta || pushBody(primary)
+  }
   const titles = []
   for (const event of [...events].sort(bySeverity)) {
     const label = PUSH_TITLES[event.category] || event.title
@@ -57,7 +76,22 @@ function groupBody(events) {
 }
 
 async function openAlertsFor(db, event) {
-  if (event.person_id == null || event.category === 'broadcast') return [event]
+  if (event.category === 'broadcast') return [event]
+  // Digest rows are already one alert for many people.
+  if (String(event.id || '').startsWith('digest-')) return [event]
+  // Legacy per-person drowning/supervision rows share one push.
+  if (event.category === 'drowning' || event.category === 'supervision') {
+    const rows = await all(
+      db,
+      `SELECT * FROM events
+       WHERE status = 'pending' AND is_alert = 1
+         AND category = ?
+         AND responding_at IS NULL`,
+      [event.category]
+    )
+    return rows.length ? rows : [event]
+  }
+  if (event.person_id == null) return [event]
   const rows = await all(
     db,
     `SELECT * FROM events

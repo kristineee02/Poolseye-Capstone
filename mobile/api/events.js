@@ -37,7 +37,13 @@ export async function respondToMobileEvent(token, id) {
     method: 'POST',
     token,
   })
-  if (!result.ok) return result
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: result.error,
+      event: result.event ? toMobileAlert(result.event) : null,
+    }
+  }
   return { ok: true, event: toMobileAlert(result.event) }
 }
 

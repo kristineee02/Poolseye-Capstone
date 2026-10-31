@@ -24,6 +24,14 @@ function describeAlert(alert) {
   const where = zone ? ` in the ${zone.toLowerCase()}` : ''
 
   if (alert.event === 'AFTER_HOURS_PRESENCE') return `${person} detected${where} outside operating hours.`
+  if (String(alert.id || '').startsWith('digest-') || (alert.meta && /Persons #/.test(alert.meta))) {
+    if (alert.category === 'drowning') {
+      return `${alert.meta || 'Multiple people may be in distress'}. Respond immediately.`
+    }
+    if (alert.category === 'supervision') {
+      return `${alert.meta || 'Multiple swimmers need closer supervision'}.`
+    }
+  }
   if (alert.category === 'supervision') {
     const threshold = alert.supervision_threshold ?? 0.7
     return `${person} inside restricted zone, no one else within ${threshold} m.`

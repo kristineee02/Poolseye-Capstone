@@ -20,8 +20,9 @@ const TITLES = {
   supervision: 'Unsupervised swimmer',
 };
 
-function isActionable(alert) {
-  return !alert.respondingAt || alert.respondingMine;
+/** Tray banners are only for alerts that still need a first claim. */
+function needsTrayBanner(alert) {
+  return Boolean(alert.dispatchedAt) && !alert.respondingAt;
 }
 
 function bannerCopy(group) {
@@ -79,12 +80,13 @@ export function useAlertNotifications(token, { onPendingCount, onOpenAlert } = {
       callbacks.current.onPendingCount?.(pendingCount);
 
       const events = result.events || [];
-      const actionable = events.filter(isActionable);
+      const openForTray = events.filter(needsTrayBanner);
       if (pendingCount === 0 && lastPendingCount.current !== 0) {
         clearAlertNotifications().catch(() => {});
         announced.current = new Map();
       } else {
-        dismissStaleAlertNotifications(new Set(actionable.map((alert) => String(alert.id)))).catch(() => {});
+        // Drop banners once anyone claims or the alert is closed.
+        dismissStaleAlertNotifications(new Set(openForTray.map((alert) => String(alert.id)))).catch(() => {});
       }
       lastPendingCount.current = pendingCount;
 
@@ -93,8 +95,7 @@ export function useAlertNotifications(token, { onPendingCount, onOpenAlert } = {
 
       const alreadyShown = pushReady.current ? await presentedCollapseKeys() : new Set();
       const groups = new Map();
-      for (const alert of actionable) {
-        if (!alert.dispatchedAt) continue;
+      for (const alert of openForTray) {
         const key = alertCollapseKey(alert);
         const group = groups.get(key) || [];
         group.push(alert);
