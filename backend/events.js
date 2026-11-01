@@ -1,6 +1,7 @@
 const express = require('express')
-const { get, all, run } = require('./db')
+const { get, all, run, transaction } = require('./db')
 const { dispatchEvent, resendUrgent } = require('./dispatch')
+const { publishAlertChange } = require('./alertSync')
 const { MEDIA_DIR, MEDIA_ROUTE, saveMedia, removeMedia } = require('./mediaStorage')
 
 const SITE_TIME_ZONE = process.env.SITE_TIMEZONE || 'Asia/Manila'
@@ -58,11 +59,25 @@ function rowToEvent(row) {
     clip_uri: row.clip_uri ?? null,
     acknowledged_at: row.acknowledged_at ?? null,
     acknowledged_by: row.acknowledged_by ?? null,
+    closed_at: row.closed_at ?? null,
+    closed_by: row.closed_by ?? null,
     dispatched_at: row.dispatched_at ?? null,
     dispatched_by: row.dispatched_by ?? null,
     responding_at: row.responding_at ?? null,
     responding_by: row.responding_by ?? null,
     escalated_at: row.escalated_at ?? null,
+    priority: Number(row.priority || 4),
+    priority_label: row.priority_label || 'informational',
+    incident_key: row.incident_key || null,
+    group_key: row.group_key || null,
+    person_ids: parsePersonIds(row.person_ids, row.person_id),
+    affected_count: parsePersonIds(row.person_ids, row.person_id).length || 1,
+    occurrence_count: Number(row.occurrence_count || 1),
+    first_detected_at: row.first_detected_at ?? row.ts,
+    last_detected_at: row.last_detected_at ?? row.ts,
+    notification_count: Number(row.notification_count || 0),
+    last_notified_at: row.last_notified_at ?? null,
+    siren_activated_at: row.siren_activated_at ?? null,
     ts: row.ts,
     // Supervision-specific fields
     separation_distance: row.separation_distance,
@@ -73,9 +88,56 @@ function rowToEvent(row) {
   }
 }
 
+const PRIORITY_BY_CATEGORY = {
+  drowning: { value: 1, label: 'critical', severity: 'CRITICAL' },
+  intrusion: { value: 2, label: 'high', severity: 'HIGH' },
+  'deep-water': { value: 2, label: 'high', severity: 'HIGH' },
+  supervision: { value: 3, label: 'medium', severity: 'MEDIUM' },
+}
+
+function parsePersonIds(value, fallback = null) {
+  let values = value
+  if (typeof values === 'string') {
+    try { values = JSON.parse(values) } catch { values = values.match(/\d+/g) || [] }
+  }
+  if (!Array.isArray(values)) values = []
+  if (fallback != null) values.push(fallback)
+  return [...new Set(values.map(Number).filter(Number.isFinite))].sort((a, b) => a - b)
+}
+
+function payloadPersonIds(body) {
+  const explicit = parsePersonIds(body?.person_ids, body?.person_id)
+  if (explicit.length) return explicit
+  return parsePersonIds(String(body?.meta || '').match(/#\d+/g)?.map((v) => v.slice(1)) || [])
+}
+
+function incidentPriority(category, isAlert, eventName, requestedSeverity = null) {
+  if (!isAlert || category === 'yellow' || eventName === 'SUPERVISED') {
+    return { value: 4, label: 'informational', severity: 'LOW' }
+  }
+  if (PRIORITY_BY_CATEGORY[category]) return PRIORITY_BY_CATEGORY[category]
+  const severity = String(requestedSeverity || 'MEDIUM').toUpperCase()
+  if (severity === 'CRITICAL') return { value: 1, label: 'critical', severity }
+  if (severity === 'HIGH') return { value: 2, label: 'high', severity }
+  if (severity === 'LOW') return { value: 4, label: 'informational', severity }
+  return { value: 3, label: 'medium', severity: 'MEDIUM' }
+}
+
+function incidentKey(body, personId) {
+  const camera = String(body?.camera || 'CAM-01')
+  const category = String(body?.category || 'zone')
+  const zone = String(body?.zone || body?.zone_label || 'pool').toLowerCase()
+  if (category === 'drowning') return `${camera}:drowning:person:${personId ?? body?.id}`
+  if (category === 'supervision') return `${camera}:supervision:zone:${zone}`
+  if (category === 'intrusion' || category === 'deep-water') {
+    return `${camera}:${category}:zone:${zone}`
+  }
+  return `${camera}:${category}:${body?.id || zone}`
+}
+
 /** rowToEvent for many rows, plus who is responding to and who closed each one. */
 async function eventsWithResponders(db, rows) {
-  const ids = [...new Set(rows.flatMap((r) => [r.responding_by, r.acknowledged_by]).filter((v) => v != null))]
+  const ids = [...new Set(rows.flatMap((r) => [r.responding_by, r.acknowledged_by, r.closed_by]).filter((v) => v != null))]
   const users = new Map()
   if (ids.length) {
     const found = await all(db, `SELECT id, name, role FROM users WHERE id IN (${ids.map(() => '?').join(', ')})`, ids)
@@ -86,6 +148,7 @@ async function eventsWithResponders(db, rows) {
     responder_name: users.get(row.responding_by)?.name ?? null,
     acknowledged_by_name: users.get(row.acknowledged_by)?.name ?? null,
     acknowledged_by_role: users.get(row.acknowledged_by)?.role ?? null,
+    closed_by_name: users.get(row.closed_by)?.name ?? null,
   }))
 }
 
@@ -99,7 +162,7 @@ async function setEventStatus(db, id, status, userId) {
   if (status === 'pending') {
     await run(
       db,
-      'UPDATE events SET status = ?, acknowledged_at = NULL, acknowledged_by = NULL WHERE id = ?',
+      'UPDATE events SET status = ?, closed_at = NULL, closed_by = NULL WHERE id = ?',
       [status, id]
     )
     return
@@ -107,8 +170,8 @@ async function setEventStatus(db, id, status, userId) {
   await run(
     db,
     `UPDATE events SET status = ?,
-      acknowledged_at = COALESCE(acknowledged_at, ?),
-      acknowledged_by = COALESCE(acknowledged_by, ?)
+      closed_at = COALESCE(closed_at, ?),
+      closed_by = COALESCE(closed_by, ?)
      WHERE id = ?`,
     [status, Date.now() / 1000, userId ?? null, id]
   )
@@ -117,6 +180,8 @@ async function setEventStatus(db, id, status, userId) {
 function normalizeIngestPayload(body) {
   const id = String(body?.id || `evt-${Date.now()}`)
   const ts = Number(body?.ts) || Date.now() / 1000
+  const priority = incidentPriority(String(body?.category || ''), Boolean(body?.is_alert), body?.event || body?.event_name, body?.severity)
+  const personIds = payloadPersonIds(body)
   return {
     id,
     type: String(body?.type || 'info'),
@@ -127,7 +192,7 @@ function normalizeIngestPayload(body) {
     event_time: siteEventTime(ts),
     event_date: body?.date ? String(body.date) : body?.event_date ? String(body.event_date) : null,
     status: String(body?.status || (body?.is_alert ? 'pending' : 'resolved')),
-    severity: body?.severity ? String(body.severity) : null,
+    severity: priority.severity || (body?.severity ? String(body.severity) : null),
     category: body?.category ? String(body.category) : null,
     confidence: body?.confidence != null ? Number(body.confidence) : null,
     camera: String(body?.camera || 'CAM-01'),
@@ -144,6 +209,14 @@ function normalizeIngestPayload(body) {
     boundary_direction: body?.boundary_direction ? String(body.boundary_direction) : null,
     nearest_person_id: body?.nearest_person_id != null ? Number(body.nearest_person_id) : null,
     nearest_confidence: body?.nearest_confidence != null ? Number(body.nearest_confidence) : null,
+    priority: priority.value,
+    priority_label: priority.label,
+    incident_key: body?.incident_key ? String(body.incident_key) : null,
+    group_key: body?.group_key ? String(body.group_key) : null,
+    person_ids: personIds,
+    occurrence_count: Math.max(1, Number(body?.occurrence_count) || 1),
+    first_detected_at: Number(body?.first_detected_at) || ts,
+    last_detected_at: Number(body?.last_detected_at) || ts,
   }
 }
 
@@ -168,8 +241,10 @@ async function insertEvent(db, payload) {
       severity, category, confidence, camera, person_id, zone, zone_label,
       event_name, is_alert, snapshot_uri, ts,
       separation_distance, supervision_threshold, boundary_direction,
-      nearest_person_id, nearest_confidence
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      nearest_person_id, nearest_confidence, priority, priority_label,
+      incident_key, group_key, person_ids, occurrence_count,
+      first_detected_at, last_detected_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       type = excluded.type,
       code = excluded.code,
@@ -192,7 +267,15 @@ async function insertEvent(db, payload) {
       supervision_threshold = excluded.supervision_threshold,
       boundary_direction = excluded.boundary_direction,
       nearest_person_id = excluded.nearest_person_id,
-      nearest_confidence = excluded.nearest_confidence`,
+      nearest_confidence = excluded.nearest_confidence,
+      priority = excluded.priority,
+      priority_label = excluded.priority_label,
+      incident_key = COALESCE(excluded.incident_key, events.incident_key),
+      group_key = COALESCE(excluded.group_key, events.group_key),
+      person_ids = COALESCE(excluded.person_ids, events.person_ids),
+      occurrence_count = MAX(events.occurrence_count, excluded.occurrence_count),
+      first_detected_at = COALESCE(events.first_detected_at, excluded.first_detected_at),
+      last_detected_at = excluded.last_detected_at`,
     [
       e.id,
       e.type,
@@ -218,16 +301,118 @@ async function insertEvent(db, payload) {
       e.boundary_direction,
       e.nearest_person_id,
       e.nearest_confidence,
+      e.priority,
+      e.priority_label,
+      e.incident_key,
+      e.group_key,
+      JSON.stringify(e.person_ids),
+      e.occurrence_count,
+      e.first_detected_at,
+      e.last_detected_at,
     ]
   )
+  for (const personId of e.person_ids) {
+    await run(db, `INSERT INTO event_people (event_id, person_id, first_seen_at, last_seen_at, occurrence_count)
+      VALUES (?, ?, ?, ?, 1)
+      ON CONFLICT(event_id, person_id) DO UPDATE SET
+        last_seen_at = excluded.last_seen_at,
+        occurrence_count = event_people.occurrence_count + 1`, [e.id, personId, e.ts, e.ts])
+  }
   const row = await get(db, 'SELECT * FROM events WHERE id = ?', [e.id])
   return rowToEvent(row)
 }
 
+async function ingestOneIncident(db, payload, personIds) {
+  const personId = payload.category === 'drowning' ? personIds[0] : (payload.person_id ?? null)
+  const key = incidentKey(payload, personId)
+  const priority = incidentPriority(payload.category, Boolean(payload.is_alert), payload.event || payload.event_name, payload.severity)
+  const existing = await get(db,
+    `SELECT * FROM events WHERE incident_key = ? AND status = 'pending' AND is_alert = 1
+     ORDER BY last_detected_at DESC, ts DESC LIMIT 1`, [key])
+
+  if (!existing) {
+    const event = await insertEvent(db, {
+      ...payload,
+      person_id: personId,
+      person_ids: personIds,
+      incident_key: key,
+      group_key: payload.group_key || payload.id || key,
+      priority: priority.value,
+      priority_label: priority.label,
+    })
+    return { event, deduplicated: false }
+  }
+
+  const historicalIds = parsePersonIds(existing.person_ids, existing.person_id)
+  const activeIds = payload.category === 'supervision'
+    ? personIds
+    : [...new Set([...historicalIds, ...personIds])]
+  const title = payload.category === 'supervision'
+    ? (activeIds.length === 1 ? 'Unsupervised Swimmer' : `Unsupervised swimmers · ${activeIds.length}`)
+    : ((payload.category === 'intrusion' || payload.category === 'deep-water') && activeIds.length > 1
+      ? `${String(payload.title || existing.title).replace(/ · \d+ swimmers$/, '')} · ${activeIds.length} swimmers`
+      : existing.title)
+  await run(db, `UPDATE events SET
+      title = ?, meta = ?, zone = COALESCE(?, zone), zone_label = COALESCE(?, zone_label),
+      confidence = COALESCE(?, confidence), person_ids = ?, occurrence_count = occurrence_count + 1,
+      last_detected_at = ?, ts = ?, event_time = ?, severity = ?, priority = ?, priority_label = ?
+    WHERE id = ?`, [
+    title, payload.meta || existing.meta, payload.zone || null, payload.zone_label || null,
+    payload.confidence ?? null, JSON.stringify(activeIds), payload.ts, payload.ts,
+    siteEventTime(payload.ts), priority.severity, priority.value, priority.label, existing.id,
+  ])
+  for (const id of personIds) {
+    await run(db, `INSERT INTO event_people (event_id, person_id, first_seen_at, last_seen_at, occurrence_count)
+      VALUES (?, ?, ?, ?, 1)
+      ON CONFLICT(event_id, person_id) DO UPDATE SET last_seen_at = excluded.last_seen_at,
+        occurrence_count = event_people.occurrence_count + 1`, [existing.id, id, payload.ts, payload.ts])
+  }
+  return {
+    event: rowToEvent(await get(db, 'SELECT * FROM events WHERE id = ?', [existing.id])),
+    deduplicated: true,
+  }
+}
+
+async function ingestDetection(db, body) {
+  const normalized = normalizeIngestPayload(body)
+  const people = normalized.person_ids
+  const groupKey = String(body?.id || `${normalized.camera}:${normalized.category}`)
+
+  // A detector clear closes every person-specific critical incident from that digest.
+  if (normalized.category === 'drowning' && !normalized.is_alert && normalized.status === 'resolved') {
+    await run(db, `UPDATE events SET status = 'resolved', is_alert = 0, acknowledged_at = COALESCE(acknowledged_at, ?)
+      WHERE category = 'drowning' AND camera = ? AND group_key = ? AND status = 'pending'`,
+    [Date.now() / 1000, normalized.camera, groupKey])
+    return { events: [], deduplicated: true }
+  }
+
+  if (!normalized.is_alert || normalized.priority === 4) {
+    const event = await insertEvent(db, { ...body, person_ids: people })
+    return { events: [event], deduplicated: false }
+  }
+
+  const payload = { ...body, ...normalized, group_key: groupKey }
+  const targets = normalized.category === 'drowning'
+    ? (people.length ? people.map((id) => [id]) : [[normalized.person_id].filter((id) => id != null)])
+    : [people]
+  const incidents = await transaction(db, async () => {
+    const rows = []
+    for (const ids of targets) {
+      const eventPayload = normalized.category === 'drowning'
+        ? { ...payload, id: `${groupKey}-p${ids[0] ?? 'unknown'}`, person_id: ids[0] ?? null }
+        : payload
+      rows.push(await ingestOneIncident(db, eventPayload, ids))
+    }
+    return rows
+  })
+  return {
+    events: incidents.map((incident) => incident.event),
+    deduplicated: incidents.some((incident) => incident.deduplicated),
+  }
+}
+
 const ALERT_SQL = "(is_alert = 1 OR type = 'alarm')"
 const DETECTION_CATEGORIES = ['intrusion', 'deep-water', 'supervision', 'drowning']
-// Matches LOOKBACK_SEC in dispatch.js: alerts older than this are no longer auto-sent either.
-const ACTIVE_ALERT_WINDOW_SEC = 15 * 60
 const SUPERVISED_WINDOW_SEC = 5 * 60
 // Possible drowning always outranks zone / unsupervised alerts on the Active Alert card.
 const ACTIVE_ALERT_ORDER_SQL = `CASE category
@@ -327,7 +512,9 @@ function registerEventRoutes(app, db, adminRequired) {
 
       const rows = await all(
         db,
-        `SELECT * FROM events ${where} ORDER BY ts DESC, created_at DESC LIMIT ? OFFSET ?`,
+        `SELECT * FROM events ${where}
+         ORDER BY CASE WHEN status = 'pending' AND is_alert = 1 THEN priority ELSE 9 END ASC,
+           ts DESC, created_at DESC LIMIT ? OFFSET ?`,
         [...params, pageSize, offset]
       )
 
@@ -361,17 +548,15 @@ function registerEventRoutes(app, db, adminRequired) {
   app.get('/api/events/active', adminRequired, async (_req, res) => {
     try {
       const now = Date.now() / 1000
-      const since = now - ACTIVE_ALERT_WINDOW_SEC
-      const row = await get(
+      const rows = await all(
         db,
         `SELECT * FROM events
          WHERE status = 'pending' AND is_alert = 1
            AND category IN (${DETECTION_CATEGORIES.map(() => '?').join(', ')})
-           AND ts >= ?
-         ORDER BY ${ACTIVE_ALERT_ORDER_SQL}, ts DESC
-         LIMIT 1`,
-        [...DETECTION_CATEGORIES, since]
+         ORDER BY priority ASC, ${ACTIVE_ALERT_ORDER_SQL}, ts DESC`,
+        DETECTION_CATEGORIES
       )
+      const row = rows[0]
       let group = null
       if (row) {
         const peers = await all(
@@ -379,9 +564,8 @@ function registerEventRoutes(app, db, adminRequired) {
           `SELECT id, title, person_id, zone_label, meta, category FROM events
            WHERE status = 'pending' AND is_alert = 1
              AND category = ?
-             AND ts >= ?
            ORDER BY ts DESC`,
-          [row.category, since]
+          [row.category]
         )
         group = {
           category: row.category,
@@ -402,6 +586,7 @@ function registerEventRoutes(app, db, adminRequired) {
           )
       res.json({
         active: row ? await eventWithResponder(db, row) : null,
+        alerts: await eventsWithResponders(db, rows),
         group,
         supervised: rowToEvent(supervisedRow),
       })
@@ -538,11 +723,17 @@ function registerEventRoutes(app, db, adminRequired) {
         return res.json({ ok: true, ignored: true })
       }
 
-      const event = await insertEvent(db, req.body)
-      res.status(201).json({ ok: true, event })
+      const result = await ingestDetection(db, req.body)
+      const event = result.events[0] || null
+      res.status(result.deduplicated ? 200 : 201).json({ ok: true, event, events: result.events, deduplicated: result.deduplicated })
+      publishAlertChange('ingested', event?.id || null)
 
-      if (event.category === 'drowning' && event.is_alert && event.status === 'pending') {
-        dispatchEvent(db, event.id).catch((err) => console.error('Auto-dispatch failed:', err))
+      // Every actionable incident is sent once when it is created. Updating an
+      // ongoing grouped incident cannot re-page because dispatched_at is claimed atomically.
+      for (const incident of result.events) {
+        if (incident.is_alert && incident.status === 'pending') {
+          dispatchEvent(db, incident.id).catch((err) => console.error('Auto-dispatch failed:', err))
+        }
       }
     } catch (err) {
       console.error(err)
@@ -561,13 +752,21 @@ function registerEventRoutes(app, db, adminRequired) {
         if (!media || !Buffer.isBuffer(req.body) || !req.body.length) {
           return res.status(400).json({ error: 'Send a JPEG snapshot or a WebM clip.' })
         }
-        const row = await get(db, 'SELECT id, snapshot_uri, clip_uri FROM events WHERE id = ?', [req.params.id])
-        if (!row) return res.status(404).json({ error: 'Event not found' })
+        let rows = await all(db, 'SELECT id, snapshot_uri, clip_uri FROM events WHERE id = ?', [req.params.id])
+        if (!rows.length) {
+          // A multi-person drowning digest becomes person-specific incidents;
+          // the detector still uploads one shared frame/clip under its source id.
+          rows = await all(db, 'SELECT id, snapshot_uri, clip_uri FROM events WHERE group_key = ?', [req.params.id])
+        }
+        if (!rows.length) return res.status(404).json({ error: 'Event not found' })
 
         const uri = await saveMedia(req.body, media)
-        await run(db, `UPDATE events SET ${media.column} = ? WHERE id = ?`, [uri, row.id])
+        const ids = rows.map((row) => row.id)
+        await run(db, `UPDATE events SET ${media.column} = ? WHERE id IN (${ids.map(() => '?').join(', ')})`, [uri, ...ids])
 
-        removeMedia(row[media.column]).catch(() => {})
+        for (const old of new Set(rows.map((row) => row[media.column]).filter(Boolean))) {
+          removeMedia(old).catch(() => {})
+        }
         res.status(201).json({ ok: true, uri })
       } catch (err) {
         console.error(err)
@@ -586,5 +785,7 @@ module.exports = {
   rowToEvent,
   eventsWithResponders,
   insertEvent,
+  ingestDetection,
   setEventStatus,
+  parsePersonIds,
 }

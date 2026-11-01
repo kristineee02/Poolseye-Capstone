@@ -21,8 +21,17 @@ export default function ConfirmModal({
   onClose,
   title,
   message,
+  badge,
+  subtitle,
+  meta,
+  description,
   children,
   actions,
+  stackedActions,
+  actionColor,
+  actionTint,
+  actionTextColor,
+  actionSecondaryTextColor,
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   onConfirm,
@@ -54,7 +63,16 @@ export default function ConfirmModal({
       icon={icon}
       title={title}
       message={message}
+      badge={badge}
+      subtitle={subtitle}
+      meta={meta}
+      description={description}
       actions={resolvedActions}
+      stackedActions={stackedActions}
+      actionColor={actionColor}
+      actionTint={actionTint}
+      actionTextColor={actionTextColor}
+      actionSecondaryTextColor={actionSecondaryTextColor}
     >
       {children}
     </AlertDialog>

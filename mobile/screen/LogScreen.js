@@ -61,7 +61,34 @@ const TYPE_CONFIG = {
     label: 'SAFE',
     tag: 'safe',
   },
+  high: {
+    accent: colors.high,
+    bg: colors.highTint,
+    border: colors.highBorder,
+    title: colors.highDark,
+    meta: colors.highMid,
+    label: 'HIGH',
+    tag: 'warn',
+  },
+  deep: {
+    accent: colors.accent,
+    bg: colors.accentTint,
+    border: colors.accentHighlight,
+    title: colors.accentDeep,
+    meta: colors.accent,
+    label: 'HIGH',
+    tag: 'info',
+  },
 };
+
+function alertVisual(event) {
+  if (event.category === 'drowning') return { ...TYPE_CONFIG.alarm, label: 'CRITICAL' };
+  if (event.category === 'intrusion') return TYPE_CONFIG.high;
+  if (event.category === 'deep-water') return TYPE_CONFIG.deep;
+  if (event.category === 'supervision') return { ...TYPE_CONFIG.warn, label: 'ATTENTION' };
+  if (event.category === 'yellow') return TYPE_CONFIG.info;
+  return TYPE_CONFIG[event.type] || TYPE_CONFIG.info;
+}
 
 const STATUS_TAG = {
   new: { type: 'warn', label: 'Pending' },
@@ -121,25 +148,35 @@ function FilterDropdown({ value, onChange }) {
 }
 
 function AlertCard({ event }) {
-  const cfg = TYPE_CONFIG[event.type] || TYPE_CONFIG.info;
-  const status = STATUS_TAG[event.status] || STATUS_TAG.ack;
+  const cfg = alertVisual(event);
+  const status = event.backendStatus === 'pending'
+    ? { type: 'warn', label: 'Active' }
+    : event.backendStatus === 'dismissed'
+      ? { type: 'info', label: 'False alarm' }
+      : STATUS_TAG.ack;
 
   return (
-    <View style={[styles.card, { backgroundColor: cfg.bg, borderColor: cfg.border }]}>
+    <View style={styles.card}>
       <View style={[styles.stripe, { backgroundColor: cfg.accent }]} />
 
       <View style={styles.cardInner}>
         <View style={styles.cardTop}>
           <View style={[styles.dot, { backgroundColor: cfg.accent }]} />
-          <Text style={[styles.cardTitle, { color: cfg.title }]} numberOfLines={2}>
+          <Text style={styles.cardTitle} numberOfLines={2}>
             {event.title}
           </Text>
-          <Text style={[styles.cardTime, { color: cfg.meta }]}>{event.time}</Text>
+          <Text style={styles.cardTime}>{event.time}</Text>
         </View>
 
-        <Text style={[styles.cardMeta, { color: cfg.meta }]} numberOfLines={2}>
+        <Text style={styles.cardMeta} numberOfLines={2}>
           {event.meta}
         </Text>
+
+        {event.respondingAt ? (
+          <Text style={styles.responderText} numberOfLines={1}>
+            {event.respondingMine ? 'You are responding' : `${event.responderName || 'A lifeguard'} responding`}
+          </Text>
+        ) : null}
 
         <View style={styles.cardTags}>
           <Tag type={cfg.tag}>{cfg.label}</Tag>
@@ -153,7 +190,7 @@ function AlertCard({ event }) {
 export default function LogScreen({ onPendingCountChange }) {
   const { tabBarClearance } = useLayoutInsets();
   const { token } = useAuth();
-  const [filter, setFilter] = useState('all');
+  const [section, setSection] = useState('active');
   const [events, setEvents] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -190,19 +227,33 @@ export default function LogScreen({ onPendingCountChange }) {
     setRefreshing(false);
   };
 
-  const filtered = useMemo(
-    () => events.filter((e) => matchesFilter(e, filter)),
-    [events, filter],
-  );
+  const activeCount = events.filter((event) => event.backendStatus === 'pending').length;
+  const filtered = useMemo(() => events.filter((event) => (
+    section === 'active' ? event.backendStatus === 'pending' : event.backendStatus !== 'pending'
+  )), [events, section]);
 
   return (
     <View style={styles.container}>
-      <View style={styles.toolbar}>
-        <Text style={styles.resultText}>
-          {filtered.length} alert{filtered.length !== 1 ? 's' : ''}
-        </Text>
-        <FilterDropdown value={filter} onChange={setFilter} />
+      <View style={styles.segmented}>
+        <TouchableOpacity
+          style={[styles.segmentButton, section === 'active' && styles.segmentButtonActive]}
+          onPress={() => setSection('active')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.segmentText, section === 'active' && styles.segmentTextActive]}>
+            Active ({activeCount})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.segmentButton, section === 'history' && styles.segmentButtonActive]}
+          onPress={() => setSection('history')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.segmentText, section === 'history' && styles.segmentTextActive]}>History</Text>
+        </TouchableOpacity>
       </View>
+
+      <Text style={styles.resultText}>{filtered.length} alert{filtered.length !== 1 ? 's' : ''}</Text>
 
       {error && events.length ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -222,8 +273,14 @@ export default function LogScreen({ onPendingCountChange }) {
             <DataLoadError message={error} onRetry={retryLoad} />
           ) : (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyTitle}>No alerts match this filter</Text>
-              <Text style={styles.emptySub}>Try another option in the filter dropdown.</Text>
+              <Text style={styles.emptyTitle}>
+                {section === 'active' ? 'No active alerts' : 'No alert history yet'}
+              </Text>
+              <Text style={styles.emptySub}>
+                {section === 'active'
+                  ? 'New incidents will appear here automatically.'
+                  : 'Resolved and false-alarm incidents will appear here.'}
+              </Text>
             </View>
           )
         }
@@ -244,6 +301,33 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingBottom: 12,
     gap: 12,
+  },
+  segmented: {
+    flexDirection: 'row',
+    backgroundColor: colors.accentTint,
+    borderRadius: radius.full,
+    padding: 4,
+    marginBottom: 12,
+  },
+  segmentButton: {
+    flex: 1,
+    minHeight: touch.min,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentButtonActive: {
+    backgroundColor: colors.bgPanel,
+    ...shadow.sm,
+  },
+  segmentText: {
+    fontSize: typography.sm,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  segmentTextActive: {
+    color: colors.accent,
+    fontWeight: '800',
   },
   resultText: {
     fontSize: typography.sm,
@@ -331,6 +415,8 @@ const styles = StyleSheet.create({
   },
 
   card: {
+    backgroundColor: colors.bgPanel,
+    borderColor: colors.borderSubtle,
     borderRadius: radius.md,
     borderWidth: 1,
     overflow: 'hidden',
@@ -363,22 +449,31 @@ const styles = StyleSheet.create({
     fontSize: typography.sm,
     fontWeight: '700',
     lineHeight: 18,
+    color: colors.textPrimary,
   },
   cardTime: {
     fontSize: 10,
     fontWeight: '600',
     flexShrink: 0,
     marginTop: 1,
+    color: colors.textSecondary,
   },
   cardMeta: {
     fontSize: typography.xs,
     lineHeight: 16,
     paddingLeft: 15,
+    color: colors.textSecondary,
   },
   cardTags: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
+    paddingLeft: 15,
+  },
+  responderText: {
+    fontSize: typography.xs,
+    color: colors.safe,
+    fontWeight: '700',
     paddingLeft: 15,
   },
 

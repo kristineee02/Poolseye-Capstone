@@ -22,7 +22,7 @@ const TITLES = {
 
 /** Tray banners are only for alerts that still need a first claim. */
 function needsTrayBanner(alert) {
-  return Boolean(alert.dispatchedAt) && !alert.respondingAt;
+  return Boolean(alert.dispatchedAt) && !alert.respondingAt && !alert.acknowledgedAt;
 }
 
 function bannerCopy(group) {

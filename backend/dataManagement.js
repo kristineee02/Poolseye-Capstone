@@ -493,6 +493,25 @@ async function restoreDeletedData(db, file) {
         if (rows.length < PAGE_SIZE) break
       }
 
+      // Grouped incidents keep their complete per-person audit trail here.
+      // Older backups do not have this table, so restoration remains backward compatible.
+      if (sourceTables.has('event_people')) {
+        const columns = ['event_id', 'person_id', 'first_seen_at', 'last_seen_at', 'occurrence_count']
+        const sourceColumns = await tableColumns(source, 'event_people', true)
+        if (columns.every((column) => sourceColumns.includes(column))) {
+          for (let offset = 0; ; offset += PAGE_SIZE) {
+            const people = await fileAll(source,
+              `SELECT ${columns.map(quoteIdent).join(', ')} FROM event_people ORDER BY rowid LIMIT ? OFFSET ?`,
+            [PAGE_SIZE, offset])
+            for (const person of people) {
+              await run(db, `INSERT OR IGNORE INTO event_people (${columns.map(quoteIdent).join(', ')})
+                VALUES (${columns.map(() => '?').join(', ')})`, columns.map((column) => toSqliteValue(person[column])))
+            }
+            if (people.length < PAGE_SIZE) break
+          }
+        }
+      }
+
       let restoredResponseStats = 0
       if (canRestoreStats) {
         const guards = await fileAll(

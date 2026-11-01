@@ -1,5 +1,6 @@
 const { get, all, run } = require('./db')
 const { sendPush } = require('./push')
+const { publishAlertChange } = require('./alertSync')
 
 // Alerts the admin has not acted on are sent to lifeguards automatically after this long.
 const AUTO_SEND_AFTER_SEC = 60
@@ -28,9 +29,11 @@ const SEVERITY_RANK = { drowning: 0, intrusion: 1, 'deep-water': 2, supervision:
 function collapseKey(event) {
   if (event.category === 'broadcast') return `broadcast-${event.id}`
   // Digests (and same-category drowning/supervision pages) share one tray notification.
-  if (String(event.id || '').startsWith('digest-') || event.category === 'drowning' || event.category === 'supervision') {
+  if (event.category === 'supervision') {
     return `category-${event.category}-${event.camera || 'cam'}`
   }
+  // Critical incidents never collapse across people.
+  if (event.category === 'drowning') return `critical-${event.id}`
   if (event.person_id != null) return `person-${event.person_id}`
   return `event-${event.id}`
 }
@@ -80,7 +83,7 @@ async function openAlertsFor(db, event) {
   // Digest rows are already one alert for many people.
   if (String(event.id || '').startsWith('digest-')) return [event]
   // Legacy per-person drowning/supervision rows share one push.
-  if (event.category === 'drowning' || event.category === 'supervision') {
+  if (event.category === 'supervision') {
     const rows = await all(
       db,
       `SELECT * FROM events
@@ -124,7 +127,7 @@ async function pushToLifeguards(db, events, { urgent = false } = {}) {
       personId: primary.person_id ?? null,
       collapseKey: key,
     },
-    urgent: true,
+    urgent: urgent || Number(primary.priority || 4) <= 2,
     collapseId: key,
   })
   return { recipients: guards.length, pushed }
@@ -148,7 +151,11 @@ async function dispatchEvent(db, eventId, { userId = null } = {}) {
   if (!claimed?.changes) return null
 
   const event = await get(db, 'SELECT * FROM events WHERE id = ?', [eventId])
-  return pushOpenGroup(db, event, { urgent: false })
+  const result = await pushOpenGroup(db, event, { urgent: false })
+  await run(db, `UPDATE events SET notification_count = notification_count + 1, last_notified_at = ? WHERE id = ?`,
+    [Date.now() / 1000, eventId])
+  publishAlertChange('dispatched', eventId)
+  return result
 }
 
 /**
@@ -158,13 +165,18 @@ async function dispatchEvent(db, eventId, { userId = null } = {}) {
 async function resendUrgent(db, eventId) {
   const claimed = await run(
     db,
-    'UPDATE events SET escalated_at = ? WHERE id = ? AND dispatched_at IS NOT NULL AND responding_at IS NULL',
+    `UPDATE events SET escalated_at = ? WHERE id = ? AND dispatched_at IS NOT NULL
+      AND responding_at IS NULL AND acknowledged_at IS NULL`,
     [Date.now() / 1000, eventId]
   )
   if (!claimed?.changes) return null
 
   const event = await get(db, 'SELECT * FROM events WHERE id = ?', [eventId])
-  return pushOpenGroup(db, event, { urgent: true })
+  const result = await pushOpenGroup(db, event, { urgent: true })
+  await run(db, `UPDATE events SET notification_count = notification_count + 1, last_notified_at = ? WHERE id = ?`,
+    [Date.now() / 1000, eventId])
+  publishAlertChange('escalated', eventId)
+  return result
 }
 
 async function escalationTick(db) {
@@ -199,7 +211,7 @@ async function escalationTick(db) {
   const silent = await all(
     db,
     `SELECT id FROM events WHERE ${base}
-       AND dispatched_at IS NOT NULL AND responding_at IS NULL AND escalated_at IS NULL
+       AND dispatched_at IS NOT NULL AND responding_at IS NULL AND acknowledged_at IS NULL AND escalated_at IS NULL
        AND dispatched_at >= ?
        AND dispatched_at <= ? - CASE WHEN category = 'drowning' THEN ? ELSE ? END`,
     [now - LOOKBACK_SEC, now, NO_RESPONSE_SEC.drowning, NO_RESPONSE_SEC.default]
@@ -208,7 +220,8 @@ async function escalationTick(db) {
   for (const row of silent) {
     const claimed = await run(
       db,
-      'UPDATE events SET escalated_at = ? WHERE id = ? AND escalated_at IS NULL AND responding_at IS NULL',
+      `UPDATE events SET escalated_at = ? WHERE id = ? AND escalated_at IS NULL
+        AND responding_at IS NULL AND acknowledged_at IS NULL`,
       [now, row.id]
     )
     if (!claimed?.changes) continue

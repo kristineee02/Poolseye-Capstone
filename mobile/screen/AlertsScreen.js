@@ -13,7 +13,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import StatusModal from '../components/StatusModal';
 import { AlertsHomeSkeleton, DataLoadError } from '../components/Skeleton';
 import { useAuth } from '../context/AuthContext';
-import { fetchMobileEvents, respondToMobileEvent, updateMobileEventStatus } from '../api/events';
+import { acknowledgeMobileEvent, fetchMobileEvents, respondToMobileEvent, updateMobileEventStatus } from '../api/events';
 import { formatEventTime, localMidnightTimestamp } from '../utils/dateTime';
 
 const POLL_MS = 4000;
@@ -27,6 +27,49 @@ function getAlertMeta(alert) {
     zoneColor: isAlarm ? colors.alarm : colors.warn,
     badge: isAlarm ? 'ALARM' : 'WARNING',
   };
+}
+
+function modalBadge(alert) {
+  if (alert?.category === 'drowning') return 'CRITICAL ALERT';
+  if (alert?.category === 'intrusion' || alert?.category === 'deep-water') return 'HIGH PRIORITY';
+  if (alert?.category === 'supervision') return 'ATTENTION';
+  return 'POOL ALERT';
+}
+
+function modalPerson(alert) {
+  const ids = alert?.personIds || [];
+  if ((alert?.affectedCount || ids.length) > 1) {
+    return `${alert.affectedCount || ids.length} affected swimmers`;
+  }
+  const id = alert?.personId ?? ids[0];
+  return id != null ? `Person #${String(id).padStart(2, '0')}` : 'Affected swimmer';
+}
+
+function modalDescription(alert) {
+  if (alert?.category === 'drowning') return 'A person is showing possible drowning behavior.';
+  if (alert?.category === 'supervision') {
+    const count = alert.affectedCount || alert.personIds?.length || 1;
+    return `${count} swimmer${count === 1 ? '' : 's'} detected without supervision in this zone.`;
+  }
+  if (alert?.category === 'intrusion') return 'A swimmer entered the restricted red zone.';
+  if (alert?.category === 'deep-water') return 'A swimmer entered the deep-water area.';
+  return alert?.detail || alert?.meta || 'Review this pool alert.';
+}
+
+function modalActionPalette(alert) {
+  if (alert?.category === 'drowning') {
+    return { color: colors.alarm, tint: colors.alarmTint, text: '#FFFFFF', secondaryText: colors.alarmDark };
+  }
+  if (alert?.category === 'intrusion') {
+    return { color: colors.high, tint: colors.highTint, text: '#FFFFFF', secondaryText: colors.highDark };
+  }
+  if (alert?.category === 'deep-water') {
+    return { color: colors.accent, tint: colors.accentTint, text: '#FFFFFF', secondaryText: colors.accentDeep };
+  }
+  if (alert?.category === 'supervision') {
+    return { color: colors.warn, tint: colors.warnTint, text: colors.warnDark, secondaryText: colors.warnDark };
+  }
+  return { color: colors.accent, tint: colors.accentTint, text: '#FFFFFF', secondaryText: colors.accentDeep };
 }
 
 function responseStatusLabel(alert) {
@@ -66,7 +109,7 @@ function pickPrimaryAlert(alerts, pinnedId) {
   return pool[0];
 }
 
-function ActiveAlertCard({ alert, busy, onRespond, onAcknowledge, onDismiss }) {
+function ActiveAlertCard({ alert, busy, onOpen }) {
   if (!alert) {
     return (
       <View style={styles.clearCard}>
@@ -115,47 +158,28 @@ function ActiveAlertCard({ alert, busy, onRespond, onAcknowledge, onDismiss }) {
         <Text style={styles.activeZone}>{alert.zone}</Text>
       </View>
 
-      {!alert.respondingAt ? (
-        <TouchableOpacity
-          style={[styles.ackBtn, styles.respondBtn, { backgroundColor: m.accent }, ackShadow]}
-          onPress={() => onRespond(alert.id)}
-          disabled={busy}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.ackText}>{busy ? 'Claiming…' : "I'm responding"}</Text>
-        </TouchableOpacity>
-      ) : alert.respondingMine ? (
-        <>
-          <Text style={[styles.handoffText, { color: colors.safe }]}>You are responding to this alert</Text>
-          <View style={styles.activeActions}>
-            <TouchableOpacity
-              style={[styles.ackBtn, { backgroundColor: colors.safe }]}
-              onPress={() => onAcknowledge(alert.id)}
-              disabled={busy}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.ackText}>Resolve</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.dismissBtn, { borderColor: m.accent }]}
-              onPress={() => onDismiss(alert.id)}
-              disabled={busy}
-              activeOpacity={0.85}
-            >
-              <Text style={[styles.dismissText, { color: m.accent }]}>False alarm</Text>
-            </TouchableOpacity>
-          </View>
-        </>
-      ) : (
-        <>
-          <Text style={styles.handoffText}>
-            {alert.responderName || 'Another lifeguard'} is responding
-          </Text>
-          <Text style={styles.handoffHint}>
-            You can still handle other open alerts below.
-          </Text>
-        </>
-      )}
+      {alert.respondingAt ? (
+        <Text style={[styles.handoffText, alert.respondingMine && { color: colors.safe }]}>
+          {alert.respondingMine
+            ? 'You are responding to this alert'
+            : `${alert.responderName || 'Another lifeguard'} is responding`}
+        </Text>
+      ) : null}
+      <TouchableOpacity
+        style={[
+          styles.ackBtn,
+          styles.respondBtn,
+          { backgroundColor: alert.respondingMine ? colors.safe : m.accent },
+          ackShadow,
+        ]}
+        onPress={() => onOpen(alert)}
+        disabled={busy}
+        activeOpacity={0.85}
+      >
+        <Text style={styles.ackText}>
+          {busy ? 'Updating…' : alert.respondingMine ? 'Continue response' : alert.respondingAt ? 'View alert' : 'Respond now'}
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -386,6 +410,16 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
   };
 
   const handleAcknowledge = async (id) => {
+    setResponding(true);
+    const result = await acknowledgeMobileEvent(token, id);
+    setResponding(false);
+    if (!result.ok) {
+      setStatus({ tone: 'error', title: 'Could not acknowledge', message: result.error || 'Failed to acknowledge this alert.' });
+    }
+    await loadAlerts();
+  };
+
+  const handleResolve = async (id) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
     setPinnedId((current) => (current === id ? null : current));
@@ -419,13 +453,12 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
 
   const closeRecentAlert = () => setSelectedAlert(null);
 
-  const selectOpenAlert = (alert) => {
-    setPinnedId(alert.id);
-  };
-
   const primary = pickPrimaryAlert(activeAlerts, pinnedId);
-  const otherOpenAlerts = activeAlerts.filter((alert) => alert.id !== primary?.id);
-  const recent = (recentAlerts.length ? recentAlerts : activeAlerts).slice(0, 4);
+  const otherOpenAlerts = activeAlerts.filter((item) => item.id !== primary?.id);
+  const activeIds = new Set(activeAlerts.map((item) => item.id));
+  // Active incidents are represented only by the single card above. Keep the
+  // history list from repeating that same incident (or other pending alerts).
+  const recent = recentAlerts.filter((item) => !activeIds.has(item.id)).slice(0, 4);
 
   useEffect(() => {
     if (pinnedId && !activeAlerts.some((alert) => alert.id === pinnedId)) {
@@ -444,6 +477,48 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
       { key: 'ack', label: 'Acknowledged', value: String(ackCount), color: colors.safe },
     ];
   }, [activeAlerts, ackCount]);
+
+  const openActionAlert = (alert) => setSelectedAlert(alert);
+  const viewAllFromModal = () => {
+    setSelectedAlert(null);
+    onViewAllAlerts?.();
+  };
+  const selectedActions = !selectedAlert
+    ? []
+    : selectedAlert.backendStatus !== 'pending'
+      ? [
+          { label: 'View details', tone: 'primary', onPress: viewAllFromModal },
+          { label: 'Close', tone: 'secondary', onPress: closeRecentAlert },
+        ]
+      : selectedAlert.respondingAt && !selectedAlert.respondingMine
+        ? [
+            { label: 'View details', tone: 'primary', onPress: viewAllFromModal },
+            { label: 'Close', tone: 'secondary', onPress: closeRecentAlert },
+          ]
+        : selectedAlert.respondingMine
+          ? [
+              { label: 'Resolve', tone: 'primary', onPress: () => { const id = selectedAlert.id; closeRecentAlert(); handleResolve(id); } },
+              { label: 'False alarm', tone: 'danger', onPress: () => { const id = selectedAlert.id; closeRecentAlert(); handleDismiss(id); } },
+              { label: 'View details', tone: 'secondary', onPress: viewAllFromModal },
+              { label: 'Close', tone: 'secondary', onPress: closeRecentAlert },
+            ]
+          : [
+              ...(!selectedAlert.acknowledgedAt ? [{
+                label: 'Acknowledge', tone: 'secondary',
+                onPress: () => { const id = selectedAlert.id; closeRecentAlert(); handleAcknowledge(id); },
+              }] : []),
+              {
+                label: "I'm responding",
+                tone: 'alert',
+                onPress: () => { const id = selectedAlert.id; closeRecentAlert(); handleRespond(id); },
+              },
+              { label: 'View details', tone: 'secondary', onPress: viewAllFromModal },
+              {
+                label: 'False alarm', tone: 'secondary',
+                onPress: () => { const id = selectedAlert.id; closeRecentAlert(); handleDismiss(id); },
+              },
+            ];
+  const selectedPalette = modalActionPalette(selectedAlert);
 
   return (
     <>
@@ -468,17 +543,12 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
             <ActiveAlertCard
               alert={primary}
               busy={responding}
-              onRespond={handleRespond}
-              onAcknowledge={handleAcknowledge}
-              onDismiss={handleDismiss}
+              onOpen={openActionAlert}
             />
+
+            <OtherOpenAlertsSection alerts={otherOpenAlerts} onSelect={openActionAlert} />
 
             <OverviewSection stats={stats} />
-
-            <OtherOpenAlertsSection
-              alerts={otherOpenAlerts}
-              onSelect={selectOpenAlert}
-            />
 
             <RecentAlertsSection
               alerts={recent}
@@ -493,28 +563,18 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
         visible={Boolean(selectedAlert)}
         onClose={closeRecentAlert}
         title={selectedAlert?.title || 'Alert'}
-        tone="info"
-        icon="bell"
-        message={
-          selectedAlert
-            ? `${selectedAlert.zone} · ${formatEventTime(selectedAlert.time)}\n\n${selectedAlert.detail || selectedAlert.meta || ''}`
-            : ''
-        }
-        actions={[
-          {
-            label: 'Close',
-            tone: 'secondary',
-            onPress: closeRecentAlert,
-          },
-          {
-            label: 'View in All Alerts',
-            tone: 'primary',
-            onPress: () => {
-              closeRecentAlert();
-              onViewAllAlerts?.();
-            },
-          },
-        ]}
+        tone={selectedAlert?.category === 'drowning' ? 'danger' : selectedAlert?.type === 'alarm' ? 'warning' : 'info'}
+        icon={selectedAlert?.category === 'drowning' ? 'alertCircle' : 'bell'}
+        badge={selectedAlert ? modalBadge(selectedAlert) : ''}
+        subtitle={selectedAlert ? modalPerson(selectedAlert) : ''}
+        meta={selectedAlert ? `${String(selectedAlert.zone || 'Pool').toUpperCase()} · ${formatEventTime(selectedAlert.time)}` : ''}
+        description={selectedAlert ? modalDescription(selectedAlert) : ''}
+        actions={selectedActions}
+        stackedActions
+        actionColor={selectedPalette.color}
+        actionTint={selectedPalette.tint}
+        actionTextColor={selectedPalette.text}
+        actionSecondaryTextColor={selectedPalette.secondaryText}
       />
       <StatusModal
         visible={Boolean(status)}
@@ -619,7 +679,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   respondBtn: {
-    flex: 0,
+    flex: 1.55,
     alignSelf: 'stretch',
   },
   handoffText: {

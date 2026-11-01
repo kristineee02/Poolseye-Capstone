@@ -134,7 +134,7 @@ function TabButton({ tab, isActive, onPress, renderIcon }) {
 
 const TABS = [
   { key: 'home',    label: 'Home',    title: null,         subtitle: null },
-  { key: 'alerts',  label: 'Alerts',  title: 'All Alerts', subtitle: null },
+  { key: 'alerts',  label: 'Alerts',  title: 'Alerts',     subtitle: null },
   { key: 'profile', label: 'Profile', title: 'Profile',    subtitle: null },
 ];
 

@@ -2,6 +2,7 @@ const { get, all, run } = require('./db')
 const { HIDDEN_EVENTS_SQL, eventsWithResponders, setEventStatus } = require('./events')
 const { lifeguardAuthRequired } = require('./mobileAuth')
 const { parseNotificationPrefs, mutedCategories } = require('./lifeguards')
+const { publishAlertChange } = require('./alertSync')
 
 async function mutedFilter(db, lifeguardId) {
   const user = await get(db, 'SELECT notification_prefs FROM users WHERE id = ?', [lifeguardId])
@@ -25,7 +26,7 @@ async function acknowledgedSince(db, lifeguardId, since) {
   const row = await get(
     db,
     `SELECT COUNT(*) AS count FROM events
-     WHERE is_alert = 1 AND status = 'resolved' AND acknowledged_by = ? AND acknowledged_at >= ?`,
+     WHERE is_alert = 1 AND acknowledged_by = ? AND acknowledged_at >= ?`,
     [lifeguardId, since]
   )
   return Number(row?.count || 0)
@@ -68,7 +69,9 @@ function registerMobileEventRoutes(app, db) {
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
       const rows = await all(
         db,
-        `SELECT * FROM events ${where} ORDER BY ts DESC, created_at DESC LIMIT ?`,
+        `SELECT * FROM events ${where}
+         ORDER BY CASE WHEN status = 'pending' AND is_alert = 1 THEN priority ELSE 9 END ASC,
+           ts DESC, created_at DESC LIMIT ?`,
         [...params, limit]
       )
 
@@ -108,9 +111,33 @@ function registerMobileEventRoutes(app, db) {
         })
       }
       res.json({ ok: true, event })
+      publishAlertChange('responding', id)
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: 'Failed to respond to alert' })
+    }
+  })
+
+  app.post('/api/mobile/events/:id/acknowledge', lifeguardAuthRequired, async (req, res) => {
+    try {
+      const id = String(req.params.id || '')
+      const lifeguardId = req.lifeguard.id
+      const row = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
+      if (!row) return res.status(404).json({ error: 'Alert not found' })
+      if (row.status !== 'pending') return res.status(400).json({ error: 'This alert is already closed.' })
+      const claimed = await run(db, `UPDATE events SET acknowledged_at = ?, acknowledged_by = ?
+        WHERE id = ? AND acknowledged_at IS NULL`, [Date.now() / 1000, lifeguardId, id])
+      if (claimed?.changes) {
+        await run(db, `UPDATE users SET acknowledged_alerts = COALESCE(acknowledged_alerts, 0) + 1,
+          last_alert_acknowledged_at = ? WHERE id = ? AND role = 'lifeguard'`,
+        [new Date().toISOString(), lifeguardId])
+      }
+      const event = await eventForLifeguard(db, id, lifeguardId)
+      publishAlertChange('acknowledged', id)
+      res.json({ ok: true, event })
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: 'Failed to acknowledge alert' })
     }
   })
 
@@ -140,22 +167,12 @@ function registerMobileEventRoutes(app, db) {
 
       await setEventStatus(db, id, status, lifeguardId)
 
-      if (status === 'resolved' && lifeguardId) {
-        await run(
-          db,
-          `UPDATE users SET
-            acknowledged_alerts = COALESCE(acknowledged_alerts, 0) + 1,
-            last_alert_acknowledged_at = ?
-           WHERE id = ? AND role = 'lifeguard'`,
-          [new Date().toISOString(), lifeguardId]
-        )
-      }
-
       res.json({
         ok: true,
         event: await eventForLifeguard(db, id, req.lifeguard?.id),
         pendingCount: await pendingCount(db, await mutedFilter(db, req.lifeguard.id)),
       })
+      publishAlertChange(status === 'dismissed' ? 'false-alarm' : 'status', id)
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: 'Failed to update alert' })

@@ -92,6 +92,8 @@ CREATE TABLE IF NOT EXISTS events (
   snapshot_uri TEXT,
   acknowledged_at REAL,
   acknowledged_by INTEGER,
+  closed_at REAL,
+  closed_by INTEGER,
   ts REAL NOT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   -- Supervision-specific fields
@@ -101,7 +103,28 @@ CREATE TABLE IF NOT EXISTS events (
   supervision_threshold REAL,
   boundary_direction TEXT,
   nearest_person_id INTEGER,
-  nearest_confidence REAL
+  nearest_confidence REAL,
+  priority INTEGER NOT NULL DEFAULT 4,
+  priority_label TEXT NOT NULL DEFAULT 'informational',
+  incident_key TEXT,
+  group_key TEXT,
+  person_ids TEXT,
+  occurrence_count INTEGER NOT NULL DEFAULT 1,
+  first_detected_at REAL,
+  last_detected_at REAL,
+  notification_count INTEGER NOT NULL DEFAULT 0,
+  last_notified_at REAL,
+  siren_activated_at REAL
+);
+
+CREATE TABLE IF NOT EXISTS event_people (
+  event_id TEXT NOT NULL,
+  person_id INTEGER NOT NULL,
+  first_seen_at REAL NOT NULL,
+  last_seen_at REAL NOT NULL,
+  occurrence_count INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (event_id, person_id),
+  FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS camera_settings (
@@ -125,6 +148,7 @@ CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
 CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
 CREATE INDEX IF NOT EXISTS idx_events_camera ON events(camera);
+CREATE INDEX IF NOT EXISTS idx_event_people_person ON event_people(person_id, last_seen_at DESC);
 
 CREATE TABLE IF NOT EXISTS data_backups (
   id TEXT PRIMARY KEY,

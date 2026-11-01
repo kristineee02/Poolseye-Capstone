@@ -26,10 +26,25 @@ export function toMobileAlert(event) {
     personId: event.person_id ?? null,
     dispatchedAt: event.dispatched_at ?? null,
     escalatedAt: event.escalated_at ?? null,
+    acknowledgedAt: event.acknowledged_at ?? null,
+    acknowledgedByName: event.acknowledged_by_name || null,
+    priority: Number(event.priority || 4),
+    priorityLabel: event.priority_label || 'informational',
+    personIds: Array.isArray(event.person_ids) ? event.person_ids : [],
+    affectedCount: Number(event.affected_count || 1),
     respondingAt: event.responding_at ?? null,
     responderName: event.responder_name || null,
     respondingMine: Boolean(event.responding_mine),
   }
+}
+
+export async function acknowledgeMobileEvent(token, id) {
+  const result = await apiFetch(`/api/mobile/events/${encodeURIComponent(id)}/acknowledge`, {
+    method: 'POST',
+    token,
+  })
+  if (!result.ok) return result
+  return { ok: true, event: toMobileAlert(result.event) }
 }
 
 export async function respondToMobileEvent(token, id) {

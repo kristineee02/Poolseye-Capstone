@@ -17,6 +17,7 @@ const { registerCameraSettingsRoutes, seedCameraSettings } = require('./cameraSe
 const { registerOperatingHoursRoutes, seedOperatingHours } = require('./operatingHours')
 const { registerAlarmRoutes } = require('./alarm')
 const { registerDataManagementRoutes } = require('./dataManagement')
+const { addAlertClient } = require('./alertSync')
 
 const app = express()
 const PORT = process.env.PORT || 4000
@@ -79,6 +80,26 @@ function adminRequired(req, res, next) {
 }
 
 let db
+
+// Server-sent invalidations let the read-only admin dashboard refresh as soon
+// as a lifeguard acknowledges, responds, resolves, or reports a false alarm.
+app.get('/api/events/stream', (req, res) => {
+  try {
+    const token = String(req.query.token || '')
+    const user = jwt.verify(token, process.env.JWT_SECRET)
+    if (user?.role !== 'admin') return res.status(403).json({ error: 'Admin access only' })
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache, no-transform')
+    res.setHeader('Connection', 'keep-alive')
+    res.setHeader('X-Accel-Buffering', 'no')
+    res.flushHeaders?.()
+    const remove = addAlertClient(res)
+    const heartbeat = setInterval(() => res.write(': ping\n\n'), 15000)
+    req.on('close', () => { clearInterval(heartbeat); remove() })
+  } catch {
+    res.status(401).json({ error: 'Unauthorized' })
+  }
+})
 
 app.get('/api/geofence', async (_req, res) => {
   try {

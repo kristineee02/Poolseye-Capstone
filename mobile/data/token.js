@@ -37,6 +37,13 @@ export const colors = {
   warnDark:   '#8A7000',
   warnMid:    '#C4A000',
 
+  // High-priority zone alerts (distinct from critical drowning red)
+  high:       '#F08C00',
+  highTint:   '#FFF3E0',
+  highBorder: '#F7C77A',
+  highDark:   '#8A4B00',
+  highMid:    '#C96F00',
+
   alarm:       '#D6364A',
   alarmTint:   '#FCEAEE',
   alarmBorder: '#F4C6CD',

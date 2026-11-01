@@ -36,6 +36,8 @@ const LIFEGUARD_COLUMNS = [
 const EVENT_COLUMNS = [
   ['acknowledged_at', 'REAL'],
   ['acknowledged_by', 'INTEGER'],
+  ['closed_at', 'REAL'],
+  ['closed_by', 'INTEGER'],
   ['separation_distance', 'REAL'],
   ['supervision_threshold', 'REAL'],
   ['boundary_direction', 'TEXT'],
@@ -47,6 +49,17 @@ const EVENT_COLUMNS = [
   ['responding_by', 'INTEGER'],
   ['escalated_at', 'REAL'],
   ['clip_uri', 'TEXT'],
+  ['priority', 'INTEGER NOT NULL DEFAULT 4'],
+  ['priority_label', "TEXT NOT NULL DEFAULT 'informational'"],
+  ['incident_key', 'TEXT'],
+  ['group_key', 'TEXT'],
+  ['person_ids', 'TEXT'],
+  ['occurrence_count', 'INTEGER NOT NULL DEFAULT 1'],
+  ['first_detected_at', 'REAL'],
+  ['last_detected_at', 'REAL'],
+  ['notification_count', 'INTEGER NOT NULL DEFAULT 0'],
+  ['last_notified_at', 'REAL'],
+  ['siren_activated_at', 'REAL'],
 ]
 
 function isLibsql(db) {
@@ -282,6 +295,14 @@ async function migrateEventsTable(db) {
       console.log(`Migrated events.${column}`)
     }
   }
+  await run(db, 'CREATE INDEX IF NOT EXISTS idx_events_incident_key ON events(incident_key, status)')
+  await run(db, 'CREATE INDEX IF NOT EXISTS idx_events_priority ON events(status, priority, ts DESC)')
+  await run(db, `UPDATE events SET
+    priority = CASE category WHEN 'drowning' THEN 1 WHEN 'intrusion' THEN 2 WHEN 'deep-water' THEN 2 WHEN 'supervision' THEN 3 ELSE 4 END,
+    priority_label = CASE category WHEN 'drowning' THEN 'critical' WHEN 'intrusion' THEN 'high' WHEN 'deep-water' THEN 'high' WHEN 'supervision' THEN 'medium' ELSE 'informational' END,
+    first_detected_at = COALESCE(first_detected_at, ts),
+    last_detected_at = COALESCE(last_detected_at, ts),
+    person_ids = COALESCE(person_ids, CASE WHEN person_id IS NOT NULL THEN '[' || person_id || ']' ELSE '[]' END)`)
 }
 
 // Earlier builds created this lifeguard with a published password. It is removed only

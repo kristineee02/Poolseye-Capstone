@@ -135,10 +135,10 @@ EVENT_CATALOG = {
         "category": "yellow",
     },
     "UNSUPERVISED": {
-        "type": "alarm",
+        "type": "warn",
         "code": "SUP",
         "title": "Unsupervised Person",
-        "severity": "HIGH",
+        "severity": "MEDIUM",
         "category": "supervision",
     },
     "SUPERVISED": {
@@ -152,7 +152,7 @@ EVENT_CATALOG = {
         "type": "alarm",
         "code": "AHR",
         "title": "After-Hours Presence",
-        "severity": "HIGH",
+        "severity": "CRITICAL",
         "category": "supervision",
     },
     # The backend pages lifeguards and sounds the ESP32 siren for this category
@@ -191,20 +191,29 @@ def _zone_summary(people: list[dict]) -> str:
     return " · ".join(labels) if labels else "Pool area"
 
 
-def push_category_digest(category: str, event_name: str, people: list[dict], *, clear: bool = False):
+def push_category_digest(
+    category: str,
+    event_name: str,
+    people: list[dict],
+    *,
+    clear: bool = False,
+    zone_hint: str | None = None,
+):
     """Upsert a single pending alert for many people, or clear it when the scene is safe."""
     camera = _camera_id()
-    digest_id = f"digest-{category}-{camera}"
+    zone_key = str(zone_hint or next((p.get("zone") for p in people if p.get("zone")), "pool"))
+    digest_slot = category if category == "drowning" else f"{category}:{zone_key}"
+    digest_id = f"digest-{category}-{camera}" if category == "drowning" else f"digest-{category}-{camera}-{zone_key}"
     meta_catalog = EVENT_CATALOG.get(event_name, {})
     now = datetime.now(SITE_TZ)
     source_label = "Uploaded video" if camera == UPLOAD_CAMERA_ID else camera
 
     if clear or not people:
         with _digest_lock:
-            prev = _digest_signature.get(category)
+            prev = _digest_signature.get(digest_slot)
             if prev == "clear":
                 return None
-            _digest_signature[category] = "clear"
+            _digest_signature[digest_slot] = "clear"
         entry = {
             "id": digest_id,
             "type": meta_catalog.get("type", "info"),
@@ -218,8 +227,8 @@ def push_category_digest(category: str, event_name: str, people: list[dict], *, 
             "category": category,
             "camera": camera,
             "person_id": None,
-            "zone": None,
-            "zone_label": None,
+            "zone": zone_key if category != "drowning" else None,
+            "zone_label": ZONE_LABEL.get(zone_key, zone_key) if category != "drowning" else None,
             "event": event_name,
             "is_alert": False,
             "ts": now.timestamp(),
@@ -236,9 +245,9 @@ def push_category_digest(category: str, event_name: str, people: list[dict], *, 
     zone_label = _zone_summary(people)
     signature = f"{len(ids)}|{','.join(map(str, ids))}|{zone_label}"
     with _digest_lock:
-        if _digest_signature.get(category) == signature:
+        if _digest_signature.get(digest_slot) == signature:
             return None
-        _digest_signature[category] = signature
+        _digest_signature[digest_slot] = signature
 
     if category == "drowning":
         title = "Possible Drowning" if len(ids) == 1 else f"Possible drowning · {len(ids)} people"
@@ -269,6 +278,9 @@ def push_category_digest(category: str, event_name: str, people: list[dict], *, 
         "category": category,
         "camera": camera,
         "person_id": ids[0] if len(ids) == 1 else None,
+        # The backend keeps this roster on grouped supervision incidents and
+        # splits critical drowning detections into one incident per person.
+        "person_ids": ids,
         "zone": zone,
         "zone_label": zone_label,
         "event": event_name,
@@ -1833,14 +1845,26 @@ def capture_loop(cfg: dict):
         if digest_supervision:
             with _digest_lock:
                 people = list(_open_unsupervised.values())
-            entry = push_category_digest(
-                "supervision",
-                "UNSUPERVISED",
-                people,
-                clear=not people,
-            )
-            if logged(entry):
-                print(f"  [DIGEST supervision] {entry['title']} · {entry['meta']}")
+                prior_zones = {
+                    key.split(":", 1)[1]
+                    for key in _digest_signature
+                    if key.startswith("supervision:") and _digest_signature.get(key) != "clear"
+                }
+            by_zone = {}
+            for person in people:
+                by_zone.setdefault(str(person.get("zone") or "pool"), []).append(person)
+            for zone_key, zone_people in by_zone.items():
+                entry = push_category_digest(
+                    "supervision", "UNSUPERVISED", zone_people, zone_hint=zone_key
+                )
+                if logged(entry):
+                    print(f"  [DIGEST supervision] {entry['title']} · {entry['meta']}")
+            for zone_key in prior_zones - set(by_zone):
+                entry = push_category_digest(
+                    "supervision", "UNSUPERVISED", [], clear=True, zone_hint=zone_key
+                )
+                if logged(entry):
+                    print(f"  [DIGEST supervision] {entry['title']} · {entry['meta']}")
 
         if digest_drowning or any(d.get("_sync_only") for d in drowning_events):
             with _digest_lock:

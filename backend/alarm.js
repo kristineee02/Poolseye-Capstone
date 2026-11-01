@@ -1,7 +1,5 @@
-const { get } = require('./db')
+const { get, run } = require('./db')
 
-// Matches LOOKBACK_SEC in dispatch.js: pending drownings older than this don't sound the siren.
-const DROWNING_LOOKBACK_SEC = 15 * 60
 // The alarm node polls about once a second; silence for this long means it is offline.
 const NODE_OFFLINE_SEC = 10
 
@@ -19,12 +17,20 @@ async function alarmState(db) {
   if (manual.active) return { alarm: true, reason: 'manual', eventId: null }
   const row = await get(
     db,
-    `SELECT id FROM events
-     WHERE category = 'drowning' AND is_alert = 1 AND status = 'pending' AND ts >= ?
+    `SELECT id, siren_activated_at FROM events
+     WHERE category = 'drowning' AND is_alert = 1 AND status = 'pending'
      ORDER BY ts DESC LIMIT 1`,
-    [Date.now() / 1000 - DROWNING_LOOKBACK_SEC]
+    []
   )
-  if (row) return { alarm: true, reason: 'drowning', eventId: row.id }
+  if (row) {
+    // The device polls continuously; stamp activation once so repeated
+    // detections for the same incident never become repeated siren commands.
+    if (row.siren_activated_at == null) {
+      await run(db, 'UPDATE events SET siren_activated_at = ? WHERE id = ? AND siren_activated_at IS NULL',
+        [Date.now() / 1000, row.id])
+    }
+    return { alarm: true, reason: 'drowning', eventId: row.id }
+  }
   return { alarm: false, reason: null, eventId: null }
 }
 

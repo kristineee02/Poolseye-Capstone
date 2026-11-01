@@ -7,6 +7,7 @@ import {
   fetchActiveAlert,
   fetchAlarm,
   fetchEventSummary,
+  getAlertStreamUrl,
   resendEvent,
   setManualAlarm,
 } from '../../api/events'
@@ -63,6 +64,14 @@ function HandoffStatus({ alert, busy, onResend }) {
         <span>
           <b>{alert.responder_name || 'A lifeguard'}</b> is responding · since {formatTime(alert.responding_at)}
         </span>
+      </div>
+    )
+  }
+  if (alert.acknowledged_at) {
+    return (
+      <div className="rr-handoff is-responding">
+        <Icon.CheckCircle />
+        <span><b>{alert.acknowledged_by_name || 'A lifeguard'}</b> acknowledged · awaiting response</span>
       </div>
     )
   }
@@ -158,6 +167,7 @@ function ActiveAlert({ alert, supervised, busy, onDispatch, onResend }) {
 
 export default function RightRail({ onNavigate }) {
   const [alert, setAlert] = useState(null)
+  const [alerts, setAlerts] = useState([])
   const [supervised, setSupervised] = useState(null)
   const [summary, setSummary] = useState(null)
   const [error, setError] = useState('')
@@ -176,6 +186,7 @@ export default function RightRail({ onNavigate }) {
     }
     setError('')
     setAlert(active.active)
+    setAlerts(active.alerts || (active.active ? [active.active] : []))
     setSupervised(active.supervised || null)
     setSummary(totals)
     setLoading(false)
@@ -189,9 +200,13 @@ export default function RightRail({ onNavigate }) {
   useEffect(() => {
     load()
     const id = setInterval(load, POLL_MS)
+    const streamUrl = getAlertStreamUrl()
+    const stream = streamUrl ? new EventSource(streamUrl) : null
+    stream?.addEventListener('alerts', load)
     window.addEventListener(DATA_RESET_EVENT, load)
     return () => {
       clearInterval(id)
+      stream?.close()
       window.removeEventListener(DATA_RESET_EVENT, load)
     }
   }, [load])
@@ -202,10 +217,10 @@ export default function RightRail({ onNavigate }) {
     return () => clearTimeout(id)
   }, [notice])
 
-  const dispatch = async () => {
-    if (!alert) return
+  const dispatch = async (eventId = alert?.id) => {
+    if (!eventId) return
     setBusy('dispatch')
-    const result = await dispatchEvent(alert.id)
+    const result = await dispatchEvent(eventId)
     setBusy(null)
     if (!result.ok) {
       setError(result.error || 'Could not send the alert.')
@@ -215,10 +230,10 @@ export default function RightRail({ onNavigate }) {
     load()
   }
 
-  const resend = async () => {
-    if (!alert) return
+  const resend = async (eventId = alert?.id) => {
+    if (!eventId) return
     setBusy('resend')
-    const result = await resendEvent(alert.id)
+    const result = await resendEvent(eventId)
     setBusy(null)
     if (!result.ok) {
       setError(result.error || 'Could not re-send the alert.')
@@ -266,7 +281,7 @@ export default function RightRail({ onNavigate }) {
     <aside className="rightrail">
       <section className="rr-card">
         <div className="active-alert-head">
-          <h2>Active Alert</h2>
+          <h2>Active Alerts</h2>
           {onNavigate ? (
             <button type="button" className="active-alert-link" onClick={() => onNavigate('history')}>
               View All
@@ -281,13 +296,18 @@ export default function RightRail({ onNavigate }) {
             <LoadingHint onRetry={retryLoad} compact />
           </div>
         ) : (
-          <ActiveAlert
-            alert={alert}
-            supervised={supervised}
-            busy={busy}
-            onDispatch={dispatch}
-            onResend={resend}
-          />
+          alerts.length ? alerts.map((item) => (
+            <ActiveAlert
+              key={item.id}
+              alert={item}
+              supervised={null}
+              busy={busy}
+              onDispatch={() => dispatch(item.id)}
+              onResend={() => resend(item.id)}
+            />
+          )) : (
+            <ActiveAlert alert={null} supervised={supervised} busy={busy} onDispatch={dispatch} onResend={resend} />
+          )
         )}
         {notice ? <div className="rr-notice">{notice}</div> : null}
         {error ? <div className="rr-error"><span>{error}</span><button type="button" onClick={retryLoad}>Retry</button></div> : null}

@@ -114,9 +114,18 @@ export default function AlertDialog({
   icon,
   title,
   message,
+  badge,
+  subtitle,
+  meta,
+  description,
   children,
   onClose,
   actions,
+  stackedActions = false,
+  actionColor,
+  actionTint,
+  actionTextColor = '#FFFFFF',
+  actionSecondaryTextColor,
 }) {
   const config = ALERT_TONES[tone] || ALERT_TONES.info;
   const palette = TONE_COLORS[config.color];
@@ -163,7 +172,22 @@ export default function AlertDialog({
             </View>
           )}
 
+          {badge ? (
+            <View style={[styles.badge, { backgroundColor: palette.tone }]}>
+              <Text style={styles.badgeText}>{badge}</Text>
+            </View>
+          ) : null}
           {title ? <Text style={styles.title}>{title}</Text> : null}
+          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+          {meta ? <Text style={styles.meta}>{meta}</Text> : null}
+          {description ? (
+            <View style={[styles.description, { backgroundColor: palette.tint }]}>
+              <View style={[styles.descriptionDot, { backgroundColor: palette.tone }]}>
+                <Text style={styles.descriptionDotText}>i</Text>
+              </View>
+              <Text style={[styles.descriptionText, { color: palette.tone }]}>{description}</Text>
+            </View>
+          ) : null}
           {message ? (
             <ScrollView style={styles.messageScroll} contentContainerStyle={styles.messageContent} bounces={false}>
               <Text style={styles.message}>{message}</Text>
@@ -172,7 +196,7 @@ export default function AlertDialog({
           {children}
 
           {resolvedActions.length ? (
-            <View style={styles.actions}>
+            <View style={[styles.actions, stackedActions && styles.actionsStacked]}>
               {resolvedActions.map((action) => {
                 const variant = action.tone || 'primary';
                 return (
@@ -180,16 +204,31 @@ export default function AlertDialog({
                     key={action.label}
                     style={[
                       styles.btn,
+                      stackedActions && styles.btnStacked,
+                      variant === 'alert' && styles.btnAlert,
+                      variant === 'alert' && {
+                        backgroundColor: actionColor || palette.tone,
+                        shadowColor: actionColor || palette.tone,
+                      },
                       variant === 'primary' && styles.btnPrimary,
                       variant === 'danger' && styles.btnDanger,
                       variant === 'secondary' && styles.btnSecondary,
+                      variant === 'secondary' && actionTint && {
+                        backgroundColor: actionTint,
+                        borderColor: actionColor || palette.tone,
+                      },
                     ]}
                     onPress={action.onPress}
                     activeOpacity={0.85}
                     accessibilityRole="button"
                   >
                     <Text
-                      style={[styles.btnText, variant === 'secondary' ? styles.btnTextSecondary : styles.btnTextOnTone]}
+                      style={[
+                        styles.btnText,
+                        variant === 'secondary' ? styles.btnTextSecondary : styles.btnTextOnTone,
+                        variant === 'alert' && { color: actionTextColor },
+                        variant === 'secondary' && actionColor && { color: actionSecondaryTextColor || actionColor },
+                      ]}
                       numberOfLines={1}
                     >
                       {action.label}
@@ -264,6 +303,61 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 6,
   },
+  badge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 8,
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  subtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#374151',
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  meta: {
+    marginTop: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#4B5563',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  description: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginTop: 14,
+  },
+  descriptionDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  descriptionDotText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  descriptionText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
   messageScroll: {
     flexGrow: 0,
     alignSelf: 'stretch',
@@ -284,6 +378,11 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 22,
   },
+  actionsStacked: {
+    flexDirection: 'column',
+    gap: 8,
+    marginTop: 14,
+  },
   btn: {
     flex: 1,
     height: 42,
@@ -294,11 +393,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 10,
   },
+  btnStacked: {
+    flex: 0,
+    alignSelf: 'stretch',
+    width: '100%',
+  },
   btnPrimary: {
     backgroundColor: '#1E6FFF',
     shadowColor: '#1E6FFF',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.28,
+    shadowRadius: 7,
+    elevation: 3,
+  },
+  btnAlert: {
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.24,
     shadowRadius: 7,
     elevation: 3,
   },
