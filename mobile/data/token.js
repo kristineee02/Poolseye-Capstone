@@ -49,6 +49,20 @@ export const colors = {
   alarmBorder: '#F4C6CD',
   alarmDark:   '#7A1C28',
   alarmMid:    '#B5505F',
+
+  // Canonical geofence palette (matches the web Geofence Editor).
+  geofenceYellow:       '#E6B800',
+  geofenceYellowTint:   '#FFF9E0',
+  geofenceYellowBorder: '#F0D86A',
+  geofenceYellowDark:   '#8A7000',
+  geofenceRed:          '#D6364A',
+  geofenceRedTint:      '#FCEAEE',
+  geofenceRedBorder:    '#F4C6CD',
+  geofenceRedDark:      '#7A1C28',
+  geofenceOrange:       '#E67E22',
+  geofenceOrangeTint:   '#FDF0E6',
+  geofenceOrangeBorder: '#F2BE91',
+  geofenceOrangeDark:   '#8A3F0A',
 };
 
 export const radius = {

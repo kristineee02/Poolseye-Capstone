@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   View, Pressable, StyleSheet, Animated, Image,
 } from 'react-native';
@@ -144,6 +144,7 @@ export default function TabNavigator() {
   const [focusAlert, setFocusAlert] = useState(null);
   const { tabBarPaddingBottom, horizontalInset } = useLayoutInsets();
   const { token } = useAuth();
+  const openAllAlerts = useCallback(() => setActive('alerts'), []);
   useAlertNotifications(token, {
     onPendingCount: setAlertBadgeCount,
     onOpenAlert: (data) => {
@@ -158,7 +159,7 @@ export default function TabNavigator() {
   const screens = {
     home: (
       <AlertsScreen
-        onViewAllAlerts={() => setActive('alerts')}
+        onViewAllAlerts={openAllAlerts}
         onPendingCountChange={setAlertBadgeCount}
         focusAlert={focusAlert}
       />

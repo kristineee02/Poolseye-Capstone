@@ -49,6 +49,10 @@ function registerMobileEventRoutes(app, db) {
       const alertsOnly = String(req.query.alertsOnly || '1') !== '0'
       const status = String(req.query.status || 'all')
       const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 40))
+      const offset = Math.max(0, Number(req.query.offset) || 0)
+      const beforeTs = Number(req.query.beforeTs)
+      const beforeId = String(req.query.beforeId || '')
+      const hasCursor = status === 'closed' && Number.isFinite(beforeTs) && Boolean(beforeId)
       const muted = await mutedFilter(db, req.lifeguard.id)
 
       const conditions = [HIDDEN_EVENTS_SQL]
@@ -57,7 +61,9 @@ function registerMobileEventRoutes(app, db) {
       if (alertsOnly) {
         conditions.push('is_alert = 1')
       }
-      if (status !== 'all') {
+      if (status === 'closed') {
+        conditions.push("status <> 'pending'")
+      } else if (status !== 'all') {
         conditions.push('status = ?')
         params.push(status)
       }
@@ -66,18 +72,37 @@ function registerMobileEventRoutes(app, db) {
         params.push(...muted.params)
       }
 
+      const countWhere = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+      const totalRow = await get(
+        db,
+        `SELECT COUNT(*) AS count FROM events ${countWhere}`,
+        params
+      )
+      if (hasCursor) {
+        conditions.push('(ts < ? OR (ts = ? AND id < ?))')
+        params.push(beforeTs, beforeTs, beforeId)
+      }
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+      const pageOffset = hasCursor ? 0 : offset
       const rows = await all(
         db,
         `SELECT * FROM events ${where}
          ORDER BY CASE WHEN status = 'pending' AND is_alert = 1 THEN priority ELSE 9 END ASC,
-           ts DESC, created_at DESC LIMIT ?`,
-        [...params, limit]
+           ts DESC, id DESC LIMIT ? OFFSET ?`,
+        [...params, limit + 1, pageOffset]
       )
+      const hasMore = rows.length > limit
+      const page = hasMore ? rows.slice(0, limit) : rows
 
       res.json({
         ok: true,
-        events: await forLifeguard(db, rows, req.lifeguard.id),
+        events: await forLifeguard(db, page, req.lifeguard.id),
+        hasMore,
+        nextOffset: pageOffset + page.length,
+        nextCursor: page.length
+          ? { ts: page[page.length - 1].ts, id: page[page.length - 1].id }
+          : null,
+        totalCount: Number(totalRow?.count || 0),
         pendingCount: await pendingCount(db, muted),
         acknowledgedToday: await acknowledgedSince(db, req.lifeguard.id, Number(req.query.ackSince)),
       })

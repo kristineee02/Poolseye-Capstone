@@ -32,6 +32,9 @@ export default function ConfirmModal({
   actionTint,
   actionTextColor,
   actionSecondaryTextColor,
+  accentColor,
+  accentTint,
+  presentation,
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   onConfirm,
@@ -73,6 +76,9 @@ export default function ConfirmModal({
       actionTint={actionTint}
       actionTextColor={actionTextColor}
       actionSecondaryTextColor={actionSecondaryTextColor}
+      accentColor={accentColor}
+      accentTint={accentTint}
+      presentation={presentation}
     >
       {children}
     </AlertDialog>

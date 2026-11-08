@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, ScrollView, StyleSheet, TouchableOpacity, LayoutAnimation,
   RefreshControl,
@@ -13,27 +13,58 @@ import ConfirmModal from '../components/ConfirmModal';
 import StatusModal from '../components/StatusModal';
 import { AlertsHomeSkeleton, DataLoadError } from '../components/Skeleton';
 import { useAuth } from '../context/AuthContext';
-import { acknowledgeMobileEvent, fetchMobileEvents, respondToMobileEvent, updateMobileEventStatus } from '../api/events';
-import { formatEventTime, localMidnightTimestamp } from '../utils/dateTime';
+import { fetchMobileEvents, respondToMobileEvent, updateMobileEventStatus } from '../api/events';
+import { formatEventTime } from '../utils/dateTime';
 
 const POLL_MS = 4000;
-const ZONE_CATEGORIES = ['intrusion', 'deep-water', 'supervision'];
-
 function getAlertMeta(alert) {
-  const isAlarm = alert.type === 'alarm';
+  if (alert.category === 'intrusion') {
+    return {
+      accent: colors.geofenceRed,
+      tint: colors.geofenceRedTint,
+      border: colors.geofenceRedBorder,
+      dark: colors.geofenceRedDark,
+      buttonText: '#FFFFFF',
+      badge: 'RED ZONE',
+    };
+  }
+  if (alert.category === 'deep-water') {
+    return {
+      accent: colors.geofenceOrange,
+      tint: colors.geofenceOrangeTint,
+      border: colors.geofenceOrangeBorder,
+      dark: colors.geofenceOrangeDark,
+      buttonText: '#FFFFFF',
+      badge: 'ORANGE ZONE',
+    };
+  }
+  if (alert.category === 'supervision') {
+    return {
+      accent: colors.geofenceYellow,
+      tint: colors.geofenceYellowTint,
+      border: colors.geofenceYellowBorder,
+      dark: colors.geofenceYellowDark,
+      buttonText: colors.geofenceYellowDark,
+      badge: 'YELLOW ZONE',
+    };
+  }
+
+  const isAlarm = alert.category === 'drowning' || alert.type === 'alarm';
   return {
-    isAlarm,
     accent: isAlarm ? colors.alarm : colors.warn,
-    zoneColor: isAlarm ? colors.alarm : colors.warn,
+    tint: isAlarm ? colors.alarmTint : colors.warnTint,
+    border: isAlarm ? colors.alarmBorder : colors.warnBorder,
+    dark: isAlarm ? colors.alarmDark : colors.warnDark,
+    buttonText: isAlarm ? '#FFFFFF' : colors.warnDark,
     badge: isAlarm ? 'ALARM' : 'WARNING',
   };
 }
 
 function modalBadge(alert) {
-  if (alert?.category === 'drowning') return 'CRITICAL ALERT';
-  if (alert?.category === 'intrusion' || alert?.category === 'deep-water') return 'HIGH PRIORITY';
-  if (alert?.category === 'supervision') return 'ATTENTION';
-  return 'POOL ALERT';
+  if (alert?.category === 'drowning') return 'Critical Alert';
+  if (alert?.category === 'intrusion' || alert?.category === 'deep-water') return 'High Priority';
+  if (alert?.category === 'supervision') return 'Attention';
+  return 'Pool Alert';
 }
 
 function modalPerson(alert) {
@@ -56,20 +87,24 @@ function modalDescription(alert) {
   return alert?.detail || alert?.meta || 'Review this pool alert.';
 }
 
+function modalFlowDescription(alert) {
+  if (alert?.respondingMine) {
+    return 'You are responding to this incident. Mark it as resolved once the area is safe.';
+  }
+  if (alert?.respondingAt) {
+    return `${alert.responderName || 'Another lifeguard'} is responding to this incident.`;
+  }
+  return modalDescription(alert);
+}
+
 function modalActionPalette(alert) {
-  if (alert?.category === 'drowning') {
-    return { color: colors.alarm, tint: colors.alarmTint, text: '#FFFFFF', secondaryText: colors.alarmDark };
-  }
-  if (alert?.category === 'intrusion') {
-    return { color: colors.high, tint: colors.highTint, text: '#FFFFFF', secondaryText: colors.highDark };
-  }
-  if (alert?.category === 'deep-water') {
-    return { color: colors.accent, tint: colors.accentTint, text: '#FFFFFF', secondaryText: colors.accentDeep };
-  }
-  if (alert?.category === 'supervision') {
-    return { color: colors.warn, tint: colors.warnTint, text: colors.warnDark, secondaryText: colors.warnDark };
-  }
-  return { color: colors.accent, tint: colors.accentTint, text: '#FFFFFF', secondaryText: colors.accentDeep };
+  const meta = getAlertMeta(alert || {});
+  return {
+    color: meta.accent,
+    tint: meta.tint,
+    text: meta.buttonText,
+    secondaryText: meta.dark,
+  };
 }
 
 function responseStatusLabel(alert) {
@@ -86,7 +121,11 @@ const CATEGORY_PRIORITY = {
 };
 
 function byCategoryPriority(a, b) {
-  return (CATEGORY_PRIORITY[a.category] ?? 9) - (CATEGORY_PRIORITY[b.category] ?? 9);
+  const priorityDifference = Number(a.priority || 9) - Number(b.priority || 9);
+  if (priorityDifference) return priorityDifference;
+  const categoryDifference = (CATEGORY_PRIORITY[a.category] ?? 9) - (CATEGORY_PRIORITY[b.category] ?? 9);
+  if (categoryDifference) return categoryDifference;
+  return Number(b.ts || 0) - Number(a.ts || 0);
 }
 
 /** Prefer drowning, then the alert this lifeguard can still act on. */
@@ -109,7 +148,42 @@ function pickPrimaryAlert(alerts, pinnedId) {
   return pool[0];
 }
 
-function ActiveAlertCard({ alert, busy, onOpen }) {
+function sameActiveAlert(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const aPersonIds = a.personIds || [];
+  const bPersonIds = b.personIds || [];
+  return a.id === b.id
+    && a.type === b.type
+    && a.title === b.title
+    && a.detail === b.detail
+    && a.meta === b.meta
+    && a.time === b.time
+    && a.zone === b.zone
+    && a.category === b.category
+    && a.backendStatus === b.backendStatus
+    && a.personId === b.personId
+    && a.affectedCount === b.affectedCount
+    && a.occurrenceCount === b.occurrenceCount
+    && a.respondingAt === b.respondingAt
+    && a.respondingMine === b.respondingMine
+    && a.responderName === b.responderName
+    && aPersonIds.length === bPersonIds.length
+    && aPersonIds.every((id, index) => id === bPersonIds[index]);
+}
+
+function reconcileActiveAlerts(previous, incoming) {
+  const previousById = new Map(previous.map((alert) => [alert.id, alert]));
+  const next = incoming.map((alert) => {
+    const existing = previousById.get(alert.id);
+    return sameActiveAlert(existing, alert) ? existing : alert;
+  });
+  return next.length === previous.length && next.every((alert, index) => alert === previous[index])
+    ? previous
+    : next;
+}
+
+const ActiveAlertCard = React.memo(function ActiveAlertCard({ alert, busy, onRespond, onResolve, onDismiss }) {
   if (!alert) {
     return (
       <View style={styles.clearCard}>
@@ -123,24 +197,16 @@ function ActiveAlertCard({ alert, busy, onOpen }) {
   }
 
   const m = getAlertMeta(alert);
-  const borderColor = m.isAlarm ? colors.alarmBorder : colors.warnBorder;
-  const badgeBg = m.isAlarm ? colors.alarmTint : colors.warnTint;
-  const badgeBorder = m.isAlarm ? colors.alarm : colors.warn;
-  const ackShadow = m.isAlarm
-    ? {
-        shadowColor: colors.alarm,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.28,
-        shadowRadius: 10,
-        elevation: 4,
-      }
-    : {
-        shadowColor: colors.warn,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.25,
-        shadowRadius: 10,
-        elevation: 4,
-      };
+  const borderColor = m.border;
+  const badgeBg = m.tint;
+  const badgeBorder = m.accent;
+  const ackShadow = {
+    shadowColor: m.accent,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.26,
+    shadowRadius: 10,
+    elevation: 4,
+  };
 
   return (
     <View style={[styles.activeCard, { borderColor }]}>
@@ -155,6 +221,13 @@ function ActiveAlertCard({ alert, busy, onOpen }) {
         </View>
 
         <Text style={styles.activeTitle} numberOfLines={2}>{alert.title}</Text>
+        <Text style={styles.activePerson}>{modalPerson(alert)}</Text>
+        <Text style={styles.activeDescription}>{modalDescription(alert)}</Text>
+        {alert.occurrenceCount > 1 ? (
+          <Text style={styles.groupedDetection}>
+            Grouped from {alert.occurrenceCount} matching detections
+          </Text>
+        ) : null}
         <Text style={styles.activeZone}>{alert.zone}</Text>
       </View>
 
@@ -165,40 +238,45 @@ function ActiveAlertCard({ alert, busy, onOpen }) {
             : `${alert.responderName || 'Another lifeguard'} is responding`}
         </Text>
       ) : null}
-      <TouchableOpacity
-        style={[
-          styles.ackBtn,
-          styles.respondBtn,
-          { backgroundColor: alert.respondingMine ? colors.safe : m.accent },
-          ackShadow,
-        ]}
-        onPress={() => onOpen(alert)}
-        disabled={busy}
-        activeOpacity={0.85}
-      >
-        <Text style={styles.ackText}>
-          {busy ? 'Updating…' : alert.respondingMine ? 'Continue response' : alert.respondingAt ? 'View alert' : 'Respond now'}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-function OverviewSection({ stats }) {
-  return (
-    <View style={styles.overviewCard}>
-      {stats.map((s, index) => (
-        <View
-          key={s.key}
-          style={[styles.overviewCell, index < stats.length - 1 && styles.overviewCellGap]}
-        >
-          <Text style={[styles.overviewValue, { color: s.color }]}>{s.value}</Text>
-          <Text style={styles.overviewLabel} numberOfLines={1} adjustsFontSizeToFit>{s.label}</Text>
+      {alert.respondingMine ? (
+        <View style={styles.activeActions}>
+          <TouchableOpacity
+            style={[styles.ackBtn, { backgroundColor: colors.safe }]}
+            onPress={() => onResolve(alert.id)}
+            disabled={busy}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.ackText}>Mark as Resolved</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.dismissBtn, { borderColor: m.accent }]}
+            onPress={() => onDismiss(alert.id)}
+            disabled={busy}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.dismissText, { color: m.accent }]}>False Alarm</Text>
+          </TouchableOpacity>
         </View>
-      ))}
+      ) : !alert.respondingAt ? (
+        <TouchableOpacity
+          style={[
+            styles.ackBtn,
+            styles.respondBtn,
+            { backgroundColor: m.accent },
+            ackShadow,
+          ]}
+          onPress={() => onRespond(alert.id)}
+          disabled={busy}
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.ackText, { color: m.buttonText }]}>
+            {busy ? 'Updating…' : 'Respond now'}
+          </Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
-}
+});
 
 function ChevronRight({ color = colors.textTertiary, size = 16 }) {
   return (
@@ -214,29 +292,10 @@ function ChevronRight({ color = colors.textTertiary, size = 16 }) {
   );
 }
 
-function RecentAlertRow({ alert, onPress, showDivider }) {
-  const m = getAlertMeta(alert);
-  return (
-    <TouchableOpacity
-      style={[styles.recentRow, showDivider && styles.recentRowDivider]}
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
-      <View style={[styles.recentStripe, { backgroundColor: m.accent }]} />
-      <View style={styles.recentCopy}>
-        <Text style={styles.recentTitle} numberOfLines={1}>{alert.title}</Text>
-        <Text style={styles.recentMeta} numberOfLines={1}>
-          {alert.zone} · {formatEventTime(alert.time)}
-        </Text>
-      </View>
-      <ChevronRight />
-    </TouchableOpacity>
-  );
-}
-
-function OpenAlertRow({ alert, onPress, showDivider }) {
+const OpenAlertRow = React.memo(function OpenAlertRow({ alert, onSelect, showDivider }) {
   const m = getAlertMeta(alert);
   const status = responseStatusLabel(alert);
+  const handlePress = useCallback(() => onSelect?.(alert), [alert, onSelect]);
   const statusColor = !alert.respondingAt
     ? m.accent
     : alert.respondingMine
@@ -246,7 +305,7 @@ function OpenAlertRow({ alert, onPress, showDivider }) {
   return (
     <TouchableOpacity
       style={[styles.recentRow, showDivider && styles.recentRowDivider]}
-      onPress={onPress}
+      onPress={handlePress}
       activeOpacity={0.7}
     >
       <View style={[styles.recentStripe, { backgroundColor: m.accent }]} />
@@ -254,6 +313,7 @@ function OpenAlertRow({ alert, onPress, showDivider }) {
         <Text style={styles.recentTitle} numberOfLines={1}>{alert.title}</Text>
         <Text style={styles.recentMeta} numberOfLines={1}>
           {alert.zone} · {formatEventTime(alert.time)}
+          {alert.occurrenceCount > 1 ? ` · ${alert.occurrenceCount} detections` : ''}
         </Text>
         <Text style={[styles.openStatus, { color: statusColor }]} numberOfLines={1}>
           {status}
@@ -262,19 +322,33 @@ function OpenAlertRow({ alert, onPress, showDivider }) {
       <ChevronRight />
     </TouchableOpacity>
   );
-}
+});
 
-function OtherOpenAlertsSection({ alerts, onSelect }) {
+const RecentAlertsSection = React.memo(function RecentAlertsSection({
+  alerts,
+  onSelect,
+  onViewAll,
+}) {
   if (!alerts.length) return null;
 
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Other open alerts</Text>
-        <Text style={styles.openCount}>{alerts.length}</Text>
+        <Text style={styles.sectionTitle}>Recent alerts</Text>
+        <TouchableOpacity
+          style={styles.viewAllButton}
+          onPress={onViewAll}
+          hitSlop={8}
+          activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel="View all alerts"
+        >
+          <Text style={styles.viewAllText}>View all</Text>
+          <ChevronRight color={colors.accent} size={14} />
+        </TouchableOpacity>
       </View>
       <Text style={styles.sectionHint}>
-        Open alerts that still need handling. Tap one to bring it to the top.
+        Latest open alerts that still need handling.
       </Text>
       <View style={styles.recentCard}>
         {alerts.map((alert, index) => (
@@ -282,41 +356,13 @@ function OtherOpenAlertsSection({ alerts, onSelect }) {
             key={alert.id}
             alert={alert}
             showDivider={index < alerts.length - 1}
-            onPress={() => onSelect?.(alert)}
+            onSelect={onSelect}
           />
         ))}
       </View>
     </View>
   );
-}
-
-function RecentAlertsSection({ alerts, onViewAll, onOpenAlert }) {
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Recent alerts</Text>
-        <TouchableOpacity onPress={onViewAll} hitSlop={8} activeOpacity={0.8}>
-          <Text style={styles.viewAll}>View all</Text>
-        </TouchableOpacity>
-      </View>
-
-      {alerts.length === 0 ? (
-        <Text style={styles.emptyRecent}>No recent alerts in this session.</Text>
-      ) : (
-        <View style={styles.recentCard}>
-          {alerts.map((alert, index) => (
-            <RecentAlertRow
-              key={alert.id}
-              alert={alert}
-              showDivider={index < alerts.length - 1}
-              onPress={() => onOpenAlert?.(alert)}
-            />
-          ))}
-        </View>
-      )}
-    </View>
-  );
-}
+});
 
 function pickFocusedAlert(alerts, focus) {
   const ids = [focus?.eventId, ...(Array.isArray(focus?.eventIds) ? focus.eventIds : [])].filter(Boolean);
@@ -331,8 +377,6 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
   const { tabBarClearance } = useLayoutInsets();
   const { token } = useAuth();
   const [activeAlerts, setActiveAlerts] = useState([]);
-  const [recentAlerts, setRecentAlerts] = useState([]);
-  const [ackCount, setAckCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [error, setError] = useState('');
@@ -341,6 +385,8 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
   const [responding, setResponding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pinnedId, setPinnedId] = useState(null);
+  const loadRequestId = useRef(0);
+  const closingAlertIds = useRef(new Set());
 
   useEffect(() => {
     const focused = pickFocusedAlert(activeAlerts, focusAlert);
@@ -349,10 +395,16 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
 
   const loadAlerts = useCallback(async () => {
     if (!token) return;
-    const [pendingRes, recentRes] = await Promise.all([
-      fetchMobileEvents(token, { alertsOnly: true, status: 'pending', limit: 50, ackSince: localMidnightTimestamp() }),
-      fetchMobileEvents(token, { alertsOnly: true, status: 'all', limit: 8 }),
-    ]);
+    const requestId = ++loadRequestId.current;
+    const pendingRes = await fetchMobileEvents(token, {
+      alertsOnly: true,
+      status: 'pending',
+      limit: 50,
+    });
+
+    // A slower, older poll must never restore alerts that a newer refresh
+    // already removed after they were resolved or marked as false alarms.
+    if (requestId !== loadRequestId.current) return;
 
     if (!pendingRes.ok) {
       setConnected(false);
@@ -363,35 +415,35 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
 
     setConnected(true);
     setError('');
-    const nextActiveAlerts = pendingRes.events || [];
-    setActiveAlerts(nextActiveAlerts);
-    setAckCount(pendingRes.acknowledgedToday ?? 0);
+    const nextActiveAlerts = (pendingRes.events || [])
+      .filter((alert) => (
+        alert.backendStatus === 'pending' && !closingAlertIds.current.has(alert.id)
+      ))
+      .sort(byCategoryPriority);
+    setActiveAlerts((current) => reconcileActiveAlerts(current, nextActiveAlerts));
+    setSelectedAlert((current) => {
+      if (!current) return null;
+      const matching = nextActiveAlerts.find((alert) => alert.id === current.id) || null;
+      return sameActiveAlert(current, matching) ? current : matching;
+    });
     onPendingCountChange?.(pendingRes.pendingCount ?? pendingRes.events?.length ?? 0);
-
-    if (recentRes.ok) {
-      const nextRecentAlerts = recentRes.events || [];
-      setRecentAlerts(nextRecentAlerts);
-      if (nextActiveAlerts.length === 0 && nextRecentAlerts.length === 0) {
-        setSelectedAlert(null);
-      }
-    }
     setLoading(false);
   }, [token, onPendingCountChange]);
 
-  const retryLoad = () => {
+  const retryLoad = useCallback(() => {
     setLoading(true);
     loadAlerts();
-  };
+  }, [loadAlerts]);
 
   useAutoRefresh(loadAlerts, POLL_MS, Boolean(token));
 
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadAlerts();
     setRefreshing(false);
-  };
+  }, [loadAlerts]);
 
-  const handleRespond = async (id) => {
+  const handleRespond = useCallback(async (id) => {
     setResponding(true);
     const result = await respondToMobileEvent(token, id);
     setResponding(false);
@@ -405,60 +457,55 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
       }
     } else {
       setPinnedId(id);
+      if (result.event) {
+        setActiveAlerts((prev) => prev.map((alert) => (alert.id === id ? result.event : alert)));
+      }
     }
     await loadAlerts();
-  };
+  }, [token, loadAlerts]);
 
-  const handleAcknowledge = async (id) => {
-    setResponding(true);
-    const result = await acknowledgeMobileEvent(token, id);
-    setResponding(false);
-    if (!result.ok) {
-      setStatus({ tone: 'error', title: 'Could not acknowledge', message: result.error || 'Failed to acknowledge this alert.' });
-    }
-    await loadAlerts();
-  };
-
-  const handleResolve = async (id) => {
+  const handleResolve = useCallback(async (id) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    closingAlertIds.current.add(id);
     setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
     setPinnedId((current) => (current === id ? null : current));
     const result = await updateMobileEventStatus(token, id, 'resolved');
     if (!result.ok) {
-      setStatus({ tone: 'error', title: 'Could not acknowledge', message: result.error || 'Failed to acknowledge this alert.' });
+      closingAlertIds.current.delete(id);
+      setStatus({ tone: 'error', title: 'Could not resolve', message: result.error || 'Failed to resolve this alert.' });
       await loadAlerts();
       return;
     }
     onPendingCountChange?.(result.pendingCount);
     await loadAlerts();
-  };
+    closingAlertIds.current.delete(id);
+  }, [token, loadAlerts, onPendingCountChange]);
 
-  const handleDismiss = async (id) => {
+  const handleDismiss = useCallback(async (id) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    closingAlertIds.current.add(id);
     setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
     setPinnedId((current) => (current === id ? null : current));
     const result = await updateMobileEventStatus(token, id, 'dismissed');
     if (!result.ok) {
+      closingAlertIds.current.delete(id);
       setStatus({ tone: 'error', title: 'Could not dismiss', message: result.error || 'Failed to dismiss this alert.' });
       await loadAlerts();
       return;
     }
     onPendingCountChange?.(result.pendingCount);
     await loadAlerts();
-  };
+    closingAlertIds.current.delete(id);
+  }, [token, loadAlerts, onPendingCountChange]);
 
-  const openRecentAlert = (alert) => {
-    setSelectedAlert(alert);
-  };
+  const closeAlertModal = useCallback(() => setSelectedAlert(null), []);
 
-  const closeRecentAlert = () => setSelectedAlert(null);
-
-  const primary = pickPrimaryAlert(activeAlerts, pinnedId);
-  const otherOpenAlerts = activeAlerts.filter((item) => item.id !== primary?.id);
-  const activeIds = new Set(activeAlerts.map((item) => item.id));
-  // Active incidents are represented only by the single card above. Keep the
-  // history list from repeating that same incident (or other pending alerts).
-  const recent = recentAlerts.filter((item) => !activeIds.has(item.id)).slice(0, 4);
+  const primary = useMemo(() => pickPrimaryAlert(activeAlerts, pinnedId), [activeAlerts, pinnedId]);
+  const otherOpenAlerts = useMemo(
+    () => activeAlerts.filter((item) => item.id !== primary?.id),
+    [activeAlerts, primary?.id]
+  );
+  const recentAlerts = useMemo(() => otherOpenAlerts.slice(0, 5), [otherOpenAlerts]);
 
   useEffect(() => {
     if (pinnedId && !activeAlerts.some((alert) => alert.id === pinnedId)) {
@@ -466,75 +513,55 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
     }
   }, [activeAlerts, pinnedId]);
 
-  const stats = useMemo(() => {
-    const intrusion = activeAlerts.filter((a) => ZONE_CATEGORIES.includes(a.category)).length;
-    const drowning = activeAlerts.filter((a) => a.category === 'drowning').length;
-    const respondingCount = activeAlerts.filter((a) => a.respondingAt).length;
-    return [
-      { key: 'intrusion', label: 'Intrusion', value: String(intrusion), color: intrusion > 0 ? colors.alarm : colors.textPrimary },
-      { key: 'drowning', label: 'Drowning', value: String(drowning), color: drowning > 0 ? colors.alarm : colors.textPrimary },
-      { key: 'responding', label: 'Responding', value: String(respondingCount), color: respondingCount > 0 ? colors.warn : colors.textPrimary },
-      { key: 'ack', label: 'Acknowledged', value: String(ackCount), color: colors.safe },
-    ];
-  }, [activeAlerts, ackCount]);
-
-  const openActionAlert = (alert) => setSelectedAlert(alert);
-  const viewAllFromModal = () => {
-    setSelectedAlert(null);
-    onViewAllAlerts?.();
-  };
-  const selectedActions = !selectedAlert
-    ? []
-    : selectedAlert.backendStatus !== 'pending'
-      ? [
-          { label: 'View details', tone: 'primary', onPress: viewAllFromModal },
-          { label: 'Close', tone: 'secondary', onPress: closeRecentAlert },
-        ]
-      : selectedAlert.respondingAt && !selectedAlert.respondingMine
-        ? [
-            { label: 'View details', tone: 'primary', onPress: viewAllFromModal },
-            { label: 'Close', tone: 'secondary', onPress: closeRecentAlert },
-          ]
-        : selectedAlert.respondingMine
-          ? [
-              { label: 'Resolve', tone: 'primary', onPress: () => { const id = selectedAlert.id; closeRecentAlert(); handleResolve(id); } },
-              { label: 'False alarm', tone: 'danger', onPress: () => { const id = selectedAlert.id; closeRecentAlert(); handleDismiss(id); } },
-              { label: 'View details', tone: 'secondary', onPress: viewAllFromModal },
-              { label: 'Close', tone: 'secondary', onPress: closeRecentAlert },
-            ]
-          : [
-              ...(!selectedAlert.acknowledgedAt ? [{
-                label: 'Acknowledge', tone: 'secondary',
-                onPress: () => { const id = selectedAlert.id; closeRecentAlert(); handleAcknowledge(id); },
-              }] : []),
-              {
-                label: "I'm responding",
-                tone: 'alert',
-                onPress: () => { const id = selectedAlert.id; closeRecentAlert(); handleRespond(id); },
-              },
-              { label: 'View details', tone: 'secondary', onPress: viewAllFromModal },
-              {
-                label: 'False alarm', tone: 'secondary',
-                onPress: () => { const id = selectedAlert.id; closeRecentAlert(); handleDismiss(id); },
-              },
-            ];
-  const selectedPalette = modalActionPalette(selectedAlert);
+  const openActionAlert = useCallback((alert) => setSelectedAlert(alert), []);
+  const selectedActions = useMemo(() => {
+    if (!selectedAlert) return [];
+    if (selectedAlert.backendStatus !== 'pending'
+      || (selectedAlert.respondingAt && !selectedAlert.respondingMine)) {
+      return [{ label: 'Close', tone: 'secondary', onPress: closeAlertModal }];
+    }
+    if (selectedAlert.respondingMine) {
+      return [
+        {
+          label: 'Mark as Resolved',
+          tone: 'primary',
+          onPress: () => { const id = selectedAlert.id; closeAlertModal(); handleResolve(id); },
+        },
+        {
+          label: 'False Alarm',
+          tone: 'secondary',
+          onPress: () => { const id = selectedAlert.id; closeAlertModal(); handleDismiss(id); },
+        },
+      ];
+    }
+    return [{
+      label: 'Respond Now',
+      tone: 'alert',
+      onPress: () => { const id = selectedAlert.id; closeAlertModal(); handleRespond(id); },
+    }];
+  }, [selectedAlert, closeAlertModal, handleRespond, handleResolve, handleDismiss]);
+  const selectedPalette = useMemo(() => modalActionPalette(selectedAlert), [selectedAlert]);
+  const contentStyle = useMemo(
+    () => [styles.content, { paddingBottom: tabBarClearance + spacing.md }],
+    [tabBarClearance]
+  );
+  const refreshControl = useMemo(() => (
+    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
+  ), [refreshing, onRefresh]);
 
   return (
     <>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.content, { paddingBottom: tabBarClearance + spacing.md }]}
+        contentContainerStyle={contentStyle}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
-        }
+        refreshControl={refreshControl}
       >
         <ProfileHero online={connected} />
 
-        {loading && !activeAlerts.length && !recentAlerts.length ? (
+        {loading && !activeAlerts.length ? (
           <AlertsHomeSkeleton onRetry={retryLoad} />
-        ) : error && !activeAlerts.length && !recentAlerts.length ? (
+        ) : error && !activeAlerts.length ? (
           <DataLoadError message={error} onRetry={retryLoad} />
         ) : (
           <>
@@ -543,17 +570,15 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
             <ActiveAlertCard
               alert={primary}
               busy={responding}
-              onOpen={openActionAlert}
+              onRespond={handleRespond}
+              onResolve={handleResolve}
+              onDismiss={handleDismiss}
             />
 
-            <OtherOpenAlertsSection alerts={otherOpenAlerts} onSelect={openActionAlert} />
-
-            <OverviewSection stats={stats} />
-
             <RecentAlertsSection
-              alerts={recent}
+              alerts={recentAlerts}
+              onSelect={openActionAlert}
               onViewAll={onViewAllAlerts}
-              onOpenAlert={openRecentAlert}
             />
           </>
         )}
@@ -561,20 +586,23 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
 
       <ConfirmModal
         visible={Boolean(selectedAlert)}
-        onClose={closeRecentAlert}
+        onClose={closeAlertModal}
         title={selectedAlert?.title || 'Alert'}
         tone={selectedAlert?.category === 'drowning' ? 'danger' : selectedAlert?.type === 'alarm' ? 'warning' : 'info'}
-        icon={selectedAlert?.category === 'drowning' ? 'alertCircle' : 'bell'}
+        icon="siren"
         badge={selectedAlert ? modalBadge(selectedAlert) : ''}
         subtitle={selectedAlert ? modalPerson(selectedAlert) : ''}
         meta={selectedAlert ? `${String(selectedAlert.zone || 'Pool').toUpperCase()} · ${formatEventTime(selectedAlert.time)}` : ''}
-        description={selectedAlert ? modalDescription(selectedAlert) : ''}
+        description={selectedAlert ? modalFlowDescription(selectedAlert) : ''}
         actions={selectedActions}
         stackedActions
         actionColor={selectedPalette.color}
         actionTint={selectedPalette.tint}
         actionTextColor={selectedPalette.text}
         actionSecondaryTextColor={selectedPalette.secondaryText}
+        accentColor={selectedPalette.color}
+        accentTint={selectedPalette.tint}
+        presentation="incident"
       />
       <StatusModal
         visible={Boolean(status)}
@@ -667,8 +695,26 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
     lineHeight: 22,
   },
+  activePerson: {
+    marginTop: 6,
+    fontSize: typography.sm,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  activeDescription: {
+    marginTop: 6,
+    fontSize: typography.sm,
+    lineHeight: 20,
+    color: colors.textSecondary,
+  },
+  groupedDetection: {
+    marginTop: 6,
+    fontSize: typography.xs,
+    fontWeight: '700',
+    color: colors.textTertiary,
+  },
   activeZone: {
-    marginTop: 4,
+    marginTop: 8,
     marginBottom: 16,
     fontSize: typography.sm,
     color: colors.textSecondary,
@@ -722,38 +768,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  overviewCard: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    backgroundColor: colors.bgPanel,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    ...shadow.sm,
-  },
-  overviewCell: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  overviewCellGap: {
-    borderRightWidth: StyleSheet.hairlineWidth,
-    borderRightColor: colors.borderSubtle,
-  },
-  overviewValue: {
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.6,
-  },
-  overviewLabel: {
-    fontSize: typography.xs,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-
   section: {
     gap: 12,
   },
@@ -769,22 +783,21 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     letterSpacing: -0.3,
   },
-  viewAll: {
+  viewAllText: {
     fontSize: typography.sm,
     fontWeight: '700',
     color: colors.accent,
   },
-  openCount: {
-    minWidth: 24,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+  viewAllButton: {
+    minHeight: 32,
+    paddingLeft: 10,
+    paddingRight: 7,
     borderRadius: radius.full,
-    overflow: 'hidden',
-    textAlign: 'center',
-    fontSize: typography.sm,
-    fontWeight: '800',
-    color: colors.accent,
-    backgroundColor: colors.accentTint || 'rgba(30, 111, 255, 0.12)',
+    backgroundColor: colors.accentTint,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
   },
   sectionHint: {
     marginTop: -4,
@@ -838,10 +851,5 @@ const styles = StyleSheet.create({
     fontSize: typography.sm,
     color: colors.textSecondary,
     fontWeight: '500',
-  },
-  emptyRecent: {
-    fontSize: typography.sm,
-    color: colors.textTertiary,
-    paddingVertical: 8,
   },
 });
