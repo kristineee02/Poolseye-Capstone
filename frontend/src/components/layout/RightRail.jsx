@@ -20,7 +20,10 @@ const POLL_MS = 5000
 const AUTO_SEND_WINDOW_SEC = 15 * 60
 
 function describeAlert(alert) {
-  const person = alert.person_id != null ? `Person #${alert.person_id}` : 'A person'
+  const affectedCount = Number(alert.affected_count || alert.person_ids?.length || 1)
+  const person = affectedCount > 1
+    ? `${affectedCount} swimmers`
+    : alert.person_id != null ? `Person #${alert.person_id}` : 'A person'
   const zone = zoneLabel(alert)
   const where = zone ? ` in the ${zone.toLowerCase()}` : ''
 
@@ -34,6 +37,7 @@ function describeAlert(alert) {
     }
   }
   if (alert.category === 'supervision') {
+    if (affectedCount > 1) return `${affectedCount} swimmers detected without supervision${where}.`
     const threshold = alert.supervision_threshold ?? 0.7
     return `${person} inside restricted zone, no one else within ${threshold} m.`
   }

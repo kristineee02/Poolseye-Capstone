@@ -328,7 +328,9 @@ export default function HistoryPage() {
                         <div>
                           <div className="history-event-title">{e.title}</div>
                           <div className="history-event-meta">
-                            {[zoneLabel(e), e.person_id != null ? `Person #${e.person_id}` : null]
+                            {[zoneLabel(e), Number(e.affected_count || e.person_ids?.length || 1) > 1
+                              ? `${Number(e.affected_count || e.person_ids?.length)} swimmers`
+                              : e.person_id != null ? `Person #${e.person_id}` : null]
                               .filter(Boolean)
                               .join(' · ') || k.label}
                           </div>
