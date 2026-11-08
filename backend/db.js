@@ -11,6 +11,7 @@ const DB_PATH = path.join(__dirname, 'data', 'app.db')
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql')
 const LEGACY_ADMIN_PASSWORD = 'AdminPoolsEye@2026'
 const txStore = new AsyncLocalStorage()
+const sqliteWriteTails = new WeakMap()
 
 const LIFEGUARD_COLUMNS = [
   ['lifeguard_role', 'TEXT'],
@@ -236,15 +237,30 @@ async function transaction(db, callback, mode = 'write') {
     }
   }
 
-  await sqliteRun(db, mode === 'write' ? 'BEGIN IMMEDIATE' : 'BEGIN')
-  try {
-    const result = await callback()
-    await sqliteRun(db, 'COMMIT')
-    return result
-  } catch (err) {
-    try { await sqliteRun(db, 'ROLLBACK') } catch { /* already rolled back */ }
-    throw err
+  const execute = async () => {
+    await sqliteRun(db, mode === 'write' ? 'BEGIN IMMEDIATE' : 'BEGIN')
+    try {
+      const result = await callback()
+      await sqliteRun(db, 'COMMIT')
+      return result
+    } catch (err) {
+      try { await sqliteRun(db, 'ROLLBACK') } catch { /* already rolled back */ }
+      throw err
+    }
   }
+
+  if (mode !== 'write') return execute()
+
+  // A single sqlite connection cannot run overlapping BEGIN IMMEDIATE calls.
+  // Queue only write transactions so simultaneous detector requests reliably
+  // deduplicate against the incident committed immediately before them.
+  const previous = sqliteWriteTails.get(db) || Promise.resolve()
+  const queued = previous.catch(() => {}).then(execute)
+  sqliteWriteTails.set(db, queued)
+  queued.finally(() => {
+    if (sqliteWriteTails.get(db) === queued) sqliteWriteTails.delete(db)
+  }).catch(() => {})
+  return queued
 }
 
 // Runs every statement in one write transaction: either all of them apply or none do.

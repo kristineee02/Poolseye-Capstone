@@ -18,10 +18,22 @@ const PUSH_TITLES = {
 }
 
 function pushBody(event) {
-  const person = event.person_id != null ? `Person #${event.person_id}` : 'A person'
+  let personIds = []
+  try {
+    personIds = Array.isArray(event.person_ids) ? event.person_ids : JSON.parse(event.person_ids || '[]')
+  } catch {
+    personIds = []
+  }
+  const affectedCount = new Set([
+    ...personIds.map(Number).filter(Number.isFinite),
+    ...(event.person_id != null ? [Number(event.person_id)] : []),
+  ]).size
+  const person = affectedCount > 1
+    ? `${affectedCount} swimmers`
+    : event.person_id != null ? `Person #${event.person_id}` : 'A person'
   const zone = event.zone_label ? ` · ${event.zone_label}` : ''
   if (event.category === 'drowning') return `${person} may be in distress${zone}. Respond immediately.`
-  return `${event.title}${zone}${event.person_id != null ? ` · ${person}` : ''}`
+  return `${event.title}${zone}${affectedCount === 1 && event.person_id != null ? ` · ${person}` : ''}`
 }
 
 const SEVERITY_RANK = { drowning: 0, intrusion: 1, 'deep-water': 2, supervision: 3 }

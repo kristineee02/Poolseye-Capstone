@@ -135,6 +135,17 @@ function incidentKey(body, personId) {
   return `${camera}:${category}:${body?.id || zone}`
 }
 
+function groupedIncidentTitle(title, category, personIds) {
+  const count = personIds.length
+  if (category === 'supervision') {
+    return count === 1 ? 'Unsupervised Swimmer' : `Unsupervised swimmers · ${count}`
+  }
+  if ((category === 'intrusion' || category === 'deep-water') && count > 1) {
+    return `${String(title || 'Pool alert').replace(/ · \d+ swimmers$/, '')} · ${count} swimmers`
+  }
+  return title
+}
+
 /** rowToEvent for many rows, plus who is responding to and who closed each one. */
 async function eventsWithResponders(db, rows) {
   const ids = [...new Set(rows.flatMap((r) => [r.responding_by, r.acknowledged_by, r.closed_by]).filter((v) => v != null))]
@@ -162,18 +173,26 @@ async function setEventStatus(db, id, status, userId) {
   if (status === 'pending') {
     await run(
       db,
-      'UPDATE events SET status = ?, closed_at = NULL, closed_by = NULL WHERE id = ?',
+      `UPDATE events SET status = ?,
+        closed_at = NULL, closed_by = NULL,
+        acknowledged_at = NULL, acknowledged_by = NULL,
+        responding_at = NULL, responding_by = NULL,
+        escalated_at = NULL
+       WHERE id = ?`,
       [status, id]
     )
     return
   }
+  const closedAt = Date.now() / 1000
   await run(
     db,
     `UPDATE events SET status = ?,
       closed_at = COALESCE(closed_at, ?),
-      closed_by = COALESCE(closed_by, ?)
+      closed_by = COALESCE(closed_by, ?),
+      acknowledged_at = COALESCE(acknowledged_at, ?),
+      acknowledged_by = COALESCE(acknowledged_by, ?)
      WHERE id = ?`,
-    [status, Date.now() / 1000, userId ?? null, id]
+    [status, closedAt, userId ?? null, closedAt, userId ?? null, id]
   )
 }
 
@@ -333,6 +352,7 @@ async function ingestOneIncident(db, payload, personIds) {
   if (!existing) {
     const event = await insertEvent(db, {
       ...payload,
+      title: groupedIncidentTitle(payload.title, payload.category, personIds),
       person_id: personId,
       person_ids: personIds,
       incident_key: key,
@@ -347,11 +367,7 @@ async function ingestOneIncident(db, payload, personIds) {
   const activeIds = payload.category === 'supervision'
     ? personIds
     : [...new Set([...historicalIds, ...personIds])]
-  const title = payload.category === 'supervision'
-    ? (activeIds.length === 1 ? 'Unsupervised Swimmer' : `Unsupervised swimmers · ${activeIds.length}`)
-    : ((payload.category === 'intrusion' || payload.category === 'deep-water') && activeIds.length > 1
-      ? `${String(payload.title || existing.title).replace(/ · \d+ swimmers$/, '')} · ${activeIds.length} swimmers`
-      : existing.title)
+  const title = groupedIncidentTitle(payload.title || existing.title, payload.category, activeIds)
   await run(db, `UPDATE events SET
       title = ?, meta = ?, zone = COALESCE(?, zone), zone_label = COALESCE(?, zone_label),
       confidence = COALESCE(?, confidence), person_ids = ?, occurrence_count = occurrence_count + 1,

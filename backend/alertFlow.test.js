@@ -63,8 +63,25 @@ test('ongoing intrusion is deduplicated while unrelated incidents remain active'
   }))
   assert.equal(first.events[0].id, again.events[0].id)
   assert.deepEqual(again.events[0].person_ids, [7, 8])
+  assert.equal(again.events[0].title, 'Detection · 2 swimmers')
+  assert.equal(again.events[0].occurrence_count, 2)
   assert.equal(supervision.events[0].priority, 3)
   assert.equal((await all(db, "SELECT id FROM events WHERE status = 'pending'")).length, 2)
+})
+
+test('simultaneous same-zone detector requests become one grouped incident', async (t) => {
+  const db = await database(t)
+  const base = detection({ id: 'simultaneous-zone', person_id: 61 })
+  const [first, second] = await Promise.all([
+    ingestDetection(db, base),
+    ingestDetection(db, { ...base, id: 'simultaneous-zone-2', person_id: 62, ts: base.ts + 0.001 }),
+  ])
+
+  assert.equal(first.events[0].id, second.events[0].id)
+  const rows = await all(db, "SELECT * FROM events WHERE status = 'pending' AND category = 'intrusion'")
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].title, 'Detection · 2 swimmers')
+  assert.equal(rows[0].occurrence_count, 2)
 })
 
 test('unsupervised roster updates one zone incident and preserves member history', async (t) => {
@@ -109,6 +126,39 @@ test('false positive closes only its critical incident and dispatch never duplic
   const rows = await all(db, "SELECT id, status, notification_count FROM events ORDER BY person_id")
   assert.deepEqual(rows.map((row) => row.status), ['dismissed', 'pending'])
   assert.deepEqual(rows.map((row) => row.notification_count), [1, 1])
+})
+
+test('resolved and false-alarm outcomes persist with closure audit details', async (t) => {
+  const db = await database(t)
+  const resolved = (await ingestDetection(db, detection({
+    id: 'resolved-history',
+    category: 'intrusion',
+    zone: 'red',
+    zone_label: 'Red zone',
+  }))).events[0]
+  const falseAlarm = (await ingestDetection(db, detection({
+    id: 'false-alarm-history',
+    category: 'deep-water',
+    zone: 'deep',
+    zone_label: 'Deep pool',
+  }))).events[0]
+
+  await setEventStatus(db, resolved.id, 'resolved', 71)
+  await setEventStatus(db, falseAlarm.id, 'dismissed', 72)
+
+  const resolvedRow = await get(db, 'SELECT * FROM events WHERE id = ?', [resolved.id])
+  assert.equal(resolvedRow.status, 'resolved')
+  assert.equal(resolvedRow.closed_by, 71)
+  assert.ok(resolvedRow.closed_at)
+  assert.equal(resolvedRow.acknowledged_by, 71)
+  assert.ok(resolvedRow.acknowledged_at)
+
+  const falseAlarmRow = await get(db, 'SELECT * FROM events WHERE id = ?', [falseAlarm.id])
+  assert.equal(falseAlarmRow.status, 'dismissed')
+  assert.equal(falseAlarmRow.closed_by, 72)
+  assert.ok(falseAlarmRow.closed_at)
+  assert.equal(falseAlarmRow.acknowledged_by, 72)
+  assert.ok(falseAlarmRow.acknowledged_at)
 })
 
 test('acknowledged critical incident is not escalated as unanswered', async (t) => {
