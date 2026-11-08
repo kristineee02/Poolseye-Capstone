@@ -14,9 +14,10 @@ import StatusModal from '../components/StatusModal';
 import { AlertsHomeSkeleton, DataLoadError } from '../components/Skeleton';
 import { useAuth } from '../context/AuthContext';
 import { fetchMobileEvents, respondToMobileEvent, updateMobileEventStatus } from '../api/events';
-import { formatEventTime } from '../utils/dateTime';
+import { formatEventTime, localMidnightTimestamp } from '../utils/dateTime';
 
 const POLL_MS = 4000;
+const ZONE_CATEGORIES = ['intrusion', 'deep-water', 'supervision'];
 function getAlertMeta(alert) {
   if (alert.category === 'intrusion') {
     return {
@@ -278,6 +279,24 @@ const ActiveAlertCard = React.memo(function ActiveAlertCard({ alert, busy, onRes
   );
 });
 
+function OverviewSection({ stats }) {
+  return (
+    <View style={styles.overviewCard}>
+      {stats.map((stat, index) => (
+        <View
+          key={stat.key}
+          style={[styles.overviewCell, index < stats.length - 1 && styles.overviewCellGap]}
+        >
+          <Text style={[styles.overviewValue, { color: stat.color }]}>{stat.value}</Text>
+          <Text style={styles.overviewLabel} numberOfLines={1} adjustsFontSizeToFit>
+            {stat.label}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function ChevronRight({ color = colors.textTertiary, size = 16 }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -377,6 +396,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
   const { tabBarClearance } = useLayoutInsets();
   const { token } = useAuth();
   const [activeAlerts, setActiveAlerts] = useState([]);
+  const [ackCount, setAckCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [error, setError] = useState('');
@@ -400,6 +420,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
       alertsOnly: true,
       status: 'pending',
       limit: 50,
+      ackSince: localMidnightTimestamp(),
     });
 
     // A slower, older poll must never restore alerts that a newer refresh
@@ -421,6 +442,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
       ))
       .sort(byCategoryPriority);
     setActiveAlerts((current) => reconcileActiveAlerts(current, nextActiveAlerts));
+    setAckCount(pendingRes.acknowledgedToday ?? 0);
     setSelectedAlert((current) => {
       if (!current) return null;
       const matching = nextActiveAlerts.find((alert) => alert.id === current.id) || null;
@@ -506,6 +528,22 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
     [activeAlerts, primary?.id]
   );
   const recentAlerts = useMemo(() => otherOpenAlerts.slice(0, 5), [otherOpenAlerts]);
+  const stats = useMemo(() => {
+    const intrusion = activeAlerts
+      .filter((alert) => ZONE_CATEGORIES.includes(alert.category))
+      .reduce((total, alert) => total + Math.max(1, Number(alert.occurrenceCount) || 1), 0);
+    const drowning = activeAlerts
+      .filter((alert) => alert.category === 'drowning')
+      .reduce((total, alert) => total + Math.max(1, Number(alert.occurrenceCount) || 1), 0);
+    const respondingCount = activeAlerts.filter((alert) => alert.respondingAt).length;
+
+    return [
+      { key: 'intrusion', label: 'Intrusion', value: String(intrusion), color: intrusion > 0 ? colors.alarm : colors.textPrimary },
+      { key: 'drowning', label: 'Drowning', value: String(drowning), color: drowning > 0 ? colors.alarm : colors.textPrimary },
+      { key: 'responding', label: 'Responding', value: String(respondingCount), color: respondingCount > 0 ? colors.warn : colors.textPrimary },
+      { key: 'ack', label: 'Acknowledged', value: String(ackCount), color: colors.safe },
+    ];
+  }, [activeAlerts, ackCount]);
 
   useEffect(() => {
     if (pinnedId && !activeAlerts.some((alert) => alert.id === pinnedId)) {
@@ -574,6 +612,8 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
               onResolve={handleResolve}
               onDismiss={handleDismiss}
             />
+
+            <OverviewSection stats={stats} />
 
             <RecentAlertsSection
               alerts={recentAlerts}
@@ -766,6 +806,38 @@ const styles = StyleSheet.create({
   dismissText: {
     fontSize: typography.md,
     fontWeight: '700',
+  },
+
+  overviewCard: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: colors.bgPanel,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    ...shadow.sm,
+  },
+  overviewCell: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  overviewCellGap: {
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightColor: colors.borderSubtle,
+  },
+  overviewValue: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.6,
+  },
+  overviewLabel: {
+    fontSize: typography.xs,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
 
   section: {
