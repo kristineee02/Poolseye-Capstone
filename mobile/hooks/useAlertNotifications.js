@@ -66,11 +66,18 @@ export function useAlertNotifications(token, { onPendingCount, onOpenAlert } = {
   useEffect(() => {
     if (!token) return undefined;
     let cancelled = false;
+    let notificationsReady = false;
     lastPendingCount.current = null;
+    pushReady.current = false;
     announced.current = new Map();
 
     registerForNotifications(token).then((status) => {
-      if (!cancelled) pushReady.current = status.push;
+      if (cancelled) return;
+      pushReady.current = status.push;
+      notificationsReady = true;
+      // Re-check once registration finishes. This avoids racing a local
+      // fallback banner against a remote push for the same alert.
+      poll();
     });
 
     const poll = async () => {
@@ -93,7 +100,11 @@ export function useAlertNotifications(token, { onPendingCount, onOpenAlert } = {
       const foreground = appState.current === 'active';
       if (foreground) return;
 
-      const alreadyShown = pushReady.current ? await presentedCollapseKeys() : new Set();
+      // Remote push is the source of notifications when registration works.
+      // Polling only supplies a local fallback when push is unavailable.
+      if (!notificationsReady || pushReady.current) return;
+
+      const alreadyShown = await presentedCollapseKeys();
       const groups = new Map();
       for (const alert of openForTray) {
         const key = alertCollapseKey(alert);

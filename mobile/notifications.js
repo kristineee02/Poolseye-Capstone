@@ -88,7 +88,7 @@ export async function unregisterFromNotifications(apiToken) {
 export function alertCollapseKey(alert) {
   if (alert.category === 'broadcast') return `broadcast-${alert.id}`;
   if (alert.category === 'supervision') {
-    return `category-${alert.category}`;
+    return `category-${alert.category}-${alert.camera || 'cam'}`;
   }
   if (alert.category === 'drowning') return `critical-${alert.id}`;
   if (alert.personId != null) return `person-${alert.personId}`;
