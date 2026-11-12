@@ -6,6 +6,7 @@ import {
   dispatchEvent,
   fetchActiveAlert,
   fetchAlarm,
+  fetchEvents,
   fetchEventSummary,
   getAlertStreamUrl,
   resendEvent,
@@ -64,6 +65,31 @@ function responseTime(seconds) {
   if (seconds == null) return null
   const rounded = Math.max(0, Math.round(seconds))
   return rounded < 60 ? `${rounded}s` : `${Math.floor(rounded / 60)}m ${rounded % 60}s`
+}
+
+function closedTime(alert) {
+  return formatTime(alert.closed_at || alert.acknowledged_at || alert.ts)
+}
+
+function RecentHistoryAlert({ alert }) {
+  const dismissed = alert.status === 'dismissed'
+  const handledBy = alert.closed_by_name || alert.acknowledged_by_name || alert.responder_name
+
+  return (
+    <div className="rr-history-item">
+      <div className="rr-history-top">
+        <span className="rr-history-title">{alert.title}</span>
+        <span className={`rr-history-status ${dismissed ? 'is-dismissed' : 'is-resolved'}`}>
+          {dismissed ? 'False alarm' : 'Resolved'}
+        </span>
+      </div>
+      <p className="rr-history-desc">{describeAlert(alert)}</p>
+      <div className="rr-history-meta">
+        <span>{closedTime(alert)}</span>
+        {handledBy ? <span>Handled by {handledBy}</span> : null}
+      </div>
+    </div>
+  )
 }
 
 function HandoffStatus({ alert, busy, onResend }) {
@@ -177,8 +203,11 @@ function ActiveAlert({ alert, supervised, busy, onDispatch, onResend }) {
 }
 
 export default function RightRail({ onNavigate }) {
+  const [alertTab, setAlertTab] = useState('active')
   const [alert, setAlert] = useState(null)
   const [alerts, setAlerts] = useState([])
+  const [historyAlerts, setHistoryAlerts] = useState([])
+  const [historyError, setHistoryError] = useState('')
   const [supervised, setSupervised] = useState(null)
   const [summary, setSummary] = useState(null)
   const [error, setError] = useState('')
@@ -188,7 +217,13 @@ export default function RightRail({ onNavigate }) {
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
-    const [active, totals, alarmState] = await Promise.all([fetchActiveAlert(), fetchEventSummary(), fetchAlarm()])
+    const [active, totals, alarmState, resolved, dismissed] = await Promise.all([
+      fetchActiveAlert(),
+      fetchEventSummary(),
+      fetchAlarm(),
+      fetchEvents({ kind: 'alerts', status: 'resolved', page: 1, pageSize: 4 }),
+      fetchEvents({ kind: 'alerts', status: 'dismissed', page: 1, pageSize: 4 }),
+    ])
     if (alarmState.ok) setAlarm(alarmState)
     if (!active.ok || !totals.ok) {
       setError(active.error || totals.error || 'Could not load alerts.')
@@ -200,6 +235,17 @@ export default function RightRail({ onNavigate }) {
     setAlerts(active.alerts || (active.active ? [active.active] : []))
     setSupervised(active.supervised || null)
     setSummary(totals)
+    if (resolved.ok && dismissed.ok) {
+      setHistoryError('')
+      setHistoryAlerts(
+        [...(resolved.events || []), ...(dismissed.events || [])]
+          .sort((a, b) => Number(b.closed_at || b.acknowledged_at || b.ts || 0)
+            - Number(a.closed_at || a.acknowledged_at || a.ts || 0))
+          .slice(0, 4)
+      )
+    } else {
+      setHistoryError(resolved.error || dismissed.error || 'Could not load alert history.')
+    }
     setLoading(false)
   }, [])
 
@@ -293,11 +339,31 @@ export default function RightRail({ onNavigate }) {
       <section className="rr-card">
         <div className="active-alert-head">
           <h2>Active Alerts</h2>
-          {onNavigate ? (
+          {onNavigate && alertTab === 'history' ? (
             <button type="button" className="active-alert-link" onClick={() => onNavigate('history')}>
               View All
             </button>
           ) : null}
+        </div>
+        <div className="rr-alert-tabs" role="tablist" aria-label="Alert views">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={alertTab === 'active'}
+            className={alertTab === 'active' ? 'is-active' : ''}
+            onClick={() => setAlertTab('active')}
+          >
+            Active ({alerts.length})
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={alertTab === 'history'}
+            className={alertTab === 'history' ? 'is-active' : ''}
+            onClick={() => setAlertTab('history')}
+          >
+            History
+          </button>
         </div>
         {loading ? (
           <div className="rr-loading" role="status" aria-label="Loading active alert">
@@ -306,19 +372,36 @@ export default function RightRail({ onNavigate }) {
             <Skeleton width="100%" height={38} />
             <LoadingHint onRetry={retryLoad} compact />
           </div>
-        ) : (
-          alerts.length ? alerts.map((item) => (
-            <ActiveAlert
-              key={item.id}
-              alert={item}
-              supervised={null}
-              busy={busy}
-              onDispatch={() => dispatch(item.id)}
-              onResend={() => resend(item.id)}
-            />
-          )) : (
+        ) : alertTab === 'active' ? (
+          alerts.length ? (
+            <div className="rr-active-alert-list" role="tabpanel">
+              {alerts.map((item) => (
+                <div className="rr-active-alert-group" key={item.id}>
+                  <ActiveAlert
+                    alert={item}
+                    supervised={null}
+                    busy={busy}
+                    onDispatch={() => dispatch(item.id)}
+                    onResend={() => resend(item.id)}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
             <ActiveAlert alert={null} supervised={supervised} busy={busy} onDispatch={dispatch} onResend={resend} />
           )
+        ) : (
+          <div className="rr-history-list" role="tabpanel">
+            {historyAlerts.length ? historyAlerts.map((item) => (
+              <RecentHistoryAlert key={item.id} alert={item} />
+            )) : (
+              <div className="rr-history-empty">
+                <span>No alert history yet</span>
+                <p>Resolved and false-alarm incidents will appear here.</p>
+              </div>
+            )}
+            {historyError ? <div className="rr-error"><span>{historyError}</span><button type="button" onClick={retryLoad}>Retry</button></div> : null}
+          </div>
         )}
         {notice ? <div className="rr-notice">{notice}</div> : null}
         {error ? <div className="rr-error"><span>{error}</span><button type="button" onClick={retryLoad}>Retry</button></div> : null}

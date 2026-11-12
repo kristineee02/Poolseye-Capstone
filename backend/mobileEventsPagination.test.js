@@ -91,3 +91,26 @@ test('history cursor pagination is duplicate-free and active alerts retain prior
   )
   assert.equal(active.pendingCount, 3)
 })
+
+test('closed history remains visible when an alert category is muted', async (t) => {
+  const { db, baseUrl, token } = await testServer(t)
+  const now = Math.floor(Date.now() / 1000)
+
+  await run(
+    db,
+    'UPDATE users SET notification_prefs = ? WHERE email = ?',
+    [JSON.stringify({ boundary: false, supervision: false }), 'pager@poolseye.test']
+  )
+  await insertAlert(db, { id: 'closed-muted-boundary', status: 'resolved', ts: now, category: 'intrusion' })
+  await insertAlert(db, { id: 'closed-muted-supervision', status: 'resolved', ts: now - 1, category: 'supervision' })
+  await insertAlert(db, { id: 'pending-muted-boundary', status: 'pending', ts: now + 1, category: 'intrusion' })
+
+  const history = await getEvents(baseUrl, token, 'alertsOnly=1&status=closed&limit=30')
+  assert.deepEqual(
+    history.events.map((event) => event.id),
+    ['closed-muted-boundary', 'closed-muted-supervision']
+  )
+
+  const incoming = await getEvents(baseUrl, token, 'alertsOnly=1&status=pending&limit=30')
+  assert.deepEqual(incoming.events, [])
+})

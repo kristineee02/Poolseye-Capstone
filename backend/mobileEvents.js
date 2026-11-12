@@ -70,7 +70,11 @@ function registerMobileEventRoutes(app, db) {
         conditions.push('status = ?')
         params.push(status)
       }
-      if (muted.sql) {
+      // Notification preferences control which incoming alerts page a guard.
+      // They must not erase already-closed incidents from the shared audit
+      // history; a guard may need to review incidents that occurred while they
+      // were offline or while that notification category was muted.
+      if (muted.sql && status !== 'closed') {
         conditions.push(muted.sql)
         params.push(...muted.params)
       }

@@ -9,7 +9,7 @@ import StatCard from '../components/analytics/StatCard'
 import EventThumb from '../components/history/EventThumb'
 import SnapshotModal from '../components/history/SnapshotModal'
 import { eventKind, isAlertEvent, zoneLabel, formatDate, formatTime, cameraName, handlingNote } from '../components/history/eventKinds'
-import { fetchEvents } from '../api/events'
+import { fetchEvents, getAlertStreamUrl } from '../api/events'
 import { downloadCsv } from '../utils/csv'
 import '../components/history/HistoryTable.css'
 import './HistoryPage.css'
@@ -57,7 +57,7 @@ const SUMMARY_CARDS = [
   {
     status: 'resolved',
     key: 'acknowledged',
-    label: 'Acknowledged',
+    label: 'Resolved',
     tone: 'safe',
     icon: Icon.CheckCircle,
     hint: () => 'Resolved by a lifeguard',
@@ -84,13 +84,13 @@ const KIND_OPTIONS = [
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All statuses' },
   { value: 'unacknowledged', label: 'Unacknowledged' },
-  { value: 'resolved', label: 'Acknowledged' },
+  { value: 'resolved', label: 'Resolved' },
   { value: 'dismissed', label: 'Dismissed' },
   { value: 'logged', label: 'Activity log' },
 ]
 
 function statusInfo(event) {
-  if (event.status === 'resolved') return { label: 'Acknowledged', tone: 'safe' }
+  if (event.status === 'resolved') return { label: 'Resolved', tone: 'safe' }
   if (event.status === 'dismissed') return { label: 'Dismissed', tone: 'muted' }
   if (!isAlertEvent(event)) return { label: 'Logged', tone: 'muted' }
   if (event.status === 'responding') return { label: 'Responding', tone: 'warn' }
@@ -120,6 +120,15 @@ export default function HistoryPage() {
   useEffect(() => {
     setPage(1)
   }, [search, kind, statusFilter, dateRange])
+
+  useEffect(() => {
+    const streamUrl = getAlertStreamUrl()
+    if (!streamUrl || typeof EventSource === 'undefined') return undefined
+    const stream = new EventSource(streamUrl)
+    const refresh = () => setReloadKey((value) => value + 1)
+    stream.addEventListener('alerts', refresh)
+    return () => stream.close()
+  }, [])
 
   useEffect(() => {
     let cancelled = false
