@@ -421,7 +421,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
     const requestId = ++loadRequestId.current;
     const pendingRes = await fetchMobileEvents(token, {
       alertsOnly: true,
-      status: 'pending',
+      status: 'active',
       limit: 50,
       ackSince: localMidnightTimestamp(),
     });
@@ -441,7 +441,8 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
     setError('');
     const nextActiveAlerts = (pendingRes.events || [])
       .filter((alert) => (
-        alert.backendStatus === 'pending' && !closingAlertIds.current.has(alert.id)
+        ['pending', 'responding'].includes(alert.backendStatus)
+          && !closingAlertIds.current.has(alert.id)
       ))
       .sort(byCategoryPriority);
     setActiveAlerts((current) => reconcileActiveAlerts(current, nextActiveAlerts));
@@ -475,6 +476,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
     if (!result.ok) {
       const taken = result.event?.respondingAt && !result.event?.respondingMine;
       if (taken) {
+        setSelectedAlert((current) => (current?.id === id ? result.event : current));
         // No popup — Home shows "{name} is responding" and jumps to the next open alert.
         setPinnedId(null);
       } else {
@@ -484,6 +486,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
       setPinnedId(id);
       if (result.event) {
         setActiveAlerts((prev) => prev.map((alert) => (alert.id === id ? result.event : alert)));
+        setSelectedAlert((current) => (current?.id === id ? result.event : current));
       }
     }
     await loadAlerts();
@@ -577,9 +580,8 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
   const openActionAlert = useCallback((alert) => setSelectedAlert(alert), []);
   const selectedActions = useMemo(() => {
     if (!selectedAlert) return [];
-    if (selectedAlert.backendStatus !== 'pending'
-      || (selectedAlert.respondingAt && !selectedAlert.respondingMine)) {
-      return [{ label: 'Close', tone: 'secondary', onPress: closeAlertModal }];
+    if (responding && selectedAlert.backendStatus === 'pending') {
+      return [{ label: 'Claiming alert...', tone: 'secondary', onPress: () => {} }];
     }
     if (selectedAlert.respondingMine) {
       return [
@@ -595,12 +597,15 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
         },
       ];
     }
+    if (selectedAlert.backendStatus !== 'pending' || selectedAlert.respondingAt) {
+      return [{ label: 'Close', tone: 'secondary', onPress: closeAlertModal }];
+    }
     return [{
       label: 'Respond Now',
       tone: 'alert',
-      onPress: () => { const id = selectedAlert.id; closeAlertModal(); handleRespond(id); },
+      onPress: () => handleRespond(selectedAlert.id),
     }];
-  }, [selectedAlert, closeAlertModal, handleRespond, requestClose]);
+  }, [selectedAlert, responding, closeAlertModal, handleRespond, requestClose]);
   const selectedPalette = useMemo(() => modalActionPalette(selectedAlert), [selectedAlert]);
   const contentStyle = useMemo(
     () => [styles.content, { paddingBottom: tabBarClearance + spacing.md }],

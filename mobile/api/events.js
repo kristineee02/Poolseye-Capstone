@@ -1,4 +1,5 @@
 import { API_BASE, apiFetch } from './client'
+import { formatEventTime } from '../utils/dateTime'
 
 export function getMobileAlertStreamUrl(token) {
   return token ? `${API_BASE}/api/mobile/events/stream?token=${encodeURIComponent(token)}` : null
@@ -18,7 +19,9 @@ export function toMobileAlert(event) {
     title: event.title || 'Alert',
     detail: event.meta || '',
     meta: event.meta || `${zone} · ${sourceDisplay}`,
-    time: event.time || '',
+    // Render the Unix instant in the configured pool timezone. The backend's
+    // preformatted value remains a fallback for legacy rows without `ts`.
+    time: event.ts != null ? formatEventTime(event.ts) : (event.time || ''),
     date: event.date || 'Today',
     status: backendStatus === 'pending' ? 'new' : 'ack',
     backendStatus,
