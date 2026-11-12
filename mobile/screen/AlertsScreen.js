@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, ScrollView, StyleSheet, TouchableOpacity, LayoutAnimation,
-  RefreshControl,
+  RefreshControl, TextInput,
 } from 'react-native';
 import { Text } from '../components/Typography';
 import Svg, { Path } from 'react-native-svg';
@@ -13,7 +13,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import StatusModal from '../components/StatusModal';
 import { AlertsHomeSkeleton, DataLoadError } from '../components/Skeleton';
 import { useAuth } from '../context/AuthContext';
-import { fetchMobileEvents, respondToMobileEvent, updateMobileEventStatus } from '../api/events';
+import { fetchMobileEvents, getMobileAlertStreamUrl, respondToMobileEvent, updateMobileEventStatus } from '../api/events';
 import { formatEventTime, localMidnightTimestamp } from '../utils/dateTime';
 
 const POLL_MS = 4000;
@@ -63,7 +63,8 @@ function getAlertMeta(alert) {
 
 function modalBadge(alert) {
   if (alert?.category === 'drowning') return 'Critical Alert';
-  if (alert?.category === 'intrusion' || alert?.category === 'deep-water') return 'High Priority';
+  if (alert?.category === 'intrusion') return 'High Priority';
+  if (alert?.category === 'deep-water') return 'Medium Priority';
   if (alert?.category === 'supervision') return 'Attention';
   return 'Pool Alert';
 }
@@ -405,6 +406,8 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
   const [responding, setResponding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pinnedId, setPinnedId] = useState(null);
+  const [closePrompt, setClosePrompt] = useState(null);
+  const [falseAlarmReason, setFalseAlarmReason] = useState('');
   const loadRequestId = useRef(0);
   const closingAlertIds = useRef(new Set());
 
@@ -457,7 +460,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
     loadAlerts();
   }, [loadAlerts]);
 
-  useAutoRefresh(loadAlerts, POLL_MS, Boolean(token));
+  useAutoRefresh(loadAlerts, POLL_MS, Boolean(token), getMobileAlertStreamUrl(token));
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -503,12 +506,12 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
     closingAlertIds.current.delete(id);
   }, [token, loadAlerts, onPendingCountChange]);
 
-  const handleDismiss = useCallback(async (id) => {
+  const handleDismiss = useCallback(async (id, reason) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     closingAlertIds.current.add(id);
     setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
     setPinnedId((current) => (current === id ? null : current));
-    const result = await updateMobileEventStatus(token, id, 'dismissed');
+    const result = await updateMobileEventStatus(token, id, 'dismissed', reason);
     if (!result.ok) {
       closingAlertIds.current.delete(id);
       setStatus({ tone: 'error', title: 'Could not dismiss', message: result.error || 'Failed to dismiss this alert.' });
@@ -521,6 +524,26 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
   }, [token, loadAlerts, onPendingCountChange]);
 
   const closeAlertModal = useCallback(() => setSelectedAlert(null), []);
+  const requestClose = useCallback((id, type) => {
+    setSelectedAlert(null);
+    setFalseAlarmReason('');
+    setClosePrompt({ id, type });
+  }, []);
+  const cancelClose = useCallback(() => {
+    setClosePrompt(null);
+    setFalseAlarmReason('');
+  }, []);
+  const confirmClose = useCallback(() => {
+    if (!closePrompt) return;
+    if (closePrompt.type === 'dismissed' && !falseAlarmReason.trim()) {
+      setStatus({ tone: 'error', title: 'Reason required', message: 'Enter why this detection was a false alarm.' });
+      return;
+    }
+    const { id, type } = closePrompt;
+    cancelClose();
+    if (type === 'dismissed') handleDismiss(id, falseAlarmReason.trim());
+    else handleResolve(id);
+  }, [closePrompt, falseAlarmReason, cancelClose, handleDismiss, handleResolve]);
 
   const primary = useMemo(() => pickPrimaryAlert(activeAlerts, pinnedId), [activeAlerts, pinnedId]);
   const otherOpenAlerts = useMemo(
@@ -563,12 +586,12 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
         {
           label: 'Mark as Resolved',
           tone: 'primary',
-          onPress: () => { const id = selectedAlert.id; closeAlertModal(); handleResolve(id); },
+          onPress: () => requestClose(selectedAlert.id, 'resolved'),
         },
         {
           label: 'False Alarm',
           tone: 'secondary',
-          onPress: () => { const id = selectedAlert.id; closeAlertModal(); handleDismiss(id); },
+          onPress: () => requestClose(selectedAlert.id, 'dismissed'),
         },
       ];
     }
@@ -577,7 +600,7 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
       tone: 'alert',
       onPress: () => { const id = selectedAlert.id; closeAlertModal(); handleRespond(id); },
     }];
-  }, [selectedAlert, closeAlertModal, handleRespond, handleResolve, handleDismiss]);
+  }, [selectedAlert, closeAlertModal, handleRespond, requestClose]);
   const selectedPalette = useMemo(() => modalActionPalette(selectedAlert), [selectedAlert]);
   const contentStyle = useMemo(
     () => [styles.content, { paddingBottom: tabBarClearance + spacing.md }],
@@ -609,8 +632,8 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
               alert={primary}
               busy={responding}
               onRespond={handleRespond}
-              onResolve={handleResolve}
-              onDismiss={handleDismiss}
+              onResolve={(id) => requestClose(id, 'resolved')}
+              onDismiss={(id) => requestClose(id, 'dismissed')}
             />
 
             <OverviewSection stats={stats} />
@@ -651,6 +674,30 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
         message={status?.message}
         tone={status?.tone}
       />
+      <ConfirmModal
+        visible={Boolean(closePrompt)}
+        onClose={cancelClose}
+        title={closePrompt?.type === 'dismissed' ? 'Mark as false alarm?' : 'Resolve this incident?'}
+        message={closePrompt?.type === 'dismissed'
+          ? 'This closes the incident and saves the reason to Event History.'
+          : 'Confirm that you assessed the situation and the area is now safe.'}
+        tone={closePrompt?.type === 'dismissed' ? 'warning' : 'info'}
+        actions={[
+          { label: 'Cancel', tone: 'secondary', onPress: cancelClose },
+          { label: closePrompt?.type === 'dismissed' ? 'Confirm False Alarm' : 'Confirm Resolution', tone: 'primary', onPress: confirmClose },
+        ]}
+      >
+        {closePrompt?.type === 'dismissed' ? (
+          <TextInput
+            style={styles.reasonInput}
+            value={falseAlarmReason}
+            onChangeText={setFalseAlarmReason}
+            placeholder="False-alarm reason (required)"
+            multiline
+            maxLength={300}
+          />
+        ) : null}
+      </ConfirmModal>
     </>
   );
 }
@@ -670,6 +717,16 @@ const styles = StyleSheet.create({
     fontSize: typography.sm,
     color: colors.alarm,
     fontWeight: '600',
+  },
+  reasonInput: {
+    minHeight: 88,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    borderRadius: radius.md,
+    padding: 12,
+    color: colors.textPrimary,
+    backgroundColor: colors.bgPanel,
+    textAlignVertical: 'top',
   },
 
   clearCard: {

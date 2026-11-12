@@ -235,7 +235,7 @@ export default function DataManagementCard({ showStatus }) {
     showStatus({
       tone: 'success',
       title: 'Deleted data restored',
-      message: `${restored.events || 0} event records and ${restored.responseStats || 0} lifeguard response records were recovered. Existing data was preserved.`,
+      message: `${restored.events || 0} event records, ${restored.eventPeople || 0} tracked-person audit records, and ${restored.responseStats || 0} lifeguard response records were recovered. Existing data was preserved.`,
     })
   }
 

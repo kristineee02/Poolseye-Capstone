@@ -1,17 +1,23 @@
-import { apiFetch } from './client'
+import { API_BASE, apiFetch } from './client'
+
+export function getMobileAlertStreamUrl(token) {
+  return token ? `${API_BASE}/api/mobile/events/stream?token=${encodeURIComponent(token)}` : null
+}
 
 /** Map backend event → mobile alert card shape */
 export function toMobileAlert(event) {
   if (!event) return null
   const zone = event.zone_label || event.zone || 'Main Pool'
   const backendStatus = event.status || 'pending'
+  const detectionSource = event.detection_source || (event.camera === 'UPLOAD' ? 'Uploaded Video' : 'Live CCTV')
+  const sourceDisplay = event.source_name ? `${detectionSource}: ${event.source_name}` : detectionSource
   return {
     id: event.id,
     type: event.type || 'info',
     code: event.code || '',
     title: event.title || 'Alert',
     detail: event.meta || '',
-    meta: event.meta || `${zone} · ${event.camera || 'CAM-01'}`,
+    meta: event.meta || `${zone} · ${sourceDisplay}`,
     time: event.time || '',
     date: event.date || 'Today',
     status: backendStatus === 'pending' ? 'new' : 'ack',
@@ -20,6 +26,8 @@ export function toMobileAlert(event) {
     category: event.category || 'zone',
     confidence: event.confidence,
     camera: event.camera || 'CAM-01',
+    detectionSource,
+    sourceName: event.source_name || null,
     zone,
     isAlert: Boolean(event.is_alert),
     ts: event.ts,
@@ -30,13 +38,15 @@ export function toMobileAlert(event) {
     acknowledgedByName: event.acknowledged_by_name || null,
     closedAt: event.closed_at ?? null,
     closedByName: event.closed_by_name || null,
-    priority: Number(event.priority || 4),
+    closureReason: event.closure_reason || null,
+    priority: Number(event.priority || 5),
     priorityLabel: event.priority_label || 'informational',
     incidentKey: event.incident_key || null,
     occurrenceCount: Number(event.occurrence_count || 1),
     personIds: Array.isArray(event.person_ids) ? event.person_ids : [],
     affectedCount: Number(event.affected_count || 1),
     respondingAt: event.responding_at ?? null,
+    responseTimeSeconds: event.response_time_seconds ?? null,
     responderName: event.responder_name || null,
     respondingMine: Boolean(event.responding_mine),
   }
@@ -100,11 +110,11 @@ export async function fetchMobileEvents(token, {
   }
 }
 
-export async function updateMobileEventStatus(token, id, status) {
+export async function updateMobileEventStatus(token, id, status, reason = '') {
   const result = await apiFetch(`/api/mobile/events/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     token,
-    body: { status },
+    body: { status, reason },
   })
   if (!result.ok) return result
   return {

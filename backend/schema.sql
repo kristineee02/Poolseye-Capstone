@@ -90,10 +90,16 @@ CREATE TABLE IF NOT EXISTS events (
   event_name TEXT,
   is_alert INTEGER NOT NULL DEFAULT 0,
   snapshot_uri TEXT,
+  clip_uri TEXT,
   acknowledged_at REAL,
   acknowledged_by INTEGER,
   closed_at REAL,
   closed_by INTEGER,
+  dispatched_at REAL,
+  dispatched_by INTEGER,
+  responding_at REAL,
+  responding_by INTEGER,
+  escalated_at REAL,
   ts REAL NOT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   -- Supervision-specific fields
@@ -104,7 +110,7 @@ CREATE TABLE IF NOT EXISTS events (
   boundary_direction TEXT,
   nearest_person_id INTEGER,
   nearest_confidence REAL,
-  priority INTEGER NOT NULL DEFAULT 4,
+  priority INTEGER NOT NULL DEFAULT 5,
   priority_label TEXT NOT NULL DEFAULT 'informational',
   incident_key TEXT,
   group_key TEXT,
@@ -114,7 +120,11 @@ CREATE TABLE IF NOT EXISTS events (
   last_detected_at REAL,
   notification_count INTEGER NOT NULL DEFAULT 0,
   last_notified_at REAL,
-  siren_activated_at REAL
+  siren_activated_at REAL,
+  detection_source TEXT NOT NULL DEFAULT 'Live CCTV',
+  source_name TEXT,
+  closure_reason TEXT,
+  detection_cleared_at REAL
 );
 
 CREATE TABLE IF NOT EXISTS event_people (

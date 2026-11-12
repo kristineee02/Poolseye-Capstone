@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View, FlatList, StyleSheet, TouchableOpacity, Modal, Pressable,
-  RefreshControl, ActivityIndicator, Platform,
+  RefreshControl, ActivityIndicator, Platform, TextInput,
 } from 'react-native';
 import { Text } from '../components/Typography';
 import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
@@ -9,7 +9,7 @@ import { Tag } from '../components/Primitives';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { useAuth } from '../context/AuthContext';
-import { fetchMobileEvents } from '../api/events';
+import { fetchMobileEvents, getMobileAlertStreamUrl, updateMobileEventStatus } from '../api/events';
 import { AlertListSkeleton, DataLoadError } from '../components/Skeleton';
 import ConfirmModal from '../components/ConfirmModal';
 import StatusModal from '../components/StatusModal';
@@ -143,7 +143,7 @@ const TYPE_CONFIG = {
     border: colors.geofenceOrangeBorder,
     title: colors.geofenceOrangeDark,
     meta: colors.geofenceOrange,
-    label: 'HIGH',
+    label: 'MEDIUM',
     tag: 'info',
   },
 };
@@ -176,7 +176,8 @@ function alertDescription(event) {
 
 function priorityBadge(event) {
   if (event.category === 'drowning') return 'Critical Alert';
-  if (event.category === 'intrusion' || event.category === 'deep-water') return 'High Priority';
+  if (event.category === 'intrusion') return 'High Priority';
+  if (event.category === 'deep-water') return 'Medium Priority';
   if (event.category === 'supervision') return 'Attention';
   return 'Pool Alert';
 }
@@ -242,9 +243,9 @@ const AlertCard = React.memo(function AlertCard({ event, onSelect }) {
   const cfg = alertVisual(event);
   const handlePress = useCallback(() => onSelect(event), [event, onSelect]);
   const status = event.backendStatus === 'pending'
-    ? event.respondingAt
-      ? { type: 'safe', label: event.respondingMine ? 'You Responding' : 'Response Assigned' }
-      : { type: 'warn', label: 'Needs Response' }
+    ? { type: 'warn', label: 'Awaiting Response' }
+    : event.backendStatus === 'responding'
+      ? { type: 'safe', label: 'You Responding' }
     : event.backendStatus === 'dismissed'
       ? { type: 'info', label: 'False Alarm' }
       : STATUS_TAG.ack;
@@ -255,7 +256,7 @@ const AlertCard = React.memo(function AlertCard({ event, onSelect }) {
         hour12: true,
       })
     : '';
-  const outcome = event.backendStatus === 'pending'
+  const outcome = ['pending', 'responding'].includes(event.backendStatus)
     ? ''
     : `${event.backendStatus === 'dismissed' ? 'Marked as False Alarm' : 'Resolved'}`
       + `${event.closedByName ? ` by ${event.closedByName}` : ''}`
@@ -301,6 +302,9 @@ const AlertCard = React.memo(function AlertCard({ event, onSelect }) {
             {outcome}
           </Text>
         ) : null}
+        {event.closureReason ? (
+          <Text style={styles.outcomeText} numberOfLines={2}>Reason: {event.closureReason}</Text>
+        ) : null}
 
         <View style={styles.cardTags}>
           <Tag type={cfg.tag}>{cfg.label}</Tag>
@@ -316,8 +320,9 @@ const AlertCard = React.memo(function AlertCard({ event, onSelect }) {
 export default function LogScreen({ onPendingCountChange }) {
   const { tabBarClearance } = useLayoutInsets();
   const { token } = useAuth();
-  const [section, setSection] = useState('active');
+  const [section, setSection] = useState('incoming');
   const [activeEvents, setActiveEvents] = useState([]);
+  const [responseEvents, setResponseEvents] = useState([]);
   const [historyEvents, setHistoryEvents] = useState([]);
   const [totalHistoryCount, setTotalHistoryCount] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -326,6 +331,8 @@ export default function LogScreen({ onPendingCountChange }) {
   const [loading, setLoading] = useState(true);
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
+  const [closePrompt, setClosePrompt] = useState(null);
+  const [falseAlarmReason, setFalseAlarmReason] = useState('');
   const loadRequestId = useRef(0);
   const hasMoreHistory = historyEvents.length < totalHistoryCount;
   const historyCursorTs = historyEvents[historyEvents.length - 1]?.ts;
@@ -334,10 +341,15 @@ export default function LogScreen({ onPendingCountChange }) {
   const loadEvents = useCallback(async () => {
     if (!token) return;
     const requestId = ++loadRequestId.current;
-    const [activeResult, historyResult] = await Promise.all([
+    const [activeResult, responseResult, historyResult] = await Promise.all([
       fetchMobileEvents(token, {
         alertsOnly: true,
         status: 'pending',
+        limit: ACTIVE_ALERT_LIMIT,
+      }),
+      fetchMobileEvents(token, {
+        alertsOnly: true,
+        status: 'responding',
         limit: ACTIVE_ALERT_LIMIT,
       }),
       fetchMobileEvents(token, {
@@ -349,8 +361,8 @@ export default function LogScreen({ onPendingCountChange }) {
     ]);
     if (requestId !== loadRequestId.current) return;
 
-    if (!activeResult.ok || !historyResult.ok) {
-      setError(activeResult.error || historyResult.error || 'Could not load alerts');
+    if (!activeResult.ok || !responseResult.ok || !historyResult.ok) {
+      setError(activeResult.error || responseResult.error || historyResult.error || 'Could not load alerts');
       setLoading(false);
       return;
     }
@@ -358,6 +370,10 @@ export default function LogScreen({ onPendingCountChange }) {
     setActiveEvents((previous) => reconcilePage(
       previous,
       sortActiveAlerts(activeResult.events || [])
+    ));
+    setResponseEvents((previous) => reconcilePage(
+      previous,
+      sortActiveAlerts(responseResult.events || [])
     ));
     setHistoryEvents((previous) => reconcileHistoryHead(previous, historyResult.events || []));
     setTotalHistoryCount(historyResult.totalCount);
@@ -370,7 +386,7 @@ export default function LogScreen({ onPendingCountChange }) {
     loadEvents();
   }, [loadEvents]);
 
-  useAutoRefresh(loadEvents, POLL_MS, Boolean(token));
+  useAutoRefresh(loadEvents, POLL_MS, Boolean(token), getMobileAlertStreamUrl(token));
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -414,9 +430,35 @@ export default function LogScreen({ onPendingCountChange }) {
     await loadEvents();
   }, [selectedAlert, closeAlert, token, loadEvents]);
 
+  const requestClose = useCallback((type) => {
+    if (!selectedAlert) return;
+    setClosePrompt({ id: selectedAlert.id, type });
+    setFalseAlarmReason('');
+    closeAlert();
+  }, [selectedAlert, closeAlert]);
+  const cancelClose = useCallback(() => {
+    setClosePrompt(null);
+    setFalseAlarmReason('');
+  }, []);
+  const confirmClose = useCallback(async () => {
+    if (!closePrompt) return;
+    const reason = falseAlarmReason.trim();
+    if (closePrompt.type === 'dismissed' && !reason) {
+      setStatusMessage({ tone: 'error', title: 'Reason required', message: 'Enter why this detection was a false alarm.' });
+      return;
+    }
+    const prompt = closePrompt;
+    cancelClose();
+    const result = await updateMobileEventStatus(token, prompt.id, prompt.type, reason);
+    if (!result.ok) {
+      setStatusMessage({ tone: 'error', title: 'Could not close incident', message: result.error || 'The incident could not be updated.' });
+    }
+    await loadEvents();
+  }, [closePrompt, falseAlarmReason, cancelClose, token, loadEvents]);
+
   const displayedEvents = useMemo(
-    () => (section === 'active' ? activeEvents : historyEvents),
-    [section, activeEvents, historyEvents]
+    () => (section === 'incoming' ? activeEvents : section === 'responses' ? responseEvents : historyEvents),
+    [section, activeEvents, responseEvents, historyEvents]
   );
   const listContentStyle = useMemo(
     () => [styles.listContent, { paddingBottom: tabBarClearance + spacing.sm }],
@@ -426,7 +468,8 @@ export default function LogScreen({ onPendingCountChange }) {
     ({ item }) => <AlertCard event={item} onSelect={openAlert} />,
     [openAlert]
   );
-  const showActive = useCallback(() => setSection('active'), []);
+  const showIncoming = useCallback(() => setSection('incoming'), []);
+  const showResponses = useCallback(() => setSection('responses'), []);
   const showHistory = useCallback(() => setSection('history'), []);
   const refreshControl = useMemo(() => (
     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
@@ -437,12 +480,14 @@ export default function LogScreen({ onPendingCountChange }) {
     return (
       <View style={styles.emptyState}>
         <Text style={styles.emptyTitle}>
-          {section === 'active' ? 'No active alerts' : 'No alert history yet'}
+          {section === 'incoming' ? 'No incoming alerts' : section === 'responses' ? 'No active responses' : 'No alert history yet'}
         </Text>
         <Text style={styles.emptySub}>
-          {section === 'active'
-            ? 'New incidents will appear here automatically.'
-            : 'Resolved and false-alarm incidents will appear here.'}
+          {section === 'incoming'
+            ? 'New incidents awaiting a lifeguard will appear here automatically.'
+            : section === 'responses'
+              ? 'Incidents you claim with Respond Now will move here.'
+              : 'Resolved and false-alarm incidents will appear here.'}
         </Text>
       </View>
     );
@@ -458,22 +503,37 @@ export default function LogScreen({ onPendingCountChange }) {
   );
   const selectedActions = useMemo(() => {
     if (!selectedAlert) return [];
-    if (selectedAlert.backendStatus === 'pending' && !selectedAlert.respondingAt) {
+    if (selectedAlert.backendStatus === 'pending') {
       return [{ label: 'Respond Now', tone: 'alert', onPress: respondToSelectedAlert }];
     }
+    if (selectedAlert.backendStatus === 'responding' && selectedAlert.respondingMine) {
+      return [
+        { label: 'Resolve Incident', tone: 'primary', onPress: () => requestClose('resolved') },
+        { label: 'Mark as False Alarm', tone: 'secondary', onPress: () => requestClose('dismissed') },
+      ];
+    }
     return [{ label: 'Close', tone: 'secondary', onPress: closeAlert }];
-  }, [selectedAlert, respondToSelectedAlert, closeAlert]);
+  }, [selectedAlert, respondToSelectedAlert, requestClose, closeAlert]);
 
   return (
     <View style={styles.container}>
       <View style={styles.segmented}>
         <TouchableOpacity
-          style={[styles.segmentButton, section === 'active' && styles.segmentButtonActive]}
-          onPress={showActive}
+          style={[styles.segmentButton, section === 'incoming' && styles.segmentButtonActive]}
+          onPress={showIncoming}
           activeOpacity={0.8}
         >
-          <Text style={[styles.segmentText, section === 'active' && styles.segmentTextActive]}>
-            Active ({activeEvents.length})
+          <Text style={[styles.segmentText, section === 'incoming' && styles.segmentTextActive]}>
+            Incoming ({activeEvents.length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.segmentButton, section === 'responses' && styles.segmentButtonActive]}
+          onPress={showResponses}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.segmentText, section === 'responses' && styles.segmentTextActive]}>
+            My Responses ({responseEvents.length})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -539,6 +599,29 @@ export default function LogScreen({ onPendingCountChange }) {
         message={statusMessage?.message}
         tone={statusMessage?.tone}
       />
+      <ConfirmModal
+        visible={Boolean(closePrompt)}
+        onClose={cancelClose}
+        title={closePrompt?.type === 'dismissed' ? 'Mark as false alarm?' : 'Resolve this incident?'}
+        message={closePrompt?.type === 'dismissed'
+          ? 'This closes the incident and saves your reason to Event History.'
+          : 'Confirm that you assessed the situation and the area is safe.'}
+        actions={[
+          { label: 'Cancel', tone: 'secondary', onPress: cancelClose },
+          { label: closePrompt?.type === 'dismissed' ? 'Confirm False Alarm' : 'Confirm Resolution', tone: 'primary', onPress: confirmClose },
+        ]}
+      >
+        {closePrompt?.type === 'dismissed' ? (
+          <TextInput
+            style={styles.reasonInput}
+            value={falseAlarmReason}
+            onChangeText={setFalseAlarmReason}
+            placeholder="False-alarm reason (required)"
+            multiline
+            maxLength={300}
+          />
+        ) : null}
+      </ConfirmModal>
     </View>
   );
 }
@@ -593,6 +676,16 @@ const styles = StyleSheet.create({
     color: colors.alarm,
     fontWeight: '600',
     marginBottom: 8,
+  },
+  reasonInput: {
+    minHeight: 88,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    borderRadius: radius.md,
+    padding: 12,
+    color: colors.textPrimary,
+    backgroundColor: colors.bgPanel,
+    textAlignVertical: 'top',
   },
   filterBtn: {
     flexDirection: 'row',

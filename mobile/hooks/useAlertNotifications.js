@@ -22,7 +22,7 @@ const TITLES = {
 
 /** Tray banners are only for alerts that still need a first claim. */
 function needsTrayBanner(alert) {
-  return Boolean(alert.dispatchedAt) && !alert.respondingAt && !alert.acknowledgedAt;
+  return alert.backendStatus === 'pending' && Boolean(alert.dispatchedAt);
 }
 
 function bannerCopy(group) {

@@ -46,6 +46,10 @@ test('backup is an accessible exact snapshot and reset is selective, verified, a
        ('broadcast-1', 'broadcast', 'Broadcast', 0, 3)`
     )
     await run(source, "UPDATE events SET category = 'broadcast' WHERE id = 'broadcast-1'")
+    await run(source, `INSERT INTO event_people
+      (event_id, person_id, first_seen_at, last_seen_at, occurrence_count) VALUES
+      ('det-1', 10, 1, 1, 1),
+      ('alert-1', 20, 2, 2, 1)`)
     await run(
       source,
       `INSERT INTO email_verifications (email, purpose, code, expires_at, sent_at)
@@ -56,6 +60,14 @@ test('backup is an accessible exact snapshot and reset is selective, verified, a
       `INSERT INTO operating_hours (site_id, enabled, timezone, schedule, revision, updated_at)
        VALUES ('main', 1, 'Asia/Manila', '{}', 1, '2026-01-01')`
     )
+    await run(source, `INSERT INTO camera_settings (camera_id, ip_address, rtsp_port, revision, updated_at)
+      VALUES ('CAM-01', '192.168.1.50', 554, 2, '2026-01-01')`)
+    await run(source, `INSERT INTO geofence_layouts (camera_id, revision, coord_space)
+      VALUES ('CAM-01', 3, 'editor')`)
+    await run(source, `INSERT INTO geofence_zones (id, camera_id, name, type, sort_order)
+      VALUES ('red-test', 'CAM-01', 'Red Zone', 'red', 1)`)
+    await run(source, `INSERT INTO geofence_points (zone_id, seq, x, y)
+      VALUES ('red-test', 0, 10, 20), ('red-test', 1, 30, 40)`)
 
     const copiedCounts = await __test.buildBackupFile(source, backupFile)
     assert.equal(copiedCounts.events, 3)
@@ -67,6 +79,9 @@ test('backup is an accessible exact snapshot and reset is selective, verified, a
     assert.equal((await get(backup, 'SELECT COUNT(*) AS count FROM events')).count, 3)
     assert.equal((await get(backup, 'SELECT COUNT(*) AS count FROM email_verifications')).count, 0)
     assert.equal((await get(backup, 'SELECT COUNT(*) AS count FROM operating_hours')).count, 1)
+    assert.equal((await get(backup, 'SELECT COUNT(*) AS count FROM camera_settings')).count, 1)
+    assert.equal((await get(backup, 'SELECT COUNT(*) AS count FROM geofence_zones')).count, 1)
+    assert.equal((await get(backup, 'SELECT COUNT(*) AS count FROM geofence_points')).count, 2)
     await close(backup)
     backup = null
 
@@ -75,6 +90,11 @@ test('backup is an accessible exact snapshot and reset is selective, verified, a
     backup = await openDatabase(backupFile)
     assert.equal((await get(backup, "SELECT COUNT(*) AS count FROM events WHERE is_alert = 1")).count, 1)
     assert.equal((await get(backup, "SELECT COUNT(*) AS count FROM events WHERE is_alert = 0")).count, 0)
+    assert.equal((await get(backup, 'SELECT COUNT(*) AS count FROM event_people')).count, 1)
+    assert.equal(await get(backup, 'PRAGMA foreign_key_check'), undefined)
+    assert.equal((await get(backup, 'SELECT COUNT(*) AS count FROM camera_settings')).count, 1)
+    assert.equal((await get(backup, 'SELECT COUNT(*) AS count FROM geofence_zones')).count, 1)
+    assert.equal((await get(backup, 'SELECT COUNT(*) AS count FROM operating_hours')).count, 1)
     assert.deepEqual(
       await get(backup, 'SELECT acknowledged_alerts, missed_alerts, response_time FROM users LIMIT 1'),
       { acknowledged_alerts: 0, missed_alerts: 0, response_time: null }
@@ -98,6 +118,7 @@ test('backup is an accessible exact snapshot and reset is selective, verified, a
     const finalReset = await __test.executeVerifiedReset(source, ['broadcasts', 'responseStats'])
     assert.deepEqual(finalReset.deletedCounts, { broadcasts: 1, responseStats: 1 })
     assert.equal((await get(source, 'SELECT COUNT(*) AS count FROM events')).count, 0)
+    assert.equal((await get(source, 'SELECT COUNT(*) AS count FROM event_people')).count, 0)
     assert.equal(
       (await get(source, "SELECT COUNT(*) AS count FROM events WHERE is_alert = 1 AND status = 'pending'")).count,
       0
@@ -116,6 +137,8 @@ test('backup is an accessible exact snapshot and reset is selective, verified, a
       response_time: null,
     })
     assert.equal((await get(source, 'SELECT COUNT(*) AS count FROM operating_hours')).count, 1)
+    assert.equal((await get(source, 'SELECT COUNT(*) AS count FROM camera_settings')).count, 1)
+    assert.equal((await get(source, 'SELECT COUNT(*) AS count FROM geofence_zones')).count, 1)
 
     await run(
       source,
@@ -168,10 +191,32 @@ test('restore recovers deleted records from a real backup without overwriting cu
     )
     await run(
       source,
-      `INSERT INTO events (id, type, title, category, is_alert, ts) VALUES
-       ('old-detection', 'detection', 'Old detection', NULL, 0, 1),
-       ('old-alert', 'drowning', 'Old alert', 'drowning', 1, 2)`
+      `INSERT INTO events (
+        id, type, title, meta, status, severity, category, confidence, camera,
+        person_id, zone, zone_label, event_name, is_alert, snapshot_uri, clip_uri,
+        acknowledged_at, acknowledged_by, dispatched_at, responding_at, responding_by,
+        priority, priority_label, incident_key, group_key, person_ids, occurrence_count,
+        first_detected_at, last_detected_at, notification_count, last_notified_at,
+        siren_activated_at, detection_source, source_name, closure_reason, ts
+       ) VALUES
+       ('old-detection', 'detection', 'Old detection', 'Normal activity', 'resolved', 'LOW', NULL, 0.8, 'CAM-01',
+        5, 'yellow', 'Yellow zone', 'SUPERVISED', 0, '/media/detection.jpg', '/media/detection.webm',
+        NULL, NULL, NULL, NULL, NULL, 5, 'informational', NULL, 'normal-group', '[5]', 2,
+        1, 1.5, 0, NULL, NULL, 'Live CCTV', NULL, NULL, 1),
+       ('old-alert', 'alarm', 'Old alert', 'Distress detected', 'responding', 'CRITICAL', 'drowning', 0.97, 'UPLOAD',
+        7, 'orange', 'Orange zone', 'POSSIBLE_DROWNING', 1, '/media/alert.jpg', '/media/alert.webm',
+        2.2, 1, 2.1, 2.2, 1, 1, 'critical', 'upload:drowning:7', 'drowning-group', '[7]', 4,
+        2, 2.5, 1, 2.1, 2.3, 'Uploaded Video', 'scenario.mp4', NULL, 2),
+       ('old-false-alarm', 'alarm', 'False alarm', 'Reflection', 'dismissed', 'HIGH', 'intrusion', 0.75, 'CAM-01',
+        8, 'red', 'Red zone', 'RED_ZONE_INTRUSION', 1, '/media/false.jpg', NULL,
+        3.1, 1, 3, 3.1, 1, 2, 'high', 'live:intrusion:8', 'intrusion-group', '[8]', 1,
+        3, 3.1, 1, 3, NULL, 'Live CCTV', NULL, 'Sunlight reflection', 3)`
     )
+    await run(source, `INSERT INTO event_people
+      (event_id, person_id, first_seen_at, last_seen_at, occurrence_count) VALUES
+      ('old-detection', 5, 1, 1.5, 2),
+      ('old-alert', 7, 2, 2.5, 4),
+      ('old-false-alarm', 8, 3, 3.1, 1)`)
     await __test.buildBackupFile(source, backupFile)
 
     await __test.executeVerifiedReset(source, ['detections', 'alerts', 'responseStats'])
@@ -182,9 +227,45 @@ test('restore recovers deleted records from a real backup without overwriting cu
     )
 
     const restored = await __test.restoreDeletedData(source, backupFile)
-    assert.deepEqual(restored, { events: 2, responseStats: 1, skippedExistingEvents: 0 })
-    assert.equal((await get(source, 'SELECT COUNT(*) AS count FROM events')).count, 3)
+    assert.deepEqual(restored, {
+      events: 3,
+      eventPeople: 3,
+      responseStats: 1,
+      skippedExistingEvents: 0,
+      skippedExistingEventPeople: 0,
+    })
+    assert.equal((await get(source, 'SELECT COUNT(*) AS count FROM events')).count, 4)
     assert.equal((await get(source, "SELECT COUNT(*) AS count FROM events WHERE id = 'new-alert'")).count, 1)
+    assert.equal((await get(source, 'SELECT COUNT(*) AS count FROM event_people')).count, 3)
+
+    const restoredAlert = await get(source, `SELECT status, category, confidence, camera, person_id,
+      snapshot_uri, clip_uri, acknowledged_by, responding_by, priority, incident_key, group_key,
+      person_ids, occurrence_count, notification_count, siren_activated_at,
+      detection_source, source_name FROM events WHERE id = 'old-alert'`)
+    assert.deepEqual(restoredAlert, {
+      status: 'responding',
+      category: 'drowning',
+      confidence: 0.97,
+      camera: 'UPLOAD',
+      person_id: 7,
+      snapshot_uri: '/media/alert.jpg',
+      clip_uri: '/media/alert.webm',
+      acknowledged_by: 1,
+      responding_by: 1,
+      priority: 1,
+      incident_key: 'upload:drowning:7',
+      group_key: 'drowning-group',
+      person_ids: '[7]',
+      occurrence_count: 4,
+      notification_count: 1,
+      siren_activated_at: 2.3,
+      detection_source: 'Uploaded Video',
+      source_name: 'scenario.mp4',
+    })
+    assert.equal(
+      (await get(source, "SELECT closure_reason FROM events WHERE id = 'old-false-alarm'")).closure_reason,
+      'Sunlight reflection'
+    )
 
     const guard = await get(
       source,
@@ -199,7 +280,13 @@ test('restore recovers deleted records from a real backup without overwriting cu
     })
 
     const repeated = await __test.restoreDeletedData(source, backupFile)
-    assert.deepEqual(repeated, { events: 0, responseStats: 0, skippedExistingEvents: 2 })
+    assert.deepEqual(repeated, {
+      events: 0,
+      eventPeople: 0,
+      responseStats: 0,
+      skippedExistingEvents: 3,
+      skippedExistingEventPeople: 3,
+    })
   } finally {
     if (source) await close(source)
     fs.rmSync(tempDir, { recursive: true, force: true })

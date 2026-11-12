@@ -62,7 +62,10 @@ function registerMobileEventRoutes(app, db) {
         conditions.push('is_alert = 1')
       }
       if (status === 'closed') {
-        conditions.push("status <> 'pending'")
+        conditions.push("status IN ('resolved', 'dismissed')")
+      } else if (status === 'responding') {
+        conditions.push("status = 'responding' AND responding_by = ?")
+        params.push(req.lifeguard.id)
       } else if (status !== 'all') {
         conditions.push('status = ?')
         params.push(status)
@@ -87,7 +90,7 @@ function registerMobileEventRoutes(app, db) {
       const rows = await all(
         db,
         `SELECT * FROM events ${where}
-         ORDER BY CASE WHEN status = 'pending' AND is_alert = 1 THEN priority ELSE 9 END ASC,
+         ORDER BY CASE WHEN status IN ('pending', 'responding') AND is_alert = 1 THEN priority ELSE 9 END ASC,
            ts DESC, id DESC LIMIT ? OFFSET ?`,
         [...params, limit + 1, pageOffset]
       )
@@ -118,15 +121,22 @@ function registerMobileEventRoutes(app, db) {
       const lifeguardId = req.lifeguard.id
       const row = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
       if (!row) return res.status(404).json({ error: 'Alert not found' })
-      if (row.status !== 'pending') return res.status(400).json({ error: 'This alert is already closed.' })
+      if (row.status !== 'pending') return res.status(400).json({ error: 'This alert is no longer awaiting response.' })
 
       const now = Date.now() / 1000
-      await run(
+      const claimed = await run(
         db,
-        `UPDATE events SET responding_at = ?, responding_by = ?, dispatched_at = COALESCE(dispatched_at, ?)
-         WHERE id = ? AND responding_by IS NULL`,
-        [now, lifeguardId, now, id]
+        `UPDATE events SET status = 'responding', responding_at = ?, responding_by = ?,
+          acknowledged_at = COALESCE(acknowledged_at, ?), acknowledged_by = COALESCE(acknowledged_by, ?),
+          dispatched_at = COALESCE(dispatched_at, ?)
+         WHERE id = ? AND status = 'pending' AND responding_by IS NULL`,
+        [now, lifeguardId, now, lifeguardId, now, id]
       )
+      if (claimed?.changes) {
+        await run(db, `UPDATE users SET acknowledged_alerts = COALESCE(acknowledged_alerts, 0) + 1,
+          last_alert_acknowledged_at = ? WHERE id = ? AND role = 'lifeguard'`,
+        [new Date().toISOString(), lifeguardId])
+      }
 
       const event = await eventForLifeguard(db, id, lifeguardId)
       if (!event.responding_mine) {
@@ -149,16 +159,25 @@ function registerMobileEventRoutes(app, db) {
       const lifeguardId = req.lifeguard.id
       const row = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
       if (!row) return res.status(404).json({ error: 'Alert not found' })
-      if (row.status !== 'pending') return res.status(400).json({ error: 'This alert is already closed.' })
-      const claimed = await run(db, `UPDATE events SET acknowledged_at = ?, acknowledged_by = ?
-        WHERE id = ? AND acknowledged_at IS NULL`, [Date.now() / 1000, lifeguardId, id])
+      if (row.status !== 'pending') return res.status(400).json({ error: 'This alert is no longer awaiting response.' })
+      const now = Date.now() / 1000
+      const claimed = await run(db, `UPDATE events SET status = 'responding', responding_at = ?, responding_by = ?,
+        acknowledged_at = ?, acknowledged_by = ?, dispatched_at = COALESCE(dispatched_at, ?)
+        WHERE id = ? AND status = 'pending' AND responding_by IS NULL`,
+      [now, lifeguardId, now, lifeguardId, now, id])
       if (claimed?.changes) {
         await run(db, `UPDATE users SET acknowledged_alerts = COALESCE(acknowledged_alerts, 0) + 1,
           last_alert_acknowledged_at = ? WHERE id = ? AND role = 'lifeguard'`,
         [new Date().toISOString(), lifeguardId])
       }
       const event = await eventForLifeguard(db, id, lifeguardId)
-      publishAlertChange('acknowledged', id)
+      if (!event.responding_mine) {
+        return res.status(409).json({
+          error: `${event.responder_name || 'Another lifeguard'} is already responding.`,
+          event,
+        })
+      }
+      publishAlertChange('responding', id)
       res.json({ ok: true, event })
     } catch (err) {
       console.error(err)
@@ -170,11 +189,12 @@ function registerMobileEventRoutes(app, db) {
     try {
       const id = String(req.params.id || '')
       const status = String(req.body?.status || '').trim()
-      if (!['resolved', 'dismissed', 'pending'].includes(status)) {
-        return res.status(400).json({ error: 'status must be pending, resolved, or dismissed' })
+      if (!['resolved', 'dismissed'].includes(status)) {
+        return res.status(400).json({ error: 'status must be resolved or dismissed' })
       }
 
       const lifeguardId = req.lifeguard?.id
+      const reason = String(req.body?.reason || '').trim()
       const row = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
       if (!row) return res.status(404).json({ error: 'Alert not found' })
 
@@ -186,11 +206,16 @@ function registerMobileEventRoutes(app, db) {
         })
       }
       const closing = status === 'resolved' || status === 'dismissed'
-      if (closing && row.status !== 'pending') {
-        return res.status(400).json({ error: 'This alert is already closed.' })
+      if (closing && row.status !== 'responding') {
+        return res.status(400).json({ error: 'Respond Now before closing this incident.' })
       }
-
-      await setEventStatus(db, id, status, lifeguardId)
+      if (status === 'dismissed' && !reason) {
+        return res.status(400).json({ error: 'A false-alarm reason is required.' })
+      }
+      if (reason.length > 300) {
+        return res.status(400).json({ error: 'The closure reason must be 300 characters or fewer.' })
+      }
+      await setEventStatus(db, id, status, lifeguardId, reason || null)
 
       res.json({
         ok: true,

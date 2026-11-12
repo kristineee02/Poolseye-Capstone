@@ -101,6 +101,26 @@ app.get('/api/events/stream', (req, res) => {
   }
 })
 
+// Mobile uses the same invalidation stream when EventSource is available and
+// retains polling as a reconnect/offline fallback.
+app.get('/api/mobile/events/stream', (req, res) => {
+  try {
+    const token = String(req.query.token || '')
+    const user = jwt.verify(token, process.env.JWT_SECRET)
+    if (user?.aud !== 'lifeguard') return res.status(403).json({ error: 'Lifeguard access only' })
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache, no-transform')
+    res.setHeader('Connection', 'keep-alive')
+    res.setHeader('X-Accel-Buffering', 'no')
+    res.flushHeaders?.()
+    const remove = addAlertClient(res)
+    const heartbeat = setInterval(() => res.write(': ping\n\n'), 15000)
+    req.on('close', () => { clearInterval(heartbeat); remove() })
+  } catch {
+    res.status(401).json({ error: 'Unauthorized' })
+  }
+})
+
 app.get('/api/geofence', async (_req, res) => {
   try {
     const payload = await geofence.readLayout(db, geofence.DEFAULT_CAMERA)

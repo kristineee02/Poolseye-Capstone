@@ -40,12 +40,13 @@ const SEVERITY_RANK = { drowning: 0, intrusion: 1, 'deep-water': 2, supervision:
 
 function collapseKey(event) {
   if (event.category === 'broadcast') return `broadcast-${event.id}`
-  // Digests (and same-category drowning/supervision pages) share one tray notification.
-  if (event.category === 'supervision') {
-    return `category-${event.category}-${event.camera || 'cam'}`
-  }
   // Critical incidents never collapse across people.
   if (event.category === 'drowning') return `critical-${event.id}`
+  // Noncritical detections share one digest notification while remaining
+  // separate person-specific incidents in the database.
+  if (['intrusion', 'deep-water', 'supervision'].includes(event.category)) {
+    return `noncritical-${event.camera || 'cam'}`
+  }
   if (event.person_id != null) return `person-${event.person_id}`
   return `event-${event.id}`
 }
@@ -69,8 +70,7 @@ function groupTitle(events, urgent) {
     const label = `Unsupervised swimmers · ${events.length}`
     return urgent ? `URGENT — no response yet: ${label}` : label
   }
-  const person = primary.person_id != null ? `Person #${primary.person_id}` : 'One swimmer'
-  const label = `${events.length} alerts · ${person}`
+  const label = `${events.length} pool alerts`
   return urgent ? `URGENT — no response yet: ${label}` : label
 }
 
@@ -92,17 +92,18 @@ function groupBody(events) {
 
 async function openAlertsFor(db, event) {
   if (event.category === 'broadcast') return [event]
-  // Digest rows are already one alert for many people.
-  if (String(event.id || '').startsWith('digest-')) return [event]
-  // Legacy per-person drowning/supervision rows share one push.
-  if (event.category === 'supervision') {
+  // Noncritical incidents remain person-specific in storage but share a
+  // notification digest, including urgent re-sends.
+  if (['intrusion', 'deep-water', 'supervision'].includes(event.category)) {
     const rows = await all(
       db,
       `SELECT * FROM events
        WHERE status = 'pending' AND is_alert = 1
-         AND category = ?
+         AND category IN ('intrusion', 'deep-water', 'supervision')
+         AND camera = ?
+         AND dispatched_at IS NOT NULL
          AND responding_at IS NULL`,
-      [event.category]
+      [event.camera || 'CAM-01']
     )
     return rows.length ? rows : [event]
   }
@@ -168,6 +169,63 @@ async function dispatchEvent(db, eventId, { userId = null } = {}) {
     [Date.now() / 1000, eventId])
   publishAlertChange('dispatched', eventId)
   return result
+}
+
+const detectionQueues = new WeakMap()
+const DETECTION_DIGEST_MS = 1200
+
+async function flushDetectionDigest(db) {
+  const queue = detectionQueues.get(db)
+  if (!queue) return
+  detectionQueues.delete(db)
+  const ids = [...queue.ids]
+  const claimed = []
+  const now = Date.now() / 1000
+  for (const id of ids) {
+    const result = await run(db,
+      `UPDATE events SET dispatched_at = ?, dispatched_by = NULL
+       WHERE id = ? AND dispatched_at IS NULL AND status = 'pending'`, [now, id])
+    if (result?.changes) {
+      const event = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
+      if (event) claimed.push(event)
+    }
+  }
+  const groups = new Map()
+  for (const event of claimed) {
+    const key = event.camera || 'CAM-01'
+    const group = groups.get(key) || []
+    group.push(event)
+    groups.set(key, group)
+  }
+  for (const events of groups.values()) {
+    await pushToLifeguards(db, events)
+    for (const event of events) {
+      await run(db, `UPDATE events SET notification_count = notification_count + 1, last_notified_at = ? WHERE id = ?`,
+        [now, event.id])
+      publishAlertChange('dispatched', event.id)
+    }
+  }
+}
+
+/** Critical incidents page immediately; noncritical incidents coalesce briefly into one digest. */
+function scheduleDetectionDispatch(db, event) {
+  if (!event?.is_alert || event.status !== 'pending') return
+  if (event.category === 'drowning') {
+    dispatchEvent(db, event.id).catch((err) => console.error('Critical dispatch failed:', err))
+    return
+  }
+  let queue = detectionQueues.get(db)
+  if (!queue) {
+    queue = { ids: new Set(), timer: null }
+    detectionQueues.set(db, queue)
+  }
+  queue.ids.add(event.id)
+  if (!queue.timer) {
+    queue.timer = setTimeout(() => {
+      flushDetectionDigest(db).catch((err) => console.error('Detection digest dispatch failed:', err))
+    }, DETECTION_DIGEST_MS)
+    queue.timer.unref?.()
+  }
 }
 
 /**
@@ -270,4 +328,4 @@ function startEscalation(db) {
   return timer
 }
 
-module.exports = { dispatchEvent, resendUrgent, escalationTick, startEscalation }
+module.exports = { dispatchEvent, scheduleDetectionDispatch, resendUrgent, escalationTick, startEscalation }

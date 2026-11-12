@@ -26,11 +26,11 @@ export const CAMERA_LABEL = 'Pool CCTV'
 
 /** Detections from a video the admin uploaded to the feed are stored with camera = 'UPLOAD'. */
 export function isUploadedVideo(event) {
-  return event?.camera === 'UPLOAD'
+  return event?.detection_source === 'Uploaded Video' || event?.camera === 'UPLOAD'
 }
 
 export function cameraName(event) {
-  if (isUploadedVideo(event)) return 'Uploaded video'
+  if (isUploadedVideo(event)) return event?.source_name ? `Uploaded: ${event.source_name}` : 'Uploaded video'
   return event?.camera || '—'
 }
 
@@ -42,7 +42,11 @@ export function sourceLabel(event) {
 export function handlingNote(event) {
   if (!isAlertEvent(event)) return null
   if (event.status === 'resolved') return event.closed_by_name ? `by ${event.closed_by_name}` : null
-  if (event.status === 'dismissed') return event.closed_by_name ? `False alarm · ${event.closed_by_name}` : 'False alarm'
+  if (event.status === 'dismissed') {
+    const by = event.closed_by_name ? ` · ${event.closed_by_name}` : ''
+    const reason = event.closure_reason ? ` · ${event.closure_reason}` : ''
+    return `False alarm${by}${reason}`
+  }
   if (event.responding_at) return `${event.responder_name || 'A lifeguard'} responding`
   if (event.escalated_at) return 'No response yet'
   if (event.dispatched_at) return 'Sent to lifeguards'

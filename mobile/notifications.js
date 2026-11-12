@@ -87,10 +87,10 @@ export async function unregisterFromNotifications(apiToken) {
 
 export function alertCollapseKey(alert) {
   if (alert.category === 'broadcast') return `broadcast-${alert.id}`;
-  if (alert.category === 'supervision') {
-    return `category-${alert.category}-${alert.camera || 'cam'}`;
-  }
   if (alert.category === 'drowning') return `critical-${alert.id}`;
+  if (['intrusion', 'deep-water', 'supervision'].includes(alert.category)) {
+    return `noncritical-${alert.camera || 'cam'}`;
+  }
   if (alert.personId != null) return `person-${alert.personId}`;
   return `event-${alert.id}`;
 }

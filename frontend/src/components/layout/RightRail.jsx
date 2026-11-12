@@ -60,13 +60,19 @@ function timeAgo(ts) {
   return `${Math.floor(sec / 86400)}d ago`
 }
 
+function responseTime(seconds) {
+  if (seconds == null) return null
+  const rounded = Math.max(0, Math.round(seconds))
+  return rounded < 60 ? `${rounded}s` : `${Math.floor(rounded / 60)}m ${rounded % 60}s`
+}
+
 function HandoffStatus({ alert, busy, onResend }) {
   if (alert.responding_at) {
     return (
       <div className="rr-handoff is-responding">
         <Icon.CheckCircle />
         <span>
-          <b>{alert.responder_name || 'A lifeguard'}</b> is responding · since {formatTime(alert.responding_at)}
+          <b>{alert.responder_name || 'A lifeguard'}</b> is responding · {responseTime(alert.response_time_seconds) || 'now'} response time
         </span>
       </div>
     )
@@ -99,8 +105,8 @@ function HandoffStatus({ alert, busy, onResend }) {
     <div className="rr-handoff">
       <Icon.Bell />
       <span>
-        <b>{alert.dispatched_by == null ? 'Sent automatically' : 'Sent to lifeguards'}</b> ·{' '}
-        {formatTime(alert.dispatched_at)} — waiting for a lifeguard
+        <b>Awaiting Response</b> · {alert.dispatched_by == null ? 'sent automatically' : 'sent to lifeguards'}{' '}
+        at {formatTime(alert.dispatched_at)}
       </span>
     </div>
   )
@@ -149,6 +155,7 @@ function ActiveAlert({ alert, supervised, busy, onDispatch, onResend }) {
         <div className="active-alert-meta">
           <span>{alertTime(alert)}{age ? ` · ${age}` : ''}</span>
           {zone ? <span className="active-alert-zone">{zone}</span> : null}
+          <span>{alert.detection_source || (alert.camera === 'UPLOAD' ? 'Uploaded Video' : 'Live CCTV')}</span>
         </div>
       </div>
 

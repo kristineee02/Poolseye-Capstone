@@ -75,7 +75,10 @@ function toSqliteValue(value) {
 
 function openFile(file) {
   return new Promise((resolve, reject) => {
-    const target = new sqlite3.Database(file, (err) => (err ? reject(err) : resolve(target)))
+    const target = new sqlite3.Database(file, (err) => {
+      if (err) return reject(err)
+      target.run('PRAGMA foreign_keys = ON', (pragmaErr) => (pragmaErr ? reject(pragmaErr) : resolve(target)))
+    })
   })
 }
 
@@ -325,6 +328,10 @@ async function filterBackupFile(file, categories) {
     try {
       for (const [key, category] of Object.entries(EVENT_CATEGORIES)) {
         if (!categories.includes(key)) {
+          // Do this explicitly as well as relying on ON DELETE CASCADE so old
+          // backup schemas and SQLite connections cannot retain orphan rows.
+          await fileRun(target, `DELETE FROM event_people WHERE event_id IN
+            (SELECT id FROM events WHERE ${category.where})`)
           await fileRun(target, `DELETE FROM events WHERE ${category.where}`)
         }
       }
@@ -384,7 +391,12 @@ function resetStatements(categories) {
   const statements = []
   for (const key of categories) {
     if (EVENT_CATEGORIES[key]) {
-      statements.push({ key, sql: `DELETE FROM events WHERE ${EVENT_CATEGORIES[key].where}` })
+      statements.push({
+        key,
+        relatedSql: `DELETE FROM event_people WHERE event_id IN
+          (SELECT id FROM events WHERE ${EVENT_CATEGORIES[key].where})`,
+        sql: `DELETE FROM events WHERE ${EVENT_CATEGORIES[key].where}`,
+      })
     } else if (key === 'responseStats') {
       statements.push({
         key,
@@ -407,6 +419,7 @@ async function executeVerifiedReset(db, categories) {
     const deletedCounts = {}
 
     for (const statement of statements) {
+      if (statement.relatedSql) await run(db, statement.relatedSql)
       const result = await run(db, statement.sql)
       deletedCounts[statement.key] = Number(result?.changes || 0)
     }
@@ -495,6 +508,8 @@ async function restoreDeletedData(db, file) {
 
       // Grouped incidents keep their complete per-person audit trail here.
       // Older backups do not have this table, so restoration remains backward compatible.
+      let sourceEventPeople = 0
+      let restoredEventPeople = 0
       if (sourceTables.has('event_people')) {
         const columns = ['event_id', 'person_id', 'first_seen_at', 'last_seen_at', 'occurrence_count']
         const sourceColumns = await tableColumns(source, 'event_people', true)
@@ -504,9 +519,11 @@ async function restoreDeletedData(db, file) {
               `SELECT ${columns.map(quoteIdent).join(', ')} FROM event_people ORDER BY rowid LIMIT ? OFFSET ?`,
             [PAGE_SIZE, offset])
             for (const person of people) {
-              await run(db, `INSERT OR IGNORE INTO event_people (${columns.map(quoteIdent).join(', ')})
+              const result = await run(db, `INSERT OR IGNORE INTO event_people (${columns.map(quoteIdent).join(', ')})
                 VALUES (${columns.map(() => '?').join(', ')})`, columns.map((column) => toSqliteValue(person[column])))
+              restoredEventPeople += Number(result?.changes || 0)
             }
+            sourceEventPeople += people.length
             if (people.length < PAGE_SIZE) break
           }
         }
@@ -545,8 +562,10 @@ async function restoreDeletedData(db, file) {
 
       return {
         events: restoredEvents,
+        eventPeople: restoredEventPeople,
         responseStats: restoredResponseStats,
         skippedExistingEvents: sourceEvents - restoredEvents,
+        skippedExistingEventPeople: sourceEventPeople - restoredEventPeople,
       }
     }, 'write')
   } finally {

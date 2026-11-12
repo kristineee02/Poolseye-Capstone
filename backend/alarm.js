@@ -18,7 +18,7 @@ async function alarmState(db) {
   const row = await get(
     db,
     `SELECT id, siren_activated_at FROM events
-     WHERE category = 'drowning' AND is_alert = 1 AND status = 'pending'
+     WHERE category = 'drowning' AND is_alert = 1 AND status IN ('pending', 'responding')
      ORDER BY ts DESC LIMIT 1`,
     []
   )

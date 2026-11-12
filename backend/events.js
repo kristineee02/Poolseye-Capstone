@@ -1,6 +1,6 @@
 const express = require('express')
 const { get, all, run, transaction } = require('./db')
-const { dispatchEvent, resendUrgent } = require('./dispatch')
+const { dispatchEvent, scheduleDetectionDispatch, resendUrgent } = require('./dispatch')
 const { publishAlertChange } = require('./alertSync')
 const { MEDIA_DIR, MEDIA_ROUTE, saveMedia, removeMedia } = require('./mediaStorage')
 
@@ -65,8 +65,11 @@ function rowToEvent(row) {
     dispatched_by: row.dispatched_by ?? null,
     responding_at: row.responding_at ?? null,
     responding_by: row.responding_by ?? null,
+    response_time_seconds: row.responding_at != null
+      ? Math.max(0, row.responding_at - (row.first_detected_at ?? row.ts))
+      : null,
     escalated_at: row.escalated_at ?? null,
-    priority: Number(row.priority || 4),
+    priority: Number(row.priority || 5),
     priority_label: row.priority_label || 'informational',
     incident_key: row.incident_key || null,
     group_key: row.group_key || null,
@@ -78,6 +81,10 @@ function rowToEvent(row) {
     notification_count: Number(row.notification_count || 0),
     last_notified_at: row.last_notified_at ?? null,
     siren_activated_at: row.siren_activated_at ?? null,
+    detection_source: row.detection_source || (row.camera === 'UPLOAD' ? 'Uploaded Video' : 'Live CCTV'),
+    source_name: row.source_name || null,
+    closure_reason: row.closure_reason || null,
+    detection_cleared_at: row.detection_cleared_at ?? null,
     ts: row.ts,
     // Supervision-specific fields
     separation_distance: row.separation_distance,
@@ -91,8 +98,8 @@ function rowToEvent(row) {
 const PRIORITY_BY_CATEGORY = {
   drowning: { value: 1, label: 'critical', severity: 'CRITICAL' },
   intrusion: { value: 2, label: 'high', severity: 'HIGH' },
-  'deep-water': { value: 2, label: 'high', severity: 'HIGH' },
-  supervision: { value: 3, label: 'medium', severity: 'MEDIUM' },
+  'deep-water': { value: 3, label: 'medium', severity: 'MEDIUM' },
+  supervision: { value: 4, label: 'grouped', severity: 'MEDIUM' },
 }
 
 function parsePersonIds(value, fallback = null) {
@@ -113,24 +120,22 @@ function payloadPersonIds(body) {
 
 function incidentPriority(category, isAlert, eventName, requestedSeverity = null) {
   if (!isAlert || category === 'yellow' || eventName === 'SUPERVISED') {
-    return { value: 4, label: 'informational', severity: 'LOW' }
+    return { value: 5, label: 'informational', severity: 'LOW' }
   }
   if (PRIORITY_BY_CATEGORY[category]) return PRIORITY_BY_CATEGORY[category]
   const severity = String(requestedSeverity || 'MEDIUM').toUpperCase()
   if (severity === 'CRITICAL') return { value: 1, label: 'critical', severity }
   if (severity === 'HIGH') return { value: 2, label: 'high', severity }
-  if (severity === 'LOW') return { value: 4, label: 'informational', severity }
-  return { value: 3, label: 'medium', severity: 'MEDIUM' }
+  if (severity === 'LOW') return { value: 5, label: 'informational', severity }
+  return { value: 4, label: 'grouped', severity: 'MEDIUM' }
 }
 
 function incidentKey(body, personId) {
   const camera = String(body?.camera || 'CAM-01')
   const category = String(body?.category || 'zone')
   const zone = String(body?.zone || body?.zone_label || 'pool').toLowerCase()
-  if (category === 'drowning') return `${camera}:drowning:person:${personId ?? body?.id}`
-  if (category === 'supervision') return `${camera}:supervision:zone:${zone}`
-  if (category === 'intrusion' || category === 'deep-water') {
-    return `${camera}:${category}:zone:${zone}`
+  if (['drowning', 'supervision', 'intrusion', 'deep-water'].includes(category)) {
+    return `${camera}:${category}:person:${personId ?? body?.id}:zone:${zone}`
   }
   return `${camera}:${category}:${body?.id || zone}`
 }
@@ -169,7 +174,7 @@ async function eventWithResponder(db, row) {
   return event
 }
 
-async function setEventStatus(db, id, status, userId) {
+async function setEventStatus(db, id, status, userId, closureReason = null) {
   if (status === 'pending') {
     await run(
       db,
@@ -177,7 +182,7 @@ async function setEventStatus(db, id, status, userId) {
         closed_at = NULL, closed_by = NULL,
         acknowledged_at = NULL, acknowledged_by = NULL,
         responding_at = NULL, responding_by = NULL,
-        escalated_at = NULL
+        escalated_at = NULL, closure_reason = NULL
        WHERE id = ?`,
       [status, id]
     )
@@ -190,9 +195,10 @@ async function setEventStatus(db, id, status, userId) {
       closed_at = COALESCE(closed_at, ?),
       closed_by = COALESCE(closed_by, ?),
       acknowledged_at = COALESCE(acknowledged_at, ?),
-      acknowledged_by = COALESCE(acknowledged_by, ?)
+      acknowledged_by = COALESCE(acknowledged_by, ?),
+      closure_reason = ?
      WHERE id = ?`,
-    [status, closedAt, userId ?? null, closedAt, userId ?? null, id]
+    [status, closedAt, userId ?? null, closedAt, userId ?? null, closureReason, id]
   )
 }
 
@@ -215,6 +221,8 @@ function normalizeIngestPayload(body) {
     category: body?.category ? String(body.category) : null,
     confidence: body?.confidence != null ? Number(body.confidence) : null,
     camera: String(body?.camera || 'CAM-01'),
+    detection_source: String(body?.detection_source || body?.source || (body?.camera === 'UPLOAD' ? 'Uploaded Video' : 'Live CCTV')),
+    source_name: body?.source_name ? String(body.source_name) : null,
     person_id: body?.person_id != null ? Number(body.person_id) : null,
     zone: body?.zone ? String(body.zone) : null,
     zone_label: body?.zone_label ? String(body.zone_label) : null,
@@ -262,8 +270,8 @@ async function insertEvent(db, payload) {
       separation_distance, supervision_threshold, boundary_direction,
       nearest_person_id, nearest_confidence, priority, priority_label,
       incident_key, group_key, person_ids, occurrence_count,
-      first_detected_at, last_detected_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      first_detected_at, last_detected_at, detection_source, source_name
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       type = excluded.type,
       code = excluded.code,
@@ -328,6 +336,8 @@ async function insertEvent(db, payload) {
       e.occurrence_count,
       e.first_detected_at,
       e.last_detected_at,
+      e.detection_source,
+      e.source_name,
     ]
   )
   for (const personId of e.person_ids) {
@@ -342,16 +352,19 @@ async function insertEvent(db, payload) {
 }
 
 async function ingestOneIncident(db, payload, personIds) {
-  const personId = payload.category === 'drowning' ? personIds[0] : (payload.person_id ?? null)
+  const personId = personIds[0] ?? payload.person_id ?? null
   const key = incidentKey(payload, personId)
   const priority = incidentPriority(payload.category, Boolean(payload.is_alert), payload.event || payload.event_name, payload.severity)
   const existing = await get(db,
-    `SELECT * FROM events WHERE incident_key = ? AND status = 'pending' AND is_alert = 1
+    `SELECT * FROM events WHERE incident_key = ? AND status IN ('pending', 'responding') AND is_alert = 1
      ORDER BY last_detected_at DESC, ts DESC LIMIT 1`, [key])
 
   if (!existing) {
+    const requestedId = String(payload.id)
+    const idTaken = await get(db, 'SELECT id FROM events WHERE id = ?', [requestedId])
     const event = await insertEvent(db, {
       ...payload,
+      id: idTaken ? `${requestedId}-${Math.round(payload.ts * 1000)}` : requestedId,
       title: groupedIncidentTitle(payload.title, payload.category, personIds),
       person_id: personId,
       person_ids: personIds,
@@ -364,9 +377,7 @@ async function ingestOneIncident(db, payload, personIds) {
   }
 
   const historicalIds = parsePersonIds(existing.person_ids, existing.person_id)
-  const activeIds = payload.category === 'supervision'
-    ? personIds
-    : [...new Set([...historicalIds, ...personIds])]
+  const activeIds = [...new Set([...historicalIds, ...personIds])]
   const title = groupedIncidentTitle(payload.title || existing.title, payload.category, activeIds)
   await run(db, `UPDATE events SET
       title = ?, meta = ?, zone = COALESCE(?, zone), zone_label = COALESCE(?, zone_label),
@@ -394,29 +405,35 @@ async function ingestDetection(db, body) {
   const people = normalized.person_ids
   const groupKey = String(body?.id || `${normalized.camera}:${normalized.category}`)
 
-  // A detector clear closes every person-specific critical incident from that digest.
-  if (normalized.category === 'drowning' && !normalized.is_alert && normalized.status === 'resolved') {
-    await run(db, `UPDATE events SET status = 'resolved', is_alert = 0, acknowledged_at = COALESCE(acknowledged_at, ?)
-      WHERE category = 'drowning' AND camera = ? AND group_key = ? AND status = 'pending'`,
-    [Date.now() / 1000, normalized.camera, groupKey])
+  // A clear ends detector deduplication but does not close an incident. Only a
+  // responding lifeguard can resolve or mark it false. A later distress episode
+  // therefore creates and pages a fresh incident even if the prior one is open.
+  if (['drowning', 'supervision'].includes(normalized.category) && !normalized.is_alert && normalized.status === 'resolved') {
+    const clearedAt = Date.now() / 1000
+    await run(db, `UPDATE events SET detection_cleared_at = ?, incident_key = incident_key || ':cleared:' || ?
+      WHERE category = ? AND camera = ? AND group_key = ?
+        AND status IN ('pending', 'responding') AND detection_cleared_at IS NULL`,
+    [clearedAt, clearedAt, normalized.category, normalized.camera, groupKey])
     return { events: [], deduplicated: true }
   }
 
-  if (!normalized.is_alert || normalized.priority === 4) {
+  if (!normalized.is_alert || normalized.priority === 5) {
     const event = await insertEvent(db, { ...body, person_ids: people })
     return { events: [event], deduplicated: false }
   }
 
   const payload = { ...body, ...normalized, group_key: groupKey }
-  const targets = normalized.category === 'drowning'
-    ? (people.length ? people.map((id) => [id]) : [[normalized.person_id].filter((id) => id != null)])
-    : [people]
+  const targets = people.length
+    ? people.map((id) => [id])
+    : [[normalized.person_id].filter((id) => id != null)]
   const incidents = await transaction(db, async () => {
     const rows = []
     for (const ids of targets) {
-      const eventPayload = normalized.category === 'drowning'
-        ? { ...payload, id: `${groupKey}-p${ids[0] ?? 'unknown'}`, person_id: ids[0] ?? null }
-        : payload
+      const eventPayload = {
+        ...payload,
+        id: `${groupKey}-p${ids[0] ?? 'unknown'}`,
+        person_id: ids[0] ?? null,
+      }
       rows.push(await ingestOneIncident(db, eventPayload, ids))
     }
     return rows
@@ -496,7 +513,7 @@ function registerEventRoutes(app, db, adminRequired) {
       const summaryRow = await get(
         db,
         `SELECT COUNT(*) AS total,
-          SUM(CASE WHEN status = 'pending' AND ${ALERT_SQL} THEN 1 ELSE 0 END) AS unacknowledged,
+          SUM(CASE WHEN status IN ('pending', 'responding') AND ${ALERT_SQL} THEN 1 ELSE 0 END) AS unacknowledged,
           SUM(CASE WHEN status = 'pending' AND NOT ${ALERT_SQL} THEN 1 ELSE 0 END) AS logged,
           SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) AS acknowledged,
           SUM(CASE WHEN status = 'dismissed' THEN 1 ELSE 0 END) AS dismissed
@@ -512,7 +529,7 @@ function registerEventRoutes(app, db, adminRequired) {
       }
 
       if (status === 'unacknowledged') {
-        conditions.push(`status = 'pending' AND ${ALERT_SQL}`)
+        conditions.push(`status IN ('pending', 'responding') AND ${ALERT_SQL}`)
       } else if (status === 'logged') {
         conditions.push(`status = 'pending' AND NOT ${ALERT_SQL}`)
       } else if (status !== 'all') {
@@ -529,7 +546,7 @@ function registerEventRoutes(app, db, adminRequired) {
       const rows = await all(
         db,
         `SELECT * FROM events ${where}
-         ORDER BY CASE WHEN status = 'pending' AND is_alert = 1 THEN priority ELSE 9 END ASC,
+         ORDER BY CASE WHEN status IN ('pending', 'responding') AND is_alert = 1 THEN priority ELSE 9 END ASC,
            ts DESC, created_at DESC LIMIT ? OFFSET ?`,
         [...params, pageSize, offset]
       )
@@ -567,7 +584,7 @@ function registerEventRoutes(app, db, adminRequired) {
       const rows = await all(
         db,
         `SELECT * FROM events
-         WHERE status = 'pending' AND is_alert = 1
+         WHERE status IN ('pending', 'responding') AND is_alert = 1
            AND category IN (${DETECTION_CATEGORIES.map(() => '?').join(', ')})
          ORDER BY priority ASC, ${ACTIVE_ALERT_ORDER_SQL}, ts DESC`,
         DETECTION_CATEGORIES
@@ -578,7 +595,7 @@ function registerEventRoutes(app, db, adminRequired) {
         const peers = await all(
           db,
           `SELECT id, title, person_id, zone_label, meta, category FROM events
-           WHERE status = 'pending' AND is_alert = 1
+           WHERE status IN ('pending', 'responding') AND is_alert = 1
              AND category = ?
            ORDER BY ts DESC`,
           [row.category]
@@ -692,7 +709,7 @@ function registerEventRoutes(app, db, adminRequired) {
     try {
       const row = await get(db, 'SELECT * FROM events WHERE id = ?', [req.params.id])
       if (!row) return res.status(404).json({ error: 'Event not found' })
-      if (row.status !== 'pending') {
+      if (!['pending', 'responding'].includes(row.status)) {
         return res.status(400).json({ error: 'Only active alerts can be sent to lifeguards.' })
       }
 
@@ -744,12 +761,10 @@ function registerEventRoutes(app, db, adminRequired) {
       res.status(result.deduplicated ? 200 : 201).json({ ok: true, event, events: result.events, deduplicated: result.deduplicated })
       publishAlertChange('ingested', event?.id || null)
 
-      // Every actionable incident is sent once when it is created. Updating an
-      // ongoing grouped incident cannot re-page because dispatched_at is claimed atomically.
+      // Critical incidents page immediately. Noncritical incidents are briefly
+      // coalesced into one digest without merging their database identities.
       for (const incident of result.events) {
-        if (incident.is_alert && incident.status === 'pending') {
-          dispatchEvent(db, incident.id).catch((err) => console.error('Auto-dispatch failed:', err))
-        }
+        scheduleDetectionDispatch(db, incident)
       }
     } catch (err) {
       console.error(err)

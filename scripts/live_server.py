@@ -100,7 +100,7 @@ _person_alias: dict[int, int] = {}  # track id -> person id
 _person_memory: dict[int, dict] = {}  # person id -> {"events": set, "foot": (x, y), "last_seen": t}
 # An event type stays quiet until it has gone undetected this long
 _event_quiet_sec = 120.0
-_event_last_seen: dict[tuple, float] = {}  # (event name, from upload) -> last time it was detected
+_event_last_seen: dict[tuple, float] = {}  # (event name, source kind, stable person id) -> last detection
 MAX_DISPLAY_DELAY_SEC = 2.5
 ACTIVITY_SHOW_SEC = 1.5
 ACTIVITY_POSE_SHOW_SEC = 0.5
@@ -178,6 +178,16 @@ def _camera_id() -> str:
     return UPLOAD_CAMERA_ID if _source_kind == "video" else "CAM-01"
 
 
+def _source_fields() -> dict:
+    if _source_kind == "video":
+        video = current_video()
+        return {
+            "detection_source": "Uploaded Video",
+            "source_name": video.get("name") if video else None,
+        }
+    return {"detection_source": "Live CCTV", "source_name": None}
+
+
 def _format_person_list(ids: list[int]) -> str:
     return ", ".join(f"#{pid}" for pid in ids)
 
@@ -233,6 +243,7 @@ def push_category_digest(
             "is_alert": False,
             "ts": now.timestamp(),
             "digest": True,
+            **_source_fields(),
         }
         with _lock:
             _event_log.appendleft(entry)
@@ -288,6 +299,7 @@ def push_category_digest(
         "ts": now.timestamp(),
         "confidence": max(confs) if confs else None,
         "digest": True,
+        **_source_fields(),
     }
     with _lock:
         _event_log.appendleft(entry)
@@ -529,6 +541,7 @@ def reset_people():
     with _lock:
         _person_alias.clear()
         _person_memory.clear()
+        _event_last_seen.clear()
     with _digest_lock:
         _open_unsupervised.clear()
         _open_drowning.clear()
@@ -541,13 +554,13 @@ def push_event(person_id: int, zone: str, event_name: str, is_alert: bool, super
     from_upload = _source_kind == "video"
 
     with _lock:
-        key = (event_name, from_upload)
+        person = _person_alias.setdefault(pid, pid)
+        key = (event_name, from_upload, person)
         detected_at = time.time()
         last = _event_last_seen.get(key)
         _event_last_seen[key] = detected_at
         if last is not None and detected_at - last < _event_quiet_sec:
             return None
-        person = _person_alias.setdefault(pid, pid)
         mem = _person_memory.setdefault(person, {"events": set(), "foot": None, "last_seen": time.time()})
         if event_name in mem["events"]:
             return None
@@ -582,6 +595,7 @@ def push_event(person_id: int, zone: str, event_name: str, is_alert: bool, super
         "event": event_name,
         "is_alert": bool(is_alert),
         "ts": now.timestamp(),
+        **_source_fields(),
     }
 
     if supervision_data:
