@@ -39,8 +39,69 @@
 }
 .active-alert-link:hover { background: var(--accent-tint); }
 
+.rr-alert-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  height: 38px;
+  margin-bottom: 12px;
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--border-subtle));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-inset));
+  box-sizing: border-box;
+}
+.rr-alert-tabs button {
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.rr-alert-tabs button:hover:not(.is-active) {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.rr-alert-tabs button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, #FFFFFF);
+  outline-offset: 1px;
+}
+.rr-alert-tabs button.is-active {
+  background: var(--accent);
+  color: #FFFFFF;
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.rr-alert-tabs button:active { transform: scale(0.985); }
+
+.rr-active-alert-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+}
+.rr-active-alert-group {
+  min-width: 0;
+  width: 100%;
+  isolation: isolate;
+}
+.rr-active-alert-group > .active-alert-item,
+.rr-active-alert-group > .rr-handoff,
+.rr-active-alert-group > .rr-actions {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .active-alert-item {
   --alert-tone: var(--alarm);
+  min-width: 0;
   padding: 12px;
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--alert-tone) 18%, #FFFFFF);
@@ -73,6 +134,7 @@
 }
 .active-alert-title {
   min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 13.5px;
   font-weight: 700;
   line-height: 1.3;
@@ -92,6 +154,7 @@
 }
 .active-alert-desc {
   margin: 8px 0 0;
+  overflow-wrap: anywhere;
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-primary);
@@ -183,6 +246,80 @@
   margin-top: 8px;
   font-size: 11.5px;
   color: var(--safe);
+}
+
+.rr-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: rr-tab-enter 180ms ease-out;
+}
+.rr-history-item {
+  padding: 11px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-raised);
+}
+.rr-history-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.rr-history-title {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.rr-history-status {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.rr-history-status.is-resolved {
+  background: color-mix(in srgb, var(--safe) 11%, #FFFFFF);
+  color: var(--safe);
+}
+.rr-history-status.is-dismissed {
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+}
+.rr-history-desc {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.rr-history-meta {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  margin-top: 8px;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+}
+.rr-history-empty {
+  padding: 22px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.rr-history-empty span { color: var(--text-primary); font-size: 12.5px; font-weight: 700; }
+.rr-history-empty p { margin: 5px 0 0; font-size: 11px; line-height: 1.45; }
+@keyframes rr-tab-enter {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rr-alert-tabs button { transition: none; }
+  .rr-history-list { animation: none; }
 }
 
 .rr-error {

@@ -37,7 +37,7 @@ async function downloadFile(url, filename) {
 }
 
 function statusInfo(event) {
-  if (event.status === 'resolved') return { label: 'Acknowledged', tone: 'safe' }
+  if (event.status === 'resolved') return { label: 'Resolved', tone: 'safe' }
   if (event.status === 'dismissed') return { label: 'Dismissed', tone: 'muted' }
   if (!isAlertEvent(event)) return { label: 'Logged', tone: 'muted' }
   return { label: 'Unacknowledged', tone: 'alarm' }
