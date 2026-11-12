@@ -61,7 +61,7 @@ UPLOAD_DIR = SCRIPTS_DIR / "uploads"
 VIDEO_EXTS_ALLOWED = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "500"))
 UPLOAD_CAMERA_ID = "UPLOAD"
-DEFAULT_RTSP = "rtsp://PoolsEye:PoolsEyeCapstone@192.168.0.130:554/stream1"
+DEFAULT_RTSP = "rtsp://PoolsEye:PoolsEyeCapstone@10.248.160.195:554/stream1"
 SITE_TIME_ZONE = os.environ.get("SITE_TIMEZONE", "Asia/Manila")
 try:
     SITE_TZ = ZoneInfo(SITE_TIME_ZONE)
