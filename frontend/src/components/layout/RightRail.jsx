@@ -68,11 +68,10 @@ function responseTime(seconds) {
 }
 
 function closedTime(alert) {
-  return formatTime(alert.closed_at || alert.responding_at || alert.acknowledged_at || alert.ts)
+  return formatTime(alert.closed_at || alert.acknowledged_at || alert.ts)
 }
 
 function RecentHistoryAlert({ alert }) {
-  const responding = alert.status === 'responding'
   const dismissed = alert.status === 'dismissed'
   const handledBy = alert.closed_by_name || alert.acknowledged_by_name || alert.responder_name
 
@@ -80,8 +79,8 @@ function RecentHistoryAlert({ alert }) {
     <div className="rr-history-item">
       <div className="rr-history-top">
         <span className="rr-history-title">{alert.title}</span>
-        <span className={`rr-history-status ${responding ? 'is-responding' : dismissed ? 'is-dismissed' : 'is-resolved'}`}>
-          {responding ? 'Responding' : dismissed ? 'False alarm' : 'Resolved'}
+        <span className={`rr-history-status ${dismissed ? 'is-dismissed' : 'is-resolved'}`}>
+          {dismissed ? 'False alarm' : 'Resolved'}
         </span>
       </div>
       <p className="rr-history-desc">{describeAlert(alert)}</p>
@@ -218,11 +217,10 @@ export default function RightRail({ onNavigate }) {
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
-    const [active, totals, alarmState, responding, resolved, dismissed] = await Promise.all([
+    const [active, totals, alarmState, resolved, dismissed] = await Promise.all([
       fetchActiveAlert(),
       fetchEventSummary(),
       fetchAlarm(),
-      fetchEvents({ kind: 'alerts', status: 'responding', page: 1, pageSize: 4 }),
       fetchEvents({ kind: 'alerts', status: 'resolved', page: 1, pageSize: 4 }),
       fetchEvents({ kind: 'alerts', status: 'dismissed', page: 1, pageSize: 4 }),
     ])
@@ -233,22 +231,22 @@ export default function RightRail({ onNavigate }) {
       return
     }
     setError('')
-    const pendingAlerts = (active.alerts || (active.active ? [active.active] : []))
-      .filter((item) => item.status === 'pending')
-    setAlert(pendingAlerts[0] || null)
-    setAlerts(pendingAlerts)
+    const activeAlerts = (active.alerts || (active.active ? [active.active] : []))
+      .filter((item) => item.status === 'pending' || item.status === 'responding')
+    setAlert(activeAlerts[0] || null)
+    setAlerts(activeAlerts)
     setSupervised(active.supervised || null)
     setSummary(totals)
-    if (responding.ok && resolved.ok && dismissed.ok) {
+    if (resolved.ok && dismissed.ok) {
       setHistoryError('')
       setHistoryAlerts(
-        [...(responding.events || []), ...(resolved.events || []), ...(dismissed.events || [])]
-          .sort((a, b) => Number(b.closed_at || b.responding_at || b.acknowledged_at || b.ts || 0)
-            - Number(a.closed_at || a.responding_at || a.acknowledged_at || a.ts || 0))
+        [...(resolved.events || []), ...(dismissed.events || [])]
+          .sort((a, b) => Number(b.closed_at || b.acknowledged_at || b.ts || 0)
+            - Number(a.closed_at || a.acknowledged_at || a.ts || 0))
           .slice(0, 4)
       )
     } else {
-      setHistoryError(responding.error || resolved.error || dismissed.error || 'Could not load alert history.')
+      setHistoryError(resolved.error || dismissed.error || 'Could not load alert history.')
     }
     setLoading(false)
   }, [])
