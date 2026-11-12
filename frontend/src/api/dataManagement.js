@@ -189,20 +189,42 @@ export function resetData({ categories, backupId, confirm }) {
   })
 }
 
-export async function restoreDeletedData(file, confirm) {
-  let res
-  try {
+export function restoreDeletedData(file, confirm, onProgress = () => {}) {
+  return new Promise((resolve) => {
     const query = new URLSearchParams({ fileName: file.name, confirm })
-    res = await fetch(`${API_BASE}/api/admin/data/restore?${query}`, {
-      method: 'POST',
-      headers: { ...authHeaders(), 'Content-Type': 'application/octet-stream' },
-      body: file,
-      cache: 'no-store',
-    })
-  } catch {
-    return { ok: false, error: 'Cannot reach backend server.' }
-  }
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) return { ok: false, status: res.status, error: data.error || `Restore failed (${res.status})` }
-  return { ok: true, ...data }
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${API_BASE}/api/admin/data/restore?${query}`)
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    for (const [name, value] of Object.entries(authHeaders())) xhr.setRequestHeader(name, value)
+
+    onProgress({ percent: 0, stage: 'Uploading backup file...', indeterminate: false })
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || !event.total) {
+        onProgress({ percent: null, stage: 'Uploading backup file...', indeterminate: true })
+        return
+      }
+      const percent = Math.min(100, Math.round((event.loaded / event.total) * 100))
+      onProgress({ percent, stage: `Uploading backup file... ${percent}%`, indeterminate: false })
+    }
+    xhr.upload.onload = () => {
+      onProgress({
+        percent: null,
+        stage: 'Upload complete. Verifying and restoring records...',
+        indeterminate: true,
+      })
+    }
+    xhr.onerror = () => resolve({ ok: false, error: 'Cannot reach backend server.' })
+    xhr.onabort = () => resolve({ ok: false, error: 'Restore upload was interrupted.' })
+    xhr.onload = () => {
+      let data = {}
+      try { data = JSON.parse(xhr.responseText || '{}') } catch { /* keep empty */ }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        resolve({ ok: false, status: xhr.status, error: data.error || `Restore failed (${xhr.status})` })
+        return
+      }
+      onProgress({ percent: 100, stage: 'Restore complete.', indeterminate: false })
+      resolve({ ok: true, ...data })
+    }
+    xhr.send(file)
+  })
 }

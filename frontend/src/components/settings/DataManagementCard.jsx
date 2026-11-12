@@ -81,6 +81,7 @@ export default function DataManagementCard({ showStatus }) {
   const [restoreOpen, setRestoreOpen] = useState(false)
   const [restoreTyped, setRestoreTyped] = useState('')
   const [restoring, setRestoring] = useState(false)
+  const [restoreProgress, setRestoreProgress] = useState({ percent: 0, stage: '', indeterminate: false })
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -214,13 +215,15 @@ export default function DataManagementCard({ showStatus }) {
   const reviewRestore = () => {
     if (!restoreFile) return
     setRestoreTyped('')
+    setRestoreProgress({ percent: 0, stage: '', indeterminate: false })
     setRestoreOpen(true)
   }
 
   const runRestore = async () => {
     if (!restoreFile || restoreTyped !== 'RESTORE' || restoring) return
+    setRestoreProgress({ percent: 0, stage: 'Preparing upload...', indeterminate: false })
     setRestoring(true)
-    const result = await restoreDeletedData(restoreFile, restoreTyped)
+    const result = await restoreDeletedData(restoreFile, restoreTyped, setRestoreProgress)
     setRestoring(false)
     if (!result.ok) {
       showStatus({ tone: 'error', title: 'Restore not completed', message: result.error || 'No data was changed.' })
@@ -524,6 +527,18 @@ export default function DataManagementCard({ showStatus }) {
             <Icon.Info />
             <span>Records created after this backup stay in the system. Media links are restored, but deleted image or video files cannot be recreated from the database file.</span>
           </div>
+          {restoring ? (
+            <div className={`dm-backup-progress dm-restore-progress${restoreProgress.indeterminate ? ' is-indeterminate' : ''}`} role="progressbar" aria-label="Restore progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow={restoreProgress.percent ?? undefined}>
+              <div className="dm-progress-meta">
+                <span>{restoreProgress.stage}</span>
+                <strong>{restoreProgress.percent == null ? 'Working...' : `${restoreProgress.percent}%`}</strong>
+              </div>
+              <div className="dm-progress-track" aria-hidden="true">
+                <span style={restoreProgress.percent == null ? undefined : { width: `${restoreProgress.percent}%` }} />
+              </div>
+              <p>Keep this window open until verification and restore finish.</p>
+            </div>
+          ) : null}
           <label className="settings-field">
             <span className="field-label">Type <strong>RESTORE</strong> to confirm</span>
             <input
