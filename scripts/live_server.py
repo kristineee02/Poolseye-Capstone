@@ -48,6 +48,7 @@ from zone_check import (  # noqa: E402
     validate_nesting,
     zone_pixels,
 )
+from playback_policy import should_emit_events  # noqa: E402
 CONFIG_PATH = SCRIPTS_DIR / "config.json"
 # Must be the same backend the dashboard uses (frontend VITE_API_URL), or settings saved there never arrive.
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:4000").rstrip("/")
@@ -1959,7 +1960,9 @@ def capture_loop(cfg: dict):
                         attach_activity(results, drowning.latest_result(), loops)
                 with _lock:
                     _latest_reports = [{**r, "event": None, "is_alert": False} for r in reports]
-                if loops == 0:
+                # Uploaded videos keep looping for dashboard playback, but
+                # incidents and notifications are emitted only on the first pass.
+                if should_emit_events(grabber.kind, loops):
                     log_events(supervision_events, reports, seq, ts)
                     if drowning_events:
                         log_events([], [], seq, ts, drowning_events)
