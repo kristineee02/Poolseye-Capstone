@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   View, Pressable, StyleSheet, Animated, Image,
 } from 'react-native';
@@ -134,25 +134,34 @@ function TabButton({ tab, isActive, onPress, renderIcon }) {
 
 const TABS = [
   { key: 'home',    label: 'Home',    title: null,         subtitle: null },
-  { key: 'alerts',  label: 'Alerts',  title: 'All Alerts', subtitle: null },
+  { key: 'alerts',  label: 'Alerts',  title: 'Alerts',     subtitle: null },
   { key: 'profile', label: 'Profile', title: 'Profile',    subtitle: null },
 ];
 
 export default function TabNavigator() {
   const [active, setActive] = useState('home');
   const [alertBadgeCount, setAlertBadgeCount] = useState(0);
+  const [focusAlert, setFocusAlert] = useState(null);
   const { tabBarPaddingBottom, horizontalInset } = useLayoutInsets();
   const { token } = useAuth();
+  const openAllAlerts = useCallback(() => setActive('alerts'), []);
   useAlertNotifications(token, {
     onPendingCount: setAlertBadgeCount,
-    onOpenAlert: () => setActive('home'),
+    onOpenAlert: (data) => {
+      setFocusAlert({
+        eventId: data?.eventId || null,
+        eventIds: Array.isArray(data?.eventIds) ? data.eventIds : [],
+      });
+      setActive('home');
+    },
   });
 
   const screens = {
     home: (
       <AlertsScreen
-        onViewAllAlerts={() => setActive('alerts')}
+        onViewAllAlerts={openAllAlerts}
         onPendingCountChange={setAlertBadgeCount}
+        focusAlert={focusAlert}
       />
     ),
     alerts: <LogScreen onPendingCountChange={setAlertBadgeCount} />,

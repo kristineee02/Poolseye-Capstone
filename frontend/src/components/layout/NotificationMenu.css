@@ -149,6 +149,9 @@
   background: color-mix(in srgb, var(--alarm) 9%, #FFFFFF);
   color: var(--alarm);
 }
+.notif-skeleton { padding: 0 16px 10px; }
+.notif-skeleton .skeleton-list-row { padding-left: 0; padding-right: 0; }
+.notif-retry { margin-left: auto; border: 1px solid currentColor; border-radius: 8px; background: transparent; color: inherit; padding: 5px 9px; font: inherit; cursor: pointer; }
 
 .notif-foot {
   display: flex;

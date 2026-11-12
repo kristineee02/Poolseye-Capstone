@@ -365,12 +365,16 @@ export default function SnapshotModal({
                 <span className="k">Status</span>
                 <span className={`review-status tone-${status.tone}`}>{status.label}</span>
                 {handlingNote(event) ? <span className="review-detail-note">{handlingNote(event)}</span> : null}
-                {event.acknowledged_at ? (
+                {event.closed_at ? (
                   <span className="review-detail-note">
-                    {event.status === 'dismissed' ? 'Dismissed' : 'Acknowledged'} {formatDateTime(event.acknowledged_at)}
+                    {event.status === 'dismissed' ? 'False alarm' : 'Resolved'} {formatDateTime(event.closed_at)}
                   </span>
-                ) : event.responding_at ? (
+                ) : null}
+                {event.responding_at ? (
                   <span className="review-detail-note">Responding since {formatDateTime(event.responding_at)}</span>
+                ) : null}
+                {event.acknowledged_at ? (
+                  <span className="review-detail-note">Acknowledged {formatDateTime(event.acknowledged_at)}</span>
                 ) : null}
               </div>
             </div>

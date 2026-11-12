@@ -58,8 +58,9 @@ function registerBroadcastRoutes(app, db, adminRequired) {
       const pushed = await sendPush(db, tokens, {
         title: priorityKey === 'high' ? 'Emergency alert' : priorityKey === 'medium' ? 'Pool alert' : 'Notice',
         body: message,
-        data: { eventId: event.id, category: 'broadcast' },
+        data: { eventId: event.id, eventIds: [event.id], category: 'broadcast', collapseKey: `broadcast-${event.id}` },
         urgent: priority.urgent,
+        collapseId: `broadcast-${event.id}`,
       })
 
       res.status(201).json({ ok: true, event, recipients: guards.length, pushed })

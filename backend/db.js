@@ -11,6 +11,7 @@ const DB_PATH = path.join(__dirname, 'data', 'app.db')
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql')
 const LEGACY_ADMIN_PASSWORD = 'AdminPoolsEye@2026'
 const txStore = new AsyncLocalStorage()
+const sqliteWriteTails = new WeakMap()
 
 const LIFEGUARD_COLUMNS = [
   ['lifeguard_role', 'TEXT'],
@@ -36,6 +37,8 @@ const LIFEGUARD_COLUMNS = [
 const EVENT_COLUMNS = [
   ['acknowledged_at', 'REAL'],
   ['acknowledged_by', 'INTEGER'],
+  ['closed_at', 'REAL'],
+  ['closed_by', 'INTEGER'],
   ['separation_distance', 'REAL'],
   ['supervision_threshold', 'REAL'],
   ['boundary_direction', 'TEXT'],
@@ -47,6 +50,21 @@ const EVENT_COLUMNS = [
   ['responding_by', 'INTEGER'],
   ['escalated_at', 'REAL'],
   ['clip_uri', 'TEXT'],
+  ['priority', 'INTEGER NOT NULL DEFAULT 5'],
+  ['priority_label', "TEXT NOT NULL DEFAULT 'informational'"],
+  ['incident_key', 'TEXT'],
+  ['group_key', 'TEXT'],
+  ['person_ids', 'TEXT'],
+  ['occurrence_count', 'INTEGER NOT NULL DEFAULT 1'],
+  ['first_detected_at', 'REAL'],
+  ['last_detected_at', 'REAL'],
+  ['notification_count', 'INTEGER NOT NULL DEFAULT 0'],
+  ['last_notified_at', 'REAL'],
+  ['siren_activated_at', 'REAL'],
+  ['detection_source', "TEXT NOT NULL DEFAULT 'Live CCTV'"],
+  ['source_name', 'TEXT'],
+  ['closure_reason', 'TEXT'],
+  ['detection_cleared_at', 'REAL'],
 ]
 
 function isLibsql(db) {
@@ -223,15 +241,30 @@ async function transaction(db, callback, mode = 'write') {
     }
   }
 
-  await sqliteRun(db, mode === 'write' ? 'BEGIN IMMEDIATE' : 'BEGIN')
-  try {
-    const result = await callback()
-    await sqliteRun(db, 'COMMIT')
-    return result
-  } catch (err) {
-    try { await sqliteRun(db, 'ROLLBACK') } catch { /* already rolled back */ }
-    throw err
+  const execute = async () => {
+    await sqliteRun(db, mode === 'write' ? 'BEGIN IMMEDIATE' : 'BEGIN')
+    try {
+      const result = await callback()
+      await sqliteRun(db, 'COMMIT')
+      return result
+    } catch (err) {
+      try { await sqliteRun(db, 'ROLLBACK') } catch { /* already rolled back */ }
+      throw err
+    }
   }
+
+  if (mode !== 'write') return execute()
+
+  // A single sqlite connection cannot run overlapping BEGIN IMMEDIATE calls.
+  // Queue only write transactions so simultaneous detector requests reliably
+  // deduplicate against the incident committed immediately before them.
+  const previous = sqliteWriteTails.get(db) || Promise.resolve()
+  const queued = previous.catch(() => {}).then(execute)
+  sqliteWriteTails.set(db, queued)
+  queued.finally(() => {
+    if (sqliteWriteTails.get(db) === queued) sqliteWriteTails.delete(db)
+  }).catch(() => {})
+  return queued
 }
 
 // Runs every statement in one write transaction: either all of them apply or none do.
@@ -282,6 +315,16 @@ async function migrateEventsTable(db) {
       console.log(`Migrated events.${column}`)
     }
   }
+  await run(db, 'CREATE INDEX IF NOT EXISTS idx_events_incident_key ON events(incident_key, status)')
+  await run(db, 'CREATE INDEX IF NOT EXISTS idx_events_priority ON events(status, priority, ts DESC)')
+  await run(db, `UPDATE events SET
+    priority = CASE category WHEN 'drowning' THEN 1 WHEN 'intrusion' THEN 2 WHEN 'deep-water' THEN 3 WHEN 'supervision' THEN 4 ELSE 5 END,
+    priority_label = CASE category WHEN 'drowning' THEN 'critical' WHEN 'intrusion' THEN 'high' WHEN 'deep-water' THEN 'medium' WHEN 'supervision' THEN 'grouped' ELSE 'informational' END,
+    first_detected_at = COALESCE(first_detected_at, ts),
+    last_detected_at = COALESCE(last_detected_at, ts),
+    person_ids = COALESCE(person_ids, CASE WHEN person_id IS NOT NULL THEN '[' || person_id || ']' ELSE '[]' END),
+    detection_source = CASE WHEN camera = 'UPLOAD' THEN 'Uploaded Video' ELSE COALESCE(NULLIF(detection_source, ''), 'Live CCTV') END,
+    status = CASE WHEN status = 'pending' AND responding_by IS NOT NULL THEN 'responding' ELSE status END`)
 }
 
 // Earlier builds created this lifeguard with a published password. It is removed only

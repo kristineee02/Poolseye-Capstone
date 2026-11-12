@@ -37,11 +37,32 @@ export const colors = {
   warnDark:   '#8A7000',
   warnMid:    '#C4A000',
 
+  // High-priority zone alerts (distinct from critical drowning red)
+  high:       '#F08C00',
+  highTint:   '#FFF3E0',
+  highBorder: '#F7C77A',
+  highDark:   '#8A4B00',
+  highMid:    '#C96F00',
+
   alarm:       '#D6364A',
   alarmTint:   '#FCEAEE',
   alarmBorder: '#F4C6CD',
   alarmDark:   '#7A1C28',
   alarmMid:    '#B5505F',
+
+  // Canonical geofence palette (matches the web Geofence Editor).
+  geofenceYellow:       '#E6B800',
+  geofenceYellowTint:   '#FFF9E0',
+  geofenceYellowBorder: '#F0D86A',
+  geofenceYellowDark:   '#8A7000',
+  geofenceRed:          '#D6364A',
+  geofenceRedTint:      '#FCEAEE',
+  geofenceRedBorder:    '#F4C6CD',
+  geofenceRedDark:      '#7A1C28',
+  geofenceOrange:       '#E67E22',
+  geofenceOrangeTint:   '#FDF0E6',
+  geofenceOrangeBorder: '#F2BE91',
+  geofenceOrangeDark:   '#8A3F0A',
 };
 
 export const radius = {

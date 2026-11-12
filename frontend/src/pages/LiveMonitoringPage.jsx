@@ -46,7 +46,7 @@ export default function LiveMonitoringPage({ onNavigate }) {
           showStatus({
             tone: 'warning',
             title: 'CCTV feed offline',
-            message: `Cannot reach the stream server at ${STREAM_BASE}. Start live_server.py (and the Cloudflare tunnel for the hosted site) on the CCTV computer, then reload this page.`,
+            message: 'The CCTV service could not be reached. Your Wi-Fi may be weak or unstable, the CCTV computer may be offline, or the stream service may not be running. Check the connection, then use the reconnect button on the camera feed.',
           })
         })
     }, 2500)

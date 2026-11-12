@@ -122,14 +122,15 @@ export function fetchResetLog(limit = 5) {
  * Downloads a fresh backup, saves it to the computer, then has the server confirm
  * the saved bytes match what it produced. Only a verified backup unlocks Reset.
  */
-export async function createBackup(onProgress = () => {}) {
+export async function createBackup(categories, onProgress = () => {}) {
   // Snapshot creation has no meaningful byte total yet, so show an honest
   // indeterminate state instead of a simulated percentage.
   onProgress({ percent: null, stage: 'Preparing a consistent database snapshot…', indeterminate: true })
 
   let res
   try {
-    res = await fetch(`${API_BASE}/api/admin/data/backup`, {
+    const query = new URLSearchParams({ categories: categories.join(',') })
+    res = await fetch(`${API_BASE}/api/admin/data/backup?${query}`, {
       method: 'POST',
       headers: authHeaders(),
       cache: 'no-store',
@@ -185,5 +186,45 @@ export function resetData({ categories, backupId, confirm }) {
   return request('/api/admin/data/reset', {
     method: 'POST',
     body: JSON.stringify({ categories, backupId, confirm }),
+  })
+}
+
+export function restoreDeletedData(file, confirm, onProgress = () => {}) {
+  return new Promise((resolve) => {
+    const query = new URLSearchParams({ fileName: file.name, confirm })
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${API_BASE}/api/admin/data/restore?${query}`)
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    for (const [name, value] of Object.entries(authHeaders())) xhr.setRequestHeader(name, value)
+
+    onProgress({ percent: 0, stage: 'Uploading backup file...', indeterminate: false })
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || !event.total) {
+        onProgress({ percent: null, stage: 'Uploading backup file...', indeterminate: true })
+        return
+      }
+      const percent = Math.min(100, Math.round((event.loaded / event.total) * 100))
+      onProgress({ percent, stage: `Uploading backup file... ${percent}%`, indeterminate: false })
+    }
+    xhr.upload.onload = () => {
+      onProgress({
+        percent: null,
+        stage: 'Upload complete. Verifying and restoring records...',
+        indeterminate: true,
+      })
+    }
+    xhr.onerror = () => resolve({ ok: false, error: 'Cannot reach backend server.' })
+    xhr.onabort = () => resolve({ ok: false, error: 'Restore upload was interrupted.' })
+    xhr.onload = () => {
+      let data = {}
+      try { data = JSON.parse(xhr.responseText || '{}') } catch { /* keep empty */ }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        resolve({ ok: false, status: xhr.status, error: data.error || `Restore failed (${xhr.status})` })
+        return
+      }
+      onProgress({ percent: 100, stage: 'Restore complete.', indeterminate: false })
+      resolve({ ok: true, ...data })
+    }
+    xhr.send(file)
   })
 }

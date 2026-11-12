@@ -82,7 +82,7 @@ export async function apiFetch(path, { method = 'GET', body, token } = {}) {
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    return { ok: false, error: data.error || `Request failed (${res.status})` };
+    return { ok: false, error: data.error || `Request failed (${res.status})`, ...data };
   }
   return { ok: true, ...data };
 }

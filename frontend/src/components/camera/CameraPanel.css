@@ -183,6 +183,11 @@
   letter-spacing: 0.02em;
 }
 
+.camera-connection-hint {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 12px;
+}
+
 .feed-spinner {
   width: 38px;
   height: 38px;

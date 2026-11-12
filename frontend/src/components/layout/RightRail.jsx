@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Icon } from '../ui/Icon'
+import { LoadingHint, Skeleton } from '../ui/Skeleton'
 import {
   createTestAlert,
   dispatchEvent,
   fetchActiveAlert,
   fetchAlarm,
   fetchEventSummary,
+  getAlertStreamUrl,
   resendEvent,
   setManualAlarm,
 } from '../../api/events'
@@ -18,12 +20,24 @@ const POLL_MS = 5000
 const AUTO_SEND_WINDOW_SEC = 15 * 60
 
 function describeAlert(alert) {
-  const person = alert.person_id != null ? `Person #${alert.person_id}` : 'A person'
+  const affectedCount = Number(alert.affected_count || alert.person_ids?.length || 1)
+  const person = affectedCount > 1
+    ? `${affectedCount} swimmers`
+    : alert.person_id != null ? `Person #${alert.person_id}` : 'A person'
   const zone = zoneLabel(alert)
   const where = zone ? ` in the ${zone.toLowerCase()}` : ''
 
   if (alert.event === 'AFTER_HOURS_PRESENCE') return `${person} detected${where} outside operating hours.`
+  if (String(alert.id || '').startsWith('digest-') || (alert.meta && /Persons #/.test(alert.meta))) {
+    if (alert.category === 'drowning') {
+      return `${alert.meta || 'Multiple people may be in distress'}. Respond immediately.`
+    }
+    if (alert.category === 'supervision') {
+      return `${alert.meta || 'Multiple swimmers need closer supervision'}.`
+    }
+  }
   if (alert.category === 'supervision') {
+    if (affectedCount > 1) return `${affectedCount} swimmers detected without supervision${where}.`
     const threshold = alert.supervision_threshold ?? 0.7
     return `${person} inside restricted zone, no one else within ${threshold} m.`
   }
@@ -46,14 +60,28 @@ function timeAgo(ts) {
   return `${Math.floor(sec / 86400)}d ago`
 }
 
+function responseTime(seconds) {
+  if (seconds == null) return null
+  const rounded = Math.max(0, Math.round(seconds))
+  return rounded < 60 ? `${rounded}s` : `${Math.floor(rounded / 60)}m ${rounded % 60}s`
+}
+
 function HandoffStatus({ alert, busy, onResend }) {
   if (alert.responding_at) {
     return (
       <div className="rr-handoff is-responding">
         <Icon.CheckCircle />
         <span>
-          <b>{alert.responder_name || 'A lifeguard'}</b> is responding · since {formatTime(alert.responding_at)}
+          <b>{alert.responder_name || 'A lifeguard'}</b> is responding · {responseTime(alert.response_time_seconds) || 'now'} response time
         </span>
+      </div>
+    )
+  }
+  if (alert.acknowledged_at) {
+    return (
+      <div className="rr-handoff is-responding">
+        <Icon.CheckCircle />
+        <span><b>{alert.acknowledged_by_name || 'A lifeguard'}</b> acknowledged · awaiting response</span>
       </div>
     )
   }
@@ -77,8 +105,8 @@ function HandoffStatus({ alert, busy, onResend }) {
     <div className="rr-handoff">
       <Icon.Bell />
       <span>
-        <b>{alert.dispatched_by == null ? 'Sent automatically' : 'Sent to lifeguards'}</b> ·{' '}
-        {formatTime(alert.dispatched_at)} — waiting for a lifeguard
+        <b>Awaiting Response</b> · {alert.dispatched_by == null ? 'sent automatically' : 'sent to lifeguards'}{' '}
+        at {formatTime(alert.dispatched_at)}
       </span>
     </div>
   )
@@ -127,6 +155,7 @@ function ActiveAlert({ alert, supervised, busy, onDispatch, onResend }) {
         <div className="active-alert-meta">
           <span>{alertTime(alert)}{age ? ` · ${age}` : ''}</span>
           {zone ? <span className="active-alert-zone">{zone}</span> : null}
+          <span>{alert.detection_source || (alert.camera === 'UPLOAD' ? 'Uploaded Video' : 'Live CCTV')}</span>
         </div>
       </div>
 
@@ -149,32 +178,46 @@ function ActiveAlert({ alert, supervised, busy, onDispatch, onResend }) {
 
 export default function RightRail({ onNavigate }) {
   const [alert, setAlert] = useState(null)
+  const [alerts, setAlerts] = useState([])
   const [supervised, setSupervised] = useState(null)
   const [summary, setSummary] = useState(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(null)
   const [alarm, setAlarm] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
     const [active, totals, alarmState] = await Promise.all([fetchActiveAlert(), fetchEventSummary(), fetchAlarm()])
     if (alarmState.ok) setAlarm(alarmState)
     if (!active.ok || !totals.ok) {
       setError(active.error || totals.error || 'Could not load alerts.')
+      setLoading(false)
       return
     }
     setError('')
     setAlert(active.active)
+    setAlerts(active.alerts || (active.active ? [active.active] : []))
     setSupervised(active.supervised || null)
     setSummary(totals)
+    setLoading(false)
   }, [])
+
+  const retryLoad = () => {
+    setLoading(true)
+    load()
+  }
 
   useEffect(() => {
     load()
     const id = setInterval(load, POLL_MS)
+    const streamUrl = getAlertStreamUrl()
+    const stream = streamUrl ? new EventSource(streamUrl) : null
+    stream?.addEventListener('alerts', load)
     window.addEventListener(DATA_RESET_EVENT, load)
     return () => {
       clearInterval(id)
+      stream?.close()
       window.removeEventListener(DATA_RESET_EVENT, load)
     }
   }, [load])
@@ -185,10 +228,10 @@ export default function RightRail({ onNavigate }) {
     return () => clearTimeout(id)
   }, [notice])
 
-  const dispatch = async () => {
-    if (!alert) return
+  const dispatch = async (eventId = alert?.id) => {
+    if (!eventId) return
     setBusy('dispatch')
-    const result = await dispatchEvent(alert.id)
+    const result = await dispatchEvent(eventId)
     setBusy(null)
     if (!result.ok) {
       setError(result.error || 'Could not send the alert.')
@@ -198,10 +241,10 @@ export default function RightRail({ onNavigate }) {
     load()
   }
 
-  const resend = async () => {
-    if (!alert) return
+  const resend = async (eventId = alert?.id) => {
+    if (!eventId) return
     setBusy('resend')
-    const result = await resendEvent(alert.id)
+    const result = await resendEvent(eventId)
     setBusy(null)
     if (!result.ok) {
       setError(result.error || 'Could not re-send the alert.')
@@ -249,22 +292,36 @@ export default function RightRail({ onNavigate }) {
     <aside className="rightrail">
       <section className="rr-card">
         <div className="active-alert-head">
-          <h2>Active Alert</h2>
+          <h2>Active Alerts</h2>
           {onNavigate ? (
             <button type="button" className="active-alert-link" onClick={() => onNavigate('history')}>
               View All
             </button>
           ) : null}
         </div>
-        <ActiveAlert
-          alert={alert}
-          supervised={supervised}
-          busy={busy}
-          onDispatch={dispatch}
-          onResend={resend}
-        />
+        {loading ? (
+          <div className="rr-loading" role="status" aria-label="Loading active alert">
+            <Skeleton width="42%" height={22} />
+            <Skeleton width="86%" height={13} />
+            <Skeleton width="100%" height={38} />
+            <LoadingHint onRetry={retryLoad} compact />
+          </div>
+        ) : (
+          alerts.length ? alerts.map((item) => (
+            <ActiveAlert
+              key={item.id}
+              alert={item}
+              supervised={null}
+              busy={busy}
+              onDispatch={() => dispatch(item.id)}
+              onResend={() => resend(item.id)}
+            />
+          )) : (
+            <ActiveAlert alert={null} supervised={supervised} busy={busy} onDispatch={dispatch} onResend={resend} />
+          )
+        )}
         {notice ? <div className="rr-notice">{notice}</div> : null}
-        {error ? <div className="rr-error">{error}</div> : null}
+        {error ? <div className="rr-error"><span>{error}</span><button type="button" onClick={retryLoad}>Retry</button></div> : null}
       </section>
 
       <section className="rr-card">
@@ -302,7 +359,7 @@ export default function RightRail({ onNavigate }) {
           {stats.map((s) => (
             <div className="mini-stat" key={s.label}>
               <div className="ml">{s.label}</div>
-              <div className="mv">{s.value ?? '—'}</div>
+              <div className="mv">{loading ? <Skeleton width={38} height={24} /> : s.value ?? '—'}</div>
             </div>
           ))}
         </div>

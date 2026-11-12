@@ -1,8 +1,9 @@
 import './DataTable.css'
 import { Icon } from './Icon'
 import { useState } from 'react'
+import { TableSkeleton } from './Skeleton'
 
-export function DataTable({ columns, data, sortBy, onSort, isLoading = false, emptyMessage = 'No data available' }) {
+export function DataTable({ columns, data, sortBy, onSort, isLoading = false, onRetry, emptyMessage = 'No data available' }) {
   const [sortConfig, setSortConfig] = useState(sortBy || { key: null, direction: 'asc' })
 
   const handleSort = (columnKey) => {
@@ -18,12 +19,7 @@ export function DataTable({ columns, data, sortBy, onSort, isLoading = false, em
   }
 
   if (isLoading) {
-    return (
-      <div className="data-table loading">
-        <div className="loading-spinner" />
-        <p>Loading data...</p>
-      </div>
-    )
+    return <TableSkeleton columns={columns.length} onRetry={onRetry} />
   }
 
   if (!data || data.length === 0) {

@@ -12,7 +12,7 @@ function isExpoPushToken(token) {
  * DeviceNotRegistered (app uninstalled / signed out elsewhere) are cleared.
  * Returns how many devices Expo accepted.
  */
-async function sendPush(db, tokens, { title, body, data = {}, urgent = false }) {
+async function sendPush(db, tokens, { title, body, data = {}, urgent = false, collapseId }) {
   const valid = [...new Set(tokens.filter(isExpoPushToken))]
   let accepted = 0
   for (let i = 0; i < valid.length; i += 100) {
@@ -25,6 +25,8 @@ async function sendPush(db, tokens, { title, body, data = {}, urgent = false }) 
       sound: 'default',
       priority: urgent ? 'high' : 'default',
       channelId: urgent ? 'alerts' : 'default',
+      // Same id replaces a not-yet-delivered notification instead of stacking another.
+      ...(collapseId ? { collapseId } : {}),
     }))
     try {
       const res = await fetch(EXPO_PUSH_URL, {

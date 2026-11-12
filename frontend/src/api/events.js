@@ -16,6 +16,11 @@ function getAdminToken() {
   }
 }
 
+export function getAlertStreamUrl() {
+  const token = getAdminToken()
+  return token ? `${API_BASE}/api/events/stream?token=${encodeURIComponent(token)}` : null
+}
+
 async function apiFetch(path, options = {}) {
   const token = getAdminToken()
   const headers = {

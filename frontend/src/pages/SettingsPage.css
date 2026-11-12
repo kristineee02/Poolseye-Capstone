@@ -523,11 +523,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 14px;
-  margin-bottom: 16px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
-  background: var(--bg-raised);
+  background: linear-gradient(135deg, #f8fbff 0%, var(--bg-raised) 100%);
 }
 
 .settings-hours-rule-title {
@@ -548,7 +548,9 @@
   flex-direction: column;
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
-  overflow: hidden;
+  overflow: visible;
+  background: var(--bg-panel);
+  box-shadow: 0 4px 14px rgba(35, 77, 112, 0.05);
 }
 
 .settings-hours-row {
@@ -556,8 +558,16 @@
   grid-template-columns: 1.1fr 1fr 1fr 0.9fr;
   align-items: center;
   gap: 12px;
-  padding: 8px 14px;
+  position: relative;
+  min-height: 56px;
+  padding: 9px 14px;
   border-top: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
+  transition: background var(--dur-fast) var(--ease-ui);
+}
+
+.settings-hours-row:not(.settings-hours-head):hover {
+  background: #fbfdff;
 }
 
 .settings-hours-row:first-child {
@@ -572,6 +582,8 @@
 }
 
 .settings-hours-head {
+  min-height: 40px;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
   background: var(--bg-inset);
   font-size: 11.5px;
   font-weight: 600;
@@ -580,20 +592,56 @@
   color: var(--text-secondary);
 }
 
+.settings-hours-row:last-child {
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+}
+
 .settings-hours-day {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.settings-hours-row .field-input {
+.settings-hours-time-cell,
+.settings-time-dropdown {
   width: 100%;
   min-width: 0;
 }
 
-.settings-hours-row .field-input:disabled {
-  background: var(--bg-inset);
+.settings-hours-time-cell {
+  flex-wrap: wrap;
+}
+
+.settings-time-dropdown .ui-dropdown-trigger {
+  min-height: 38px;
+  padding: 8px 11px;
+  border-color: var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-panel);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.settings-time-dropdown .ui-dropdown-trigger:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-raised);
+}
+
+.settings-time-dropdown .ui-dropdown-trigger:disabled {
   color: var(--text-tertiary);
+  background: var(--bg-inset);
+  opacity: 1;
+}
+
+.settings-time-dropdown .ui-dropdown-menu {
+  max-height: 240px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.settings-time-dropdown .ui-dropdown-item {
+  padding: 8px 10px;
+  font-size: 12px;
 }
 
 .settings-hours-hint {
@@ -604,10 +652,61 @@
 }
 
 .settings-hours-check {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.settings-hours-closed {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
   cursor: pointer;
+}
+
+.settings-hours-check-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 5px;
+  color: #fff;
+  background: var(--bg-panel);
+  transition: border-color var(--dur-fast) var(--ease-ui), background var(--dur-fast) var(--ease-ui);
+}
+
+.settings-hours-check-box svg {
+  width: 12px;
+  height: 12px;
+  opacity: 0;
+}
+
+.settings-hours-check:checked + .settings-hours-check-box {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.settings-hours-check:checked + .settings-hours-check-box svg {
+  opacity: 1;
+}
+
+.settings-hours-check:focus-visible + .settings-hours-check-box {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+
+.settings-hours-check:disabled + .settings-hours-check-box,
+.settings-hours-check:disabled ~ span {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .settings-hours-row.is-invalid {
@@ -625,6 +724,41 @@
 
   .settings-hours-head {
     display: none;
+  }
+
+  .settings-hours-row:not(.settings-hours-head) {
+    padding: 12px;
+  }
+
+  .settings-hours-day {
+    grid-column: 1 / -1;
+    padding-bottom: 2px;
+  }
+
+  .settings-hours-time-cell {
+    display: grid !important;
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  .settings-hours-time-cell::before {
+    content: attr(data-label);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .settings-hours-time-cell .settings-time-dropdown {
+    grid-column: 2;
+  }
+
+  .settings-hours-time-cell .settings-hours-hint {
+    grid-column: 2;
+  }
+
+  .settings-hours-availability {
+    grid-column: 1 / -1;
   }
 
   .settings-profile-layout {
