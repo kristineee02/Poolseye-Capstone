@@ -285,6 +285,10 @@
   background: color-mix(in srgb, var(--safe) 11%, #FFFFFF);
   color: var(--safe);
 }
+.rr-history-status.is-responding {
+  background: color-mix(in srgb, var(--accent) 10%, #FFFFFF);
+  color: var(--accent);
+}
 .rr-history-status.is-dismissed {
   background: var(--bg-inset);
   color: var(--text-secondary);

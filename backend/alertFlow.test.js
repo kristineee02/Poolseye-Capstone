@@ -241,12 +241,19 @@ test('mobile workflow moves incidents from incoming to my responses to history',
   const db = await database(t)
   await run(db, `INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, 'lifeguard')`,
     ['flow@poolseye.test', 'unused', 'Flow Guard'])
+  await run(db, `INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, 'lifeguard')`,
+    ['offline@poolseye.test', 'unused', 'Offline Guard'])
   const guard = await get(db, 'SELECT id FROM users WHERE email = ?', ['flow@poolseye.test'])
+  const offlineGuard = await get(db, 'SELECT id FROM users WHERE email = ?', ['offline@poolseye.test'])
   const incident = (await ingestDetection(db, detection({ id: 'mobile-flow', person_id: 111 }))).events[0]
 
   const previousSecret = process.env.JWT_SECRET
   process.env.JWT_SECRET = 'alert-flow-test-secret'
   const token = jwt.sign({ id: guard.id, role: 'lifeguard', aud: 'lifeguard' }, process.env.JWT_SECRET)
+  const offlineToken = jwt.sign(
+    { id: offlineGuard.id, role: 'lifeguard', aud: 'lifeguard' },
+    process.env.JWT_SECRET
+  )
   const app = express()
   app.use(express.json())
   registerMobileEventRoutes(app, db)
@@ -291,5 +298,11 @@ test('mobile workflow moves incidents from incoming to my responses to history',
   assert.equal(body.event.closure_reason, 'Reflection on the water')
 
   response = await request('/api/mobile/events?status=closed')
+  assert.deepEqual((await response.json()).events.map((event) => event.id), [incident.id])
+
+  response = await fetch(`${base}/api/mobile/events?status=closed`, {
+    headers: { Authorization: `Bearer ${offlineToken}` },
+  })
+  assert.equal(response.status, 200)
   assert.deepEqual((await response.json()).events.map((event) => event.id), [incident.id])
 })
