@@ -63,6 +63,10 @@ function registerMobileEventRoutes(app, db) {
       }
       if (status === 'closed') {
         conditions.push("status IN ('resolved', 'dismissed')")
+      } else if (status === 'active') {
+        // Keep claimed incidents visible to every guard until they are closed.
+        // `responding_mine` still controls which guard may resolve/dismiss it.
+        conditions.push("status IN ('pending', 'responding')")
       } else if (status === 'responding') {
         conditions.push("status = 'responding' AND responding_by = ?")
         params.push(req.lifeguard.id)
@@ -125,7 +129,20 @@ function registerMobileEventRoutes(app, db) {
       const lifeguardId = req.lifeguard.id
       const row = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
       if (!row) return res.status(404).json({ error: 'Alert not found' })
-      if (row.status !== 'pending') return res.status(400).json({ error: 'This alert is no longer awaiting response.' })
+      if (row.status === 'responding') {
+        const event = await eventForLifeguard(db, id, lifeguardId)
+        if (event.responding_mine) return res.json({ ok: true, event })
+        return res.status(409).json({
+          error: `${event.responder_name || 'Another lifeguard'} is already responding.`,
+          event,
+        })
+      }
+      if (row.status !== 'pending') {
+        return res.status(409).json({
+          error: 'This alert has already been closed.',
+          event: await eventForLifeguard(db, id, lifeguardId),
+        })
+      }
 
       const now = Date.now() / 1000
       const claimed = await run(

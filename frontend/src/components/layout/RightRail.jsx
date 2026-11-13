@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon } from '../ui/Icon'
 import { LoadingHint, Skeleton } from '../ui/Skeleton'
 import {
@@ -215,8 +215,10 @@ export default function RightRail({ onNavigate }) {
   const [busy, setBusy] = useState(null)
   const [alarm, setAlarm] = useState(null)
   const [loading, setLoading] = useState(true)
+  const loadRequestId = useRef(0)
 
   const load = useCallback(async () => {
+    const requestId = ++loadRequestId.current
     const [active, totals, alarmState, resolved, dismissed] = await Promise.all([
       fetchActiveAlert(),
       fetchEventSummary(),
@@ -224,6 +226,8 @@ export default function RightRail({ onNavigate }) {
       fetchEvents({ kind: 'alerts', status: 'resolved', page: 1, pageSize: 4 }),
       fetchEvents({ kind: 'alerts', status: 'dismissed', page: 1, pageSize: 4 }),
     ])
+    // Ignore an older poll that finishes after a newer SSE-triggered refresh.
+    if (requestId !== loadRequestId.current) return
     if (alarmState.ok) setAlarm(alarmState)
     if (!active.ok || !totals.ok) {
       setError(active.error || totals.error || 'Could not load alerts.')

@@ -14,6 +14,7 @@ import { AlertListSkeleton, DataLoadError } from '../components/Skeleton';
 import ConfirmModal from '../components/ConfirmModal';
 import StatusModal from '../components/StatusModal';
 import { respondToMobileEvent } from '../api/events';
+import { formatEventTime } from '../utils/dateTime';
 
 const POLL_MS = 5000;
 const ACTIVE_ALERT_LIMIT = 100;
@@ -245,16 +246,12 @@ const AlertCard = React.memo(function AlertCard({ event, onSelect }) {
   const status = event.backendStatus === 'pending'
     ? { type: 'warn', label: 'Awaiting Response' }
     : event.backendStatus === 'responding'
-      ? { type: 'safe', label: 'You Responding' }
+      ? { type: event.respondingMine ? 'safe' : 'warn', label: event.respondingMine ? 'You Responding' : `${event.responderName || 'Lifeguard'} Responding` }
     : event.backendStatus === 'dismissed'
       ? { type: 'info', label: 'False Alarm' }
       : STATUS_TAG.ack;
   const closedTime = event.closedAt
-    ? new Date(event.closedAt * 1000).toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-      })
+    ? formatEventTime(event.closedAt)
     : '';
   const outcome = ['pending', 'responding'].includes(event.backendStatus)
     ? ''
@@ -330,6 +327,7 @@ export default function LogScreen({ onPendingCountChange }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedAlert, setSelectedAlert] = useState(null);
+  const [respondingId, setRespondingId] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
   const [closePrompt, setClosePrompt] = useState(null);
   const [falseAlarmReason, setFalseAlarmReason] = useState('');
@@ -344,7 +342,7 @@ export default function LogScreen({ onPendingCountChange }) {
     const [activeResult, responseResult, historyResult] = await Promise.all([
       fetchMobileEvents(token, {
         alertsOnly: true,
-        status: 'pending',
+        status: 'active',
         limit: ACTIVE_ALERT_LIMIT,
       }),
       fetchMobileEvents(token, {
@@ -417,18 +415,28 @@ export default function LogScreen({ onPendingCountChange }) {
   const closeAlert = useCallback(() => setSelectedAlert(null), []);
   const respondToSelectedAlert = useCallback(async () => {
     const id = selectedAlert?.id;
-    if (!id) return;
-    closeAlert();
+    if (!id || respondingId === id) return;
+    setRespondingId(id);
     const result = await respondToMobileEvent(token, id);
+    setRespondingId(null);
     if (!result.ok) {
+      if (result.event) setSelectedAlert(result.event);
       setStatusMessage({
         tone: 'error',
         title: 'Could not respond',
         message: result.error || 'Failed to claim this alert.',
       });
+    } else if (result.event) {
+      // Keep the incident open so the responder can immediately choose the
+      // outcome instead of hunting for it in another tab.
+      setSelectedAlert(result.event);
+      setResponseEvents((previous) => reconcilePage(
+        previous,
+        sortActiveAlerts([result.event, ...previous.filter((event) => event.id !== id)])
+      ));
     }
     await loadEvents();
-  }, [selectedAlert, closeAlert, token, loadEvents]);
+  }, [selectedAlert, respondingId, token, loadEvents]);
 
   const requestClose = useCallback((type) => {
     if (!selectedAlert) return;
@@ -480,11 +488,11 @@ export default function LogScreen({ onPendingCountChange }) {
     return (
       <View style={styles.emptyState}>
         <Text style={styles.emptyTitle}>
-          {section === 'incoming' ? 'No incoming alerts' : section === 'responses' ? 'No active responses' : 'No alert history yet'}
+          {section === 'incoming' ? 'No active alerts' : section === 'responses' ? 'No active responses' : 'No alert history yet'}
         </Text>
         <Text style={styles.emptySub}>
           {section === 'incoming'
-            ? 'New incidents awaiting a lifeguard will appear here automatically.'
+            ? 'Open incidents and their current responder will appear here automatically.'
             : section === 'responses'
               ? 'Incidents you claim with Respond Now will move here.'
               : 'Resolved and false-alarm incidents will appear here.'}
@@ -503,6 +511,9 @@ export default function LogScreen({ onPendingCountChange }) {
   );
   const selectedActions = useMemo(() => {
     if (!selectedAlert) return [];
+    if (respondingId === selectedAlert.id) {
+      return [{ label: 'Claiming alert...', tone: 'secondary', onPress: () => {} }];
+    }
     if (selectedAlert.backendStatus === 'pending') {
       return [{ label: 'Respond Now', tone: 'alert', onPress: respondToSelectedAlert }];
     }
@@ -512,8 +523,11 @@ export default function LogScreen({ onPendingCountChange }) {
         { label: 'Mark as False Alarm', tone: 'secondary', onPress: () => requestClose('dismissed') },
       ];
     }
+    if (selectedAlert.backendStatus === 'responding') {
+      return [{ label: 'Close', tone: 'secondary', onPress: closeAlert }];
+    }
     return [{ label: 'Close', tone: 'secondary', onPress: closeAlert }];
-  }, [selectedAlert, respondToSelectedAlert, requestClose, closeAlert]);
+  }, [selectedAlert, respondingId, respondToSelectedAlert, requestClose, closeAlert]);
 
   return (
     <View style={styles.container}>
@@ -524,7 +538,7 @@ export default function LogScreen({ onPendingCountChange }) {
           activeOpacity={0.8}
         >
           <Text style={[styles.segmentText, section === 'incoming' && styles.segmentTextActive]}>
-            Incoming ({activeEvents.length})
+            Active ({activeEvents.length})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity

@@ -281,6 +281,28 @@ test('mobile workflow moves incidents from incoming to my responses to history',
   assert.equal(body.event.responder_name, 'Flow Guard')
   assert.ok(body.event.response_time_seconds >= 0)
 
+  // Retrying on a slow/double tap is idempotent for the guard who owns it.
+  response = await request(`/api/mobile/events/${incident.id}/respond`, { method: 'POST' })
+  body = await response.json()
+  assert.equal(response.status, 200)
+  assert.equal(body.event.responding_mine, true)
+
+  // Other guards still see the active handoff, but cannot steal ownership.
+  response = await fetch(`${base}/api/mobile/events?status=active`, {
+    headers: { Authorization: `Bearer ${offlineToken}` },
+  })
+  body = await response.json()
+  assert.deepEqual(body.events.map((event) => event.id), [incident.id])
+  assert.equal(body.events[0].responder_name, 'Flow Guard')
+  assert.equal(body.events[0].responding_mine, false)
+  response = await fetch(`${base}/api/mobile/events/${incident.id}/respond`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${offlineToken}`, 'Content-Type': 'application/json' },
+  })
+  body = await response.json()
+  assert.equal(response.status, 409)
+  assert.equal(body.event.responder_name, 'Flow Guard')
+
   response = await request('/api/mobile/events?status=pending')
   assert.equal((await response.json()).events.length, 0)
   response = await request('/api/mobile/events?status=responding')
@@ -297,6 +319,9 @@ test('mobile workflow moves incidents from incoming to my responses to history',
   assert.equal(body.event.status, 'dismissed')
   assert.equal(body.event.closure_reason, 'Reflection on the water')
 
+  response = await request('/api/mobile/events?status=active')
+  assert.equal((await response.json()).events.length, 0)
+
   response = await request('/api/mobile/events?status=closed')
   assert.deepEqual((await response.json()).events.map((event) => event.id), [incident.id])
 
@@ -305,4 +330,88 @@ test('mobile workflow moves incidents from incoming to my responses to history',
   })
   assert.equal(response.status, 200)
   assert.deepEqual((await response.json()).events.map((event) => event.id), [incident.id])
+
+  // Resolve follows the same lifecycle: it remains active after Respond Now
+  // and disappears only after its owner verifies and closes the incident.
+  const resolvedIncident = (await ingestDetection(db, detection({
+    id: 'mobile-resolve-flow', person_id: 112, category: 'deep-water', zone: 'deep',
+  }))).events[0]
+  response = await request(`/api/mobile/events/${resolvedIncident.id}/respond`, { method: 'POST' })
+  body = await response.json()
+  assert.equal(body.event.status, 'responding')
+  assert.equal(body.event.responding_mine, true)
+
+  response = await request('/api/mobile/events?status=active')
+  body = await response.json()
+  assert.deepEqual(body.events.map((event) => event.id), [resolvedIncident.id])
+  assert.equal(body.events[0].status, 'responding')
+
+  response = await fetch(`${base}/api/mobile/events/${resolvedIncident.id}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${offlineToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'resolved' }),
+  })
+  assert.equal(response.status, 409)
+
+  response = await request(`/api/mobile/events/${resolvedIncident.id}`, {
+    method: 'PATCH', body: JSON.stringify({ status: 'resolved' }),
+  })
+  body = await response.json()
+  assert.equal(body.event.status, 'resolved')
+  assert.equal(body.event.closed_by_name, 'Flow Guard')
+
+  response = await request('/api/mobile/events?status=active')
+  assert.equal((await response.json()).events.length, 0)
+
+  // Ownership is isolated per incident: one guard handling an alert must not
+  // prevent another guard from claiming a different pending alert.
+  const firstParallel = (await ingestDetection(db, detection({
+    id: 'parallel-flow-a', person_id: 121, category: 'intrusion', zone: 'red',
+  }))).events[0]
+  const secondParallel = (await ingestDetection(db, detection({
+    id: 'parallel-flow-b', person_id: 122, category: 'deep-water', zone: 'deep',
+  }))).events[0]
+
+  const firstRespondStarted = Date.now() / 1000
+  response = await request(`/api/mobile/events/${firstParallel.id}/respond`, { method: 'POST' })
+  const firstClaim = await response.json()
+  assert.equal(firstClaim.event.responding_mine, true)
+  assert.ok(firstClaim.event.responding_at >= firstRespondStarted)
+  assert.ok(firstClaim.event.responding_at <= Date.now() / 1000)
+
+  response = await fetch(`${base}/api/mobile/events/${secondParallel.id}/respond`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${offlineToken}`, 'Content-Type': 'application/json' },
+  })
+  const secondClaim = await response.json()
+  assert.equal(response.status, 200)
+  assert.equal(secondClaim.event.responder_name, 'Offline Guard')
+  assert.equal(secondClaim.event.responding_mine, true)
+
+  response = await request('/api/mobile/events?status=active')
+  body = await response.json()
+  assert.equal(body.events.length, 2)
+  const firstForFlowGuard = body.events.find((event) => event.id === firstParallel.id)
+  const secondForFlowGuard = body.events.find((event) => event.id === secondParallel.id)
+  assert.equal(firstForFlowGuard.responding_mine, true)
+  assert.equal(secondForFlowGuard.responding_mine, false)
+  assert.equal(secondForFlowGuard.responder_name, 'Offline Guard')
+
+  response = await request(`/api/mobile/events/${firstParallel.id}`, {
+    method: 'PATCH', body: JSON.stringify({ status: 'resolved' }),
+  })
+  const firstClosed = await response.json()
+  assert.ok(firstClosed.event.closed_at >= firstClosed.event.responding_at)
+
+  response = await fetch(`${base}/api/mobile/events/${secondParallel.id}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${offlineToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'dismissed', reason: 'Pool reflection' }),
+  })
+  const secondClosed = await response.json()
+  assert.equal(response.status, 200)
+  assert.ok(secondClosed.event.closed_at >= secondClosed.event.responding_at)
+
+  response = await request('/api/mobile/events?status=active')
+  assert.equal((await response.json()).events.length, 0)
 })

@@ -67,6 +67,7 @@ test('history cursor pagination is duplicate-free and active alerts retain prior
   await insertAlert(db, { id: 'active-supervision', status: 'pending', ts: now + 1, category: 'supervision', priority: 3 })
   await insertAlert(db, { id: 'active-intrusion', status: 'pending', ts: now + 2, category: 'intrusion', priority: 2 })
   await insertAlert(db, { id: 'active-drowning', status: 'pending', ts: now, category: 'drowning', priority: 1 })
+  await insertAlert(db, { id: 'active-claimed', status: 'responding', ts: now - 1, category: 'intrusion', priority: 2 })
 
   const first = await getEvents(baseUrl, token, 'alertsOnly=1&status=closed&limit=30')
   assert.equal(first.events.length, 30)
@@ -90,6 +91,13 @@ test('history cursor pagination is duplicate-free and active alerts retain prior
     ['active-drowning', 'active-intrusion', 'active-supervision']
   )
   assert.equal(active.pendingCount, 3)
+
+  const allActive = await getEvents(baseUrl, token, 'alertsOnly=1&status=active&limit=100')
+  assert.deepEqual(
+    allActive.events.map((event) => event.id),
+    ['active-drowning', 'active-intrusion', 'active-claimed', 'active-supervision']
+  )
+  assert.equal(allActive.pendingCount, 3)
 })
 
 test('closed history remains visible when an alert category is muted', async (t) => {
