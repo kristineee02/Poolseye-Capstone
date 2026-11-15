@@ -205,6 +205,13 @@ export const Icon = {
       <path d="M7.5 8.5 12 4l4.5 4.5" />
     </svg>
   ),
+  CloudUpload: (p) => (
+    <svg {...base} {...p}>
+      <path d="M16.5 19H19a4 4 0 0 0 .7-7.94A7 7 0 0 0 6.35 9.1 5 5 0 0 0 6 19h1.5" />
+      <path d="M12 21V11" />
+      <path d="m8 15 4-4 4 4" />
+    </svg>
+  ),
   Plus: (p) => (
     <svg {...base} {...p}>
       <line x1="12" y1="5" x2="12" y2="19" />
@@ -387,6 +394,12 @@ export const Icon = {
       <line x1="16" y1="13" x2="8" y2="13" />
       <line x1="16" y1="17" x2="8" y2="17" />
       <line x1="10" y1="9" x2="8" y2="9" />
+    </svg>
+  ),
+  Folder: (p) => (
+    <svg {...base} {...p}>
+      <path d="M3 6a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+      <path d="M3 10h18" />
     </svg>
   ),
   Send: (p) => (

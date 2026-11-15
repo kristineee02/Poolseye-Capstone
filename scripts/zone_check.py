@@ -674,23 +674,31 @@ def draw_zones(frame, zones_px):
         cv2.polylines(frame, [pts], isClosed=closed, color=COLORS[key], thickness=thickness)
 
 
-def draw_skeleton(frame, kxy, kcf, kpt_conf):
+def draw_skeleton(frame, kxy, kcf, kpt_conf, bounds=None):
     if kxy is None:
         return
+    padded = None
+    if bounds is not None:
+        x1, y1, x2, y2 = (float(v) for v in bounds)
+        pad_x, pad_y = max(4.0, (x2 - x1) * 0.15), max(4.0, (y2 - y1) * 0.15)
+        padded = (x1 - pad_x, y1 - pad_y, x2 + pad_x, y2 + pad_y)
+
+    def visible(index):
+        x, y = float(kxy[index][0]), float(kxy[index][1])
+        confidence = float(kcf[index]) if kcf is not None else 1.0
+        if min(x, y) <= 1 or confidence < kpt_conf:
+            return False
+        return padded is None or (padded[0] <= x <= padded[2] and padded[1] <= y <= padded[3])
+
     for a, b in SKELETON:
         xa, ya = float(kxy[a][0]), float(kxy[a][1])
         xb, yb = float(kxy[b][0]), float(kxy[b][1])
-        ca = float(kcf[a]) if kcf is not None else 1.0
-        cb = float(kcf[b]) if kcf is not None else 1.0
-        if min(xa, ya, xb, yb) <= 1:
-            continue
-        if ca < kpt_conf or cb < kpt_conf:
+        if not visible(a) or not visible(b):
             continue
         cv2.line(frame, (int(xa), int(ya)), (int(xb), int(yb)), COLORS["bone"], 3, cv2.LINE_AA)
     for index, point in enumerate(kxy):
         x, y = float(point[0]), float(point[1])
-        confidence = float(kcf[index]) if kcf is not None else 1.0
-        if min(x, y) <= 1 or confidence < kpt_conf:
+        if not visible(index):
             continue
         cv2.circle(frame, (int(x), int(y)), 4, (0, 255, 255), -1, cv2.LINE_AA)
         cv2.circle(frame, (int(x), int(y)), 5, (25, 25, 25), 1, cv2.LINE_AA)
@@ -781,7 +789,7 @@ def draw_person(frame, track_id, xyxy, foot, src, left, right, kxy, kcf, kpt_con
         color = tag[1]
         activity_text = SUPERVISION_TAGS.get(status, ("", None))[0] or None
 
-    draw_skeleton(frame, kxy, kcf, kpt_conf)
+    draw_skeleton(frame, kxy, kcf, kpt_conf, bounds=xyxy)
     if left:
         cv2.circle(frame, (int(left[0]), int(left[1])), 5, COLORS["ankle_l"], -1)
     if right:

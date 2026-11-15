@@ -490,7 +490,7 @@ function registerEventRoutes(app, db, adminRequired) {
         conditions.push(ALERT_SQL)
       } else if (kind === 'activity') {
         conditions.push(`NOT ${ALERT_SQL}`)
-      } else if (['intrusion', 'deep-water', 'drowning'].includes(kind)) {
+      } else if (['intrusion', 'deep-water', 'drowning', 'supervision'].includes(kind)) {
         conditions.push('category = ?')
         params.push(kind)
       }
@@ -530,6 +530,10 @@ function registerEventRoutes(app, db, adminRequired) {
 
       if (status === 'unacknowledged') {
         conditions.push(`status IN ('pending', 'responding') AND ${ALERT_SQL}`)
+      } else if (status === 'needs-response') {
+        conditions.push(`status = 'pending' AND ${ALERT_SQL}`)
+      } else if (status === 'responding') {
+        conditions.push(`status = 'responding' AND ${ALERT_SQL}`)
       } else if (status === 'logged') {
         conditions.push(`status = 'pending' AND NOT ${ALERT_SQL}`)
       } else if (status !== 'all') {

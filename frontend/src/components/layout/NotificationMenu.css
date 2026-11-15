@@ -56,6 +56,12 @@
   color: var(--alarm);
 }
 
+.notif-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
 .notif-list {
   list-style: none;
   margin: 0;
@@ -174,5 +180,8 @@
   cursor: pointer;
 }
 .notif-foot button:hover { color: var(--text-primary); }
+.notif-foot button.is-clear { color: var(--alarm); }
+.notif-foot button:disabled { opacity: 0.45; cursor: default; }
+.notif-foot button:disabled:hover { color: var(--alarm); }
 .notif-foot button.is-primary { color: var(--accent); }
 .notif-foot button svg { width: 14px; height: 14px; }

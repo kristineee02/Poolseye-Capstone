@@ -34,6 +34,19 @@
   color: var(--text-primary);
 }
 
+.filter-bar .history-filter-select {
+  width: 190px;
+  flex: 0 0 190px;
+}
+
+.filter-bar .history-filter-select .ui-dropdown-trigger {
+  min-height: 36px;
+}
+
+.filter-bar .history-filter-select .ui-dropdown-menu {
+  width: 100%;
+}
+
 .history-table-wrap { overflow-x: auto; }
 .history-events-table td { padding-top: 10px; padding-bottom: 10px; }
 .history-events-table .col-action { text-align: right; }
@@ -142,4 +155,13 @@
 
 @media (max-width: 1100px) {
   .history-summary-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 680px) {
+  .filter-bar .history-search,
+  .filter-bar .history-filter-select {
+    width: 100%;
+    min-width: 100% !important;
+    flex-basis: 100%;
+  }
 }
