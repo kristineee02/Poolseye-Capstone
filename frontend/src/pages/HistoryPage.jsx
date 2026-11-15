@@ -21,12 +21,14 @@ const DATE_OPTIONS = [
   { value: '1d', label: 'Today' },
   { value: '7d', label: 'Last 7 days' },
   { value: '30d', label: 'Last 30 days' },
+  { value: 'all', label: 'All time' },
 ]
 
 const RANGE_DAYS = { '1d': 1, '7d': 7, '30d': 30 }
 const RANGE_LABEL = Object.fromEntries(DATE_OPTIONS.map((o) => [o.value, o.label]))
 
 function sinceFor(range) {
+  if (range === 'all') return null
   const start = new Date()
   start.setHours(0, 0, 0, 0)
   start.setDate(start.getDate() - ((RANGE_DAYS[range] || 30) - 1))
@@ -49,7 +51,7 @@ const SUMMARY_CARDS = [
   {
     status: 'unacknowledged',
     key: 'unacknowledged',
-    label: 'Unacknowledged',
+    label: 'Open alerts',
     tone: 'alarm',
     icon: Icon.AlertTriangle,
     hint: (s) => (s ? (s.unacknowledged ? 'Alerts waiting for review' : 'All alerts reviewed') : null),
@@ -65,7 +67,7 @@ const SUMMARY_CARDS = [
   {
     status: 'dismissed',
     key: 'dismissed',
-    label: 'Dismissed',
+    label: 'False alarms',
     tone: 'warn',
     icon: Icon.X,
     hint: () => 'Marked as false alarm by a lifeguard',
@@ -74,27 +76,29 @@ const SUMMARY_CARDS = [
 
 const KIND_OPTIONS = [
   { value: 'all', label: 'All event types' },
-  { value: 'alerts', label: 'Alerts only' },
+  { value: 'alerts', label: 'All alerts' },
+  { value: 'drowning', label: 'Possible drowning' },
   { value: 'intrusion', label: 'Red zone intrusion' },
   { value: 'deep-water', label: 'Deep-pool entry' },
-  { value: 'drowning', label: 'Possible drowning' },
-  { value: 'activity', label: 'Zone activity' },
+  { value: 'supervision', label: 'Supervision events' },
+  { value: 'activity', label: 'Activity logs' },
 ]
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All statuses' },
-  { value: 'unacknowledged', label: 'Unacknowledged' },
+  { value: 'needs-response', label: 'Needs response' },
+  { value: 'responding', label: 'Responding' },
   { value: 'resolved', label: 'Resolved' },
-  { value: 'dismissed', label: 'Dismissed' },
-  { value: 'logged', label: 'Activity log' },
+  { value: 'dismissed', label: 'False alarms' },
+  { value: 'logged', label: 'Activity logs' },
 ]
 
 function statusInfo(event) {
   if (event.status === 'resolved') return { label: 'Resolved', tone: 'safe' }
-  if (event.status === 'dismissed') return { label: 'Dismissed', tone: 'muted' }
+  if (event.status === 'dismissed') return { label: 'False Alarm', tone: 'muted' }
   if (!isAlertEvent(event)) return { label: 'Logged', tone: 'muted' }
   if (event.status === 'responding') return { label: 'Responding', tone: 'warn' }
-  return { label: 'Awaiting Response', tone: 'alarm' }
+  return { label: 'Needs Response', tone: 'alarm' }
 }
 
 export default function HistoryPage() {
@@ -286,14 +290,16 @@ export default function HistoryPage() {
             value={kind}
             onChange={setKind}
             options={KIND_OPTIONS}
-            minWidth={170}
+            minWidth={190}
+            className="history-filter-select"
             ariaLabel="Event type filter"
           />
           <SelectDropdown
             value={statusFilter}
             onChange={setStatusFilter}
             options={STATUS_OPTIONS}
-            minWidth={150}
+            minWidth={190}
+            className="history-filter-select"
             ariaLabel="Status filter"
           />
         </div>

@@ -196,8 +196,7 @@ export default function DataManagementCard({ showStatus }) {
     showStatus({ tone: 'success', title: 'Data reset complete', message: cleared })
   }
 
-  const chooseRestoreFile = (event) => {
-    const file = event.target.files?.[0]
+  const selectRestoreFile = (file) => {
     if (!file) return
     if (!/\.(sqlite3?|db)$/i.test(file.name)) {
       setRestoreFile(null)
@@ -210,6 +209,10 @@ export default function DataManagementCard({ showStatus }) {
       return
     }
     setRestoreFile(file)
+  }
+
+  const chooseRestoreFile = (event) => {
+    selectRestoreFile(event.target.files?.[0])
   }
 
   const reviewRestore = () => {
@@ -334,23 +337,29 @@ export default function DataManagementCard({ showStatus }) {
 
       <section className="settings-card dm-card dm-card-restore">
         <div className="dm-card-heading">
-          <span className="dm-heading-icon dm-heading-icon-restore"><Icon.Upload /></span>
+          <span className="dm-heading-icon dm-heading-icon-restore"><Icon.CloudUpload /></span>
           <div>
-            <h3>Restore Deleted Data</h3>
+            <h3>Restore Data</h3>
             <p>Recover deleted monitoring records from a verified PoolsEye database backup.</p>
           </div>
         </div>
 
         <div className="dm-restore-layout">
           <div className="dm-restore-copy">
-            <p>Restore adds missing events, alerts, broadcasts, and cleared lifeguard response statistics from the selected backup.</p>
             <div className="dm-media-note">
               <Icon.Shield />
-              <span><strong>Current records are protected.</strong> Existing events, accounts, passwords, camera settings, geofences, and newer response statistics are not overwritten.</span>
+              <span><strong>Current records are protected.</strong> Existing events, accounts, and settings will not be overwritten.</span>
             </div>
           </div>
           <div className="dm-restore-picker">
-            <label className="dm-file-picker">
+            <label
+              className="dm-file-picker"
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault()
+                selectRestoreFile(event.dataTransfer.files?.[0])
+              }}
+            >
               <input
                 type="file"
                 accept=".sqlite,.sqlite3,.db,application/vnd.sqlite3,application/octet-stream"
@@ -358,10 +367,17 @@ export default function DataManagementCard({ showStatus }) {
                 onChange={chooseRestoreFile}
                 disabled={restoring}
               />
-              <Icon.Upload />
-              <strong>{restoreFile ? restoreFile.name : 'Select a backup file to restore'}</strong>
-              <span>{restoreFile ? `${(restoreFile.size / 1024 / 1024).toFixed(2)} MB selected` : 'Upload a valid PoolsEye .sqlite3 backup file'}</span>
-              <span className="dm-file-cta"><Icon.FileText />{restoreFile ? 'Change File' : 'Choose File'}</span>
+              <Icon.CloudUpload />
+              <strong>{restoreFile ? restoreFile.name : 'Upload a Backup File'}</strong>
+              {restoreFile ? (
+                <span>{(restoreFile.size / 1024 / 1024).toFixed(2)} MB selected</span>
+              ) : (
+                <span className="dm-file-guidance">
+                  <span>Drag and drop your backup file here</span>
+                  <span>or</span>
+                </span>
+              )}
+              <span className="dm-file-cta"><Icon.Folder />{restoreFile ? 'Change File' : 'Choose File'}</span>
             </label>
             {restoreFile ? (
               <button type="button" className="btn-primary" onClick={reviewRestore} disabled={restoring}>
@@ -383,7 +399,10 @@ export default function DataManagementCard({ showStatus }) {
 
         <div className="dm-danger-note">
           <Icon.AlertTriangle />
-          <span><strong>This removes the selected records from the live system.</strong> They can only be recovered from a valid backup. {PRESERVED}</span>
+          <span>
+            <strong>This will remove the selected records from the system.</strong>
+            <small>This action cannot be undone without a verified backup. {PRESERVED}</small>
+          </span>
         </div>
 
         {loadError ? (
@@ -426,6 +445,23 @@ export default function DataManagementCard({ showStatus }) {
         </div>
 
         <div className="dm-reset-footer">
+          <div className={`dm-reset-lock${backupValid && backupCoversResetSelection ? ' is-ready' : ' is-required'}`}>
+            {backupValid && backupCoversResetSelection ? <Icon.CheckCircle /> : <Icon.Info />}
+            <span>
+              <strong>
+                {!backupValid
+                  ? 'Backup required before reset'
+                  : !backupCoversResetSelection
+                    ? 'Backup does not cover the selected data'
+                    : 'Verified backup ready'}
+              </strong>
+              {!backupValid
+                ? 'Download and verify a backup first. Reset will remain disabled until a valid backup is available.'
+                : !backupCoversResetSelection
+                  ? 'Create a new backup that includes every category selected for reset.'
+                  : 'Your selected data can be recovered from the latest verified backup.'}
+            </span>
+          </div>
           <button
             type="button"
             className="btn-danger dm-reset-button"

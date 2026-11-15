@@ -12,6 +12,7 @@ import './CameraPanel.css'
 const GEOFENCE_VISIBLE_KEY = 'poolseye.live.showGeofences'
 const PROBE_TIMEOUT_MS = 8000
 const MIN_RECONNECT_MS = 900
+const VIDEO_READY_TIMEOUT_MS = 30000
 const STREAM_IS_LOCAL = /\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(STREAM_BASE)
 
 /** Ask live_server.py for its health and classify why the feed is (not) available. */
@@ -32,6 +33,23 @@ async function probeStream() {
   } finally {
     clearTimeout(timer)
   }
+}
+
+async function waitForUploadedVideo(expectedName) {
+  const deadline = Date.now() + VIDEO_READY_TIMEOUT_MS
+  let latest = null
+  while (Date.now() < deadline) {
+    latest = await probeStream()
+    if (
+      latest.kind === 'ok'
+      && latest.data?.source === 'video'
+      && (!expectedName || latest.data?.video_name === expectedName)
+    ) {
+      return latest
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+  return latest
 }
 
 function reconnectFailure(result) {
@@ -169,8 +187,8 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
     setUploadFileName(file.name)
     setUploadProgress(0)
     const result = await uploadVideo(file, setUploadProgress)
-    setUploadProgress(null)
     if (!result.ok) {
+      setUploadProgress(null)
       showStatus({
         tone: 'error',
         title: 'Video upload failed',
@@ -178,8 +196,27 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
       })
       return
     }
+    // A valid upload still needs time to replace the camera and publish its
+    // first decoded frame. Keep the preparing modal open until that happens.
+    setUploadProgress(100)
     setSource('video')
     setVideoName(result.video_name || file.name)
+    setStreamStatus('connecting')
+    const ready = await waitForUploadedVideo(result.video_name || file.name)
+    setUploadProgress(null)
+    if (ready?.kind !== 'ok' || ready.data?.source !== 'video') {
+      applyProbe(ready || { kind: 'unreachable' })
+      showStatus({
+        tone: 'error',
+        title: 'Video could not start',
+        message: 'The upload completed, but the stream server did not publish a video frame. Check the live_server.py terminal for a decoder error, then try again.',
+      })
+      return
+    }
+    applyProbe(ready)
+    // Recreate <img src="/stream"> so the browser cannot retain the old CCTV
+    // multipart response after Python switches to the uploaded source.
+    setReconnectToken((n) => n + 1)
     showStatus({
       tone: 'success',
       title: 'Video uploaded successfully',

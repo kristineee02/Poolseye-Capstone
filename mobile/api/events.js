@@ -27,6 +27,7 @@ export function toMobileAlert(event) {
     backendStatus,
     severity: event.severity || 'MEDIUM',
     category: event.category || 'zone',
+    eventName: event.event || event.event_name || null,
     confidence: event.confidence,
     camera: event.camera || 'CAM-01',
     detectionSource,
@@ -87,6 +88,10 @@ export async function fetchMobileEvents(token, {
   beforeTs,
   beforeId,
   ackSince,
+  category,
+  outcome,
+  eventName,
+  since,
 } = {}) {
   const params = new URLSearchParams({
     alertsOnly: alertsOnly ? '1' : '0',
@@ -95,6 +100,10 @@ export async function fetchMobileEvents(token, {
     offset: String(offset),
   })
   if (ackSince) params.set('ackSince', String(ackSince))
+  if (category) params.set('category', category)
+  if (outcome) params.set('outcome', outcome)
+  if (eventName) params.set('eventName', eventName)
+  if (Number.isFinite(since) && since > 0) params.set('since', String(since))
   if (Number.isFinite(beforeTs) && beforeId) {
     params.set('beforeTs', String(beforeTs))
     params.set('beforeId', String(beforeId))
@@ -113,11 +122,11 @@ export async function fetchMobileEvents(token, {
   }
 }
 
-export async function updateMobileEventStatus(token, id, status, reason = '') {
+export async function updateMobileEventStatus(token, id, status) {
   const result = await apiFetch(`/api/mobile/events/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     token,
-    body: { status, reason },
+    body: { status },
   })
   if (!result.ok) return result
   return {

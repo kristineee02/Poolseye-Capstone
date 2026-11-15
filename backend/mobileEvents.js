@@ -52,6 +52,10 @@ function registerMobileEventRoutes(app, db) {
       const offset = Math.max(0, Number(req.query.offset) || 0)
       const beforeTs = Number(req.query.beforeTs)
       const beforeId = String(req.query.beforeId || '')
+      const category = String(req.query.category || '').trim()
+      const outcome = String(req.query.outcome || '').trim()
+      const eventName = String(req.query.eventName || '').trim()
+      const since = Number(req.query.since)
       const hasCursor = status === 'closed' && Number.isFinite(beforeTs) && Boolean(beforeId)
       const muted = await mutedFilter(db, req.lifeguard.id)
 
@@ -60,6 +64,22 @@ function registerMobileEventRoutes(app, db) {
 
       if (alertsOnly) {
         conditions.push('is_alert = 1')
+      }
+      if (category) {
+        conditions.push('category = ?')
+        params.push(category)
+      }
+      if (['resolved', 'dismissed'].includes(outcome)) {
+        conditions.push('status = ?')
+        params.push(outcome)
+      }
+      if (eventName) {
+        conditions.push('event_name = ?')
+        params.push(eventName)
+      }
+      if (Number.isFinite(since) && since > 0) {
+        conditions.push('ts >= ?')
+        params.push(since)
       }
       if (status === 'closed') {
         conditions.push("status IN ('resolved', 'dismissed')")
@@ -215,7 +235,6 @@ function registerMobileEventRoutes(app, db) {
       }
 
       const lifeguardId = req.lifeguard?.id
-      const reason = String(req.body?.reason || '').trim()
       const row = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
       if (!row) return res.status(404).json({ error: 'Alert not found' })
 
@@ -230,13 +249,7 @@ function registerMobileEventRoutes(app, db) {
       if (closing && row.status !== 'responding') {
         return res.status(400).json({ error: 'Respond Now before closing this incident.' })
       }
-      if (status === 'dismissed' && !reason) {
-        return res.status(400).json({ error: 'A false-alarm reason is required.' })
-      }
-      if (reason.length > 300) {
-        return res.status(400).json({ error: 'The closure reason must be 300 characters or fewer.' })
-      }
-      await setEventStatus(db, id, status, lifeguardId, reason || null)
+      await setEventStatus(db, id, status, lifeguardId, null)
 
       res.json({
         ok: true,

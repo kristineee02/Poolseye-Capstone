@@ -311,13 +311,10 @@ test('mobile workflow moves incidents from incoming to my responses to history',
   response = await request(`/api/mobile/events/${incident.id}`, {
     method: 'PATCH', body: JSON.stringify({ status: 'dismissed' }),
   })
-  assert.equal(response.status, 400)
-  response = await request(`/api/mobile/events/${incident.id}`, {
-    method: 'PATCH', body: JSON.stringify({ status: 'dismissed', reason: 'Reflection on the water' }),
-  })
   body = await response.json()
+  assert.equal(response.status, 200)
   assert.equal(body.event.status, 'dismissed')
-  assert.equal(body.event.closure_reason, 'Reflection on the water')
+  assert.equal(body.event.closure_reason, null)
 
   response = await request('/api/mobile/events?status=active')
   assert.equal((await response.json()).events.length, 0)

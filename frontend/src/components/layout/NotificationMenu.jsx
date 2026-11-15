@@ -8,6 +8,21 @@ import './NotificationMenu.css'
 
 const POLL_MS = 10000
 const LIMIT = 6
+const FETCH_LIMIT = 100
+const CLEARED_AT_KEY = 'poolseye.webNotifications.clearedAt'
+
+function readClearedAt() {
+  try {
+    const value = Number(localStorage.getItem(CLEARED_AT_KEY))
+    return Number.isFinite(value) && value > 0 ? value : 0
+  } catch {
+    return 0
+  }
+}
+
+function notificationTime(event) {
+  return Math.max(Number(event.last_notified_at || 0), Number(event.ts || 0))
+}
 
 function timeAgo(ts) {
   if (!ts) return ''
@@ -32,19 +47,33 @@ export default function NotificationMenu({ onNavigate }) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const rootRef = useRef(null)
+  const clearedAtRef = useRef(readClearedAt())
 
   const load = useCallback(async () => {
-    const result = await fetchEvents({ kind: 'alerts', status: 'unacknowledged', pageSize: LIMIT })
+    const result = await fetchEvents({ kind: 'alerts', status: 'unacknowledged', pageSize: FETCH_LIMIT })
     if (!result.ok) {
       setError(result.error || 'Could not load notifications.')
       setLoading(false)
       return
     }
     setError('')
-    setItems(result.events || [])
-    setCount(result.total || 0)
+    const visible = (result.events || []).filter((event) => notificationTime(event) > clearedAtRef.current)
+    setItems(visible.slice(0, LIMIT))
+    setCount(visible.length)
     setLoading(false)
   }, [])
+
+  const clearAll = () => {
+    const cutoff = Date.now() / 1000
+    try {
+      localStorage.setItem(CLEARED_AT_KEY, String(cutoff))
+    } catch {
+      // The current session still clears even when browser storage is unavailable.
+    }
+    clearedAtRef.current = cutoff
+    setItems([])
+    setCount(0)
+  }
 
   const retry = () => {
     setLoading(true)
@@ -105,7 +134,9 @@ export default function NotificationMenu({ onNavigate }) {
         <div className="notif-panel" role="dialog" aria-label="Notifications">
           <div className="notif-head">
             <h3>Notifications</h3>
-            {count > 0 ? <span className="notif-count">{count} unacknowledged</span> : null}
+            <div className="notif-head-actions">
+              {count > 0 ? <span className="notif-count">{count} active</span> : null}
+            </div>
           </div>
 
           {loading && !items.length ? <div className="notif-skeleton"><CardListSkeleton rows={3} onRetry={retry} /></div> : null}
@@ -150,7 +181,7 @@ export default function NotificationMenu({ onNavigate }) {
           ) : null}
 
           <div className="notif-foot">
-            <button type="button" onClick={() => go('live')}>Live monitoring</button>
+            <button type="button" className="is-clear" onClick={clearAll} disabled={count === 0}>Clear all</button>
             <button type="button" className="is-primary" onClick={() => go('history')}>
               View all events <Icon.ArrowRight />
             </button>

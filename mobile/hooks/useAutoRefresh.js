@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { AppState } from 'react-native';
+import { createAlertRefreshStream } from '../utils/alertRefreshStream';
 
 /**
  * Runs a stable refresh callback immediately, on an interval, and whenever the
@@ -11,8 +12,7 @@ export function useAutoRefresh(refresh, intervalMs, enabled = true, streamUrl = 
 
     refresh();
     const intervalId = setInterval(refresh, intervalMs);
-    const stream = streamUrl && typeof EventSource !== 'undefined' ? new EventSource(streamUrl) : null;
-    stream?.addEventListener?.('alerts', refresh);
+    const stream = createAlertRefreshStream(streamUrl, refresh);
     const appStateSubscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') refresh();
     });

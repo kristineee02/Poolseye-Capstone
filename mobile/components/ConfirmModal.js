@@ -8,7 +8,7 @@ import AlertDialog from './AlertDialog';
  * @param {string} props.title
  * @param {string} [props.message]
  * @param {React.ReactNode} [props.children]
- * @param {Array<{ label: string, tone?: 'primary'|'danger'|'secondary', onPress: () => void }>} [props.actions]
+ * @param {Array<{ label: string, tone?: 'primary'|'danger'|'secondary', onPress: () => void, disabled?: boolean }>} [props.actions]
  * @param {string} [props.confirmText]
  * @param {string} [props.cancelText]
  * @param {() => void} [props.onConfirm]

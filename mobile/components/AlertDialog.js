@@ -236,12 +236,18 @@ export default function AlertDialog({
               <Text style={[styles.descriptionText, { color: palette.tone }]}>{description}</Text>
             </View>
           ) : null}
-          {message ? (
-            <ScrollView style={styles.messageScroll} contentContainerStyle={styles.messageContent} bounces={false}>
-              <Text style={styles.message}>{message}</Text>
+          {message || children ? (
+            <ScrollView
+              style={styles.contentScroll}
+              contentContainerStyle={styles.contentContent}
+              bounces={false}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {message ? <Text style={styles.message}>{message}</Text> : null}
+              {children}
             </ScrollView>
           ) : null}
-          {children}
 
           {resolvedActions.length ? (
             <View style={[styles.actions, stackedActions && styles.actionsStacked, isIncident && styles.actionsIncident]}>
@@ -270,8 +276,10 @@ export default function AlertDialog({
                         backgroundColor: actionTint,
                         borderColor: actionColor || palette.tone,
                       },
+                      action.disabled && { opacity: 0.45 },
                     ]}
                     onPress={action.onPress}
+                    disabled={Boolean(action.disabled)}
                     activeOpacity={0.85}
                     accessibilityRole="button"
                   >
@@ -322,7 +330,7 @@ const styles = StyleSheet.create({
     maxWidth: 360,
     maxHeight: '85%',
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    borderRadius: 20,
     paddingTop: 30,
     paddingHorizontal: 24,
     paddingBottom: 22,
@@ -339,7 +347,7 @@ const styles = StyleSheet.create({
   },
   cardIncident: {
     maxWidth: 340,
-    borderRadius: 16,
+    borderRadius: 20,
     paddingTop: 22,
     paddingHorizontal: 18,
     paddingBottom: 18,
@@ -469,12 +477,13 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     marginTop: 10,
   },
-  messageScroll: {
-    flexGrow: 0,
+  contentScroll: {
     alignSelf: 'stretch',
+    flexShrink: 1,
   },
-  messageContent: {
-    alignItems: 'center',
+  contentContent: {
+    flexGrow: 0,
+    gap: 12,
   },
   message: {
     maxWidth: 280,
@@ -482,6 +491,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: '#6B7280',
     textAlign: 'center',
+    alignSelf: 'center',
   },
   actions: {
     alignSelf: 'stretch',
@@ -519,7 +529,7 @@ const styles = StyleSheet.create({
   btnIncident: {
     height: 46,
     minHeight: 46,
-    borderRadius: 10,
+    borderRadius: 12,
     flexDirection: 'row',
     gap: 8,
   },

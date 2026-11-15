@@ -1,9 +1,10 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, FlatList, StyleSheet, TouchableOpacity, Modal, Pressable,
-  RefreshControl, ActivityIndicator, Platform, TextInput,
+  View, FlatList, ScrollView, StyleSheet, TouchableOpacity, Modal, Pressable,
+  RefreshControl, ActivityIndicator, Platform,
 } from 'react-native';
 import { Text } from '../components/Typography';
+import Svg, { Circle, Line } from 'react-native-svg';
 import { colors, radius, spacing, typography, shadow, touch } from '../theme/tokens';
 import { Tag } from '../components/Primitives';
 import { useLayoutInsets } from '../hooks/useLayoutInsets';
@@ -15,6 +16,8 @@ import ConfirmModal from '../components/ConfirmModal';
 import StatusModal from '../components/StatusModal';
 import { respondToMobileEvent } from '../api/events';
 import { formatEventTime } from '../utils/dateTime';
+import { HISTORY_FILTERS, historyFilterParams } from '../utils/historyFilters';
+import { responderFirstName } from '../utils/activeAlerts';
 
 const POLL_MS = 5000;
 const ACTIVE_ALERT_LIMIT = 100;
@@ -28,6 +31,7 @@ function sameRenderedEvent(a, b) {
     && a.id === b.id
     && a.type === b.type
     && a.category === b.category
+    && a.eventName === b.eventName
     && a.title === b.title
     && a.time === b.time
     && a.meta === b.meta
@@ -81,16 +85,6 @@ function appendHistoryPage(previous, incoming) {
   const unique = incoming.filter((event) => !previousIds.has(event.id));
   return unique.length ? [...previous, ...unique] : previous;
 }
-
-const FILTERS = [
-  { key: 'all', label: 'All' },
-  { key: 'new', label: 'New' },
-  { key: 'ack', label: 'Acknowledged' },
-  { key: 'drowning', label: 'Drowning' },
-  { key: 'intrusion', label: 'Intrusion' },
-  { key: 'deep-water', label: 'Deep-Water' },
-  { key: 'supervision', label: 'Supervision' },
-];
 
 const TYPE_CONFIG = {
   alarm: {
@@ -188,15 +182,9 @@ const STATUS_TAG = {
   ack: { type: 'safe', label: 'Resolved' },
 };
 
-function matchesFilter(event, filter) {
-  if (filter === 'all') return true;
-  if (filter === 'new' || filter === 'ack') return event.status === filter;
-  return event.category === filter;
-}
-
 function FilterDropdown({ value, onChange }) {
   const [open, setOpen] = useState(false);
-  const current = FILTERS.find((f) => f.key === value) || FILTERS[0];
+  const current = HISTORY_FILTERS.find((filter) => filter.key === value) || HISTORY_FILTERS[0];
 
   return (
     <>
@@ -207,32 +195,41 @@ function FilterDropdown({ value, onChange }) {
         accessibilityRole="button"
         accessibilityLabel={`Filter: ${current.label}`}
       >
-        <Text style={styles.filterBtnText}>Filter: {current.label}</Text>
-        <Text style={styles.filterChevron}>▾</Text>
+        <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+          <Line x1="4" y1="7" x2="20" y2="7" stroke={value === 'all' ? colors.textSecondary : colors.accent} strokeWidth="1.8" strokeLinecap="round" />
+          <Circle cx="9" cy="7" r="2" fill={colors.bgPanel} stroke={value === 'all' ? colors.textSecondary : colors.accent} strokeWidth="1.8" />
+          <Line x1="4" y1="17" x2="20" y2="17" stroke={value === 'all' ? colors.textSecondary : colors.accent} strokeWidth="1.8" strokeLinecap="round" />
+          <Circle cx="15" cy="17" r="2" fill={colors.bgPanel} stroke={value === 'all' ? colors.textSecondary : colors.accent} strokeWidth="1.8" />
+        </Svg>
       </TouchableOpacity>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.menuOverlay} onPress={() => setOpen(false)}>
           <Pressable style={styles.menuCard} onPress={(e) => e.stopPropagation?.()}>
-            <Text style={styles.menuTitle}>Filter alerts</Text>
-            {FILTERS.map((f) => {
-              const active = f.key === value;
-              return (
-                <TouchableOpacity
-                  key={f.key}
-                  style={[styles.menuItem, active && styles.menuItemActive]}
-                  onPress={() => {
-                    onChange(f.key);
-                    setOpen(false);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.menuItemText, active && styles.menuItemTextActive]}>
-                    {f.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+            <Text style={styles.menuTitle}>Filter Event History</Text>
+            <ScrollView style={styles.menuList} showsVerticalScrollIndicator={false}>
+              {HISTORY_FILTERS.map((filter, index) => {
+                const active = filter.key === value;
+                const showGroup = index > 0 && filter.group !== HISTORY_FILTERS[index - 1].group;
+                return (
+                  <React.Fragment key={filter.key}>
+                    {showGroup ? <Text style={styles.menuGroup}>{filter.group}</Text> : null}
+                    <TouchableOpacity
+                      style={[styles.menuItem, active && styles.menuItemActive]}
+                      onPress={() => {
+                        onChange(filter.key);
+                        setOpen(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.menuItemText, active && styles.menuItemTextActive]}>
+                        {filter.label}
+                      </Text>
+                    </TouchableOpacity>
+                  </React.Fragment>
+                );
+              })}
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -244,9 +241,9 @@ const AlertCard = React.memo(function AlertCard({ event, onSelect }) {
   const cfg = alertVisual(event);
   const handlePress = useCallback(() => onSelect(event), [event, onSelect]);
   const status = event.backendStatus === 'pending'
-    ? { type: 'warn', label: 'Awaiting Response' }
+    ? { type: 'warn', label: 'Needs Response' }
     : event.backendStatus === 'responding'
-      ? { type: event.respondingMine ? 'safe' : 'warn', label: event.respondingMine ? 'You Responding' : `${event.responderName || 'Lifeguard'} Responding` }
+      ? { type: event.respondingMine ? 'safe' : 'warn', label: event.respondingMine ? "You're responding" : `${responderFirstName(event)} is responding` }
     : event.backendStatus === 'dismissed'
       ? { type: 'info', label: 'False Alarm' }
       : STATUS_TAG.ack;
@@ -299,10 +296,6 @@ const AlertCard = React.memo(function AlertCard({ event, onSelect }) {
             {outcome}
           </Text>
         ) : null}
-        {event.closureReason ? (
-          <Text style={styles.outcomeText} numberOfLines={2}>Reason: {event.closureReason}</Text>
-        ) : null}
-
         <View style={styles.cardTags}>
           <Tag type={cfg.tag}>{cfg.label}</Tag>
           <Tag type={status.type}>{status.label}</Tag>
@@ -319,8 +312,8 @@ export default function LogScreen({ onPendingCountChange }) {
   const { token } = useAuth();
   const [section, setSection] = useState('incoming');
   const [activeEvents, setActiveEvents] = useState([]);
-  const [responseEvents, setResponseEvents] = useState([]);
   const [historyEvents, setHistoryEvents] = useState([]);
+  const [historyFilter, setHistoryFilter] = useState('all');
   const [totalHistoryCount, setTotalHistoryCount] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -330,7 +323,6 @@ export default function LogScreen({ onPendingCountChange }) {
   const [respondingId, setRespondingId] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
   const [closePrompt, setClosePrompt] = useState(null);
-  const [falseAlarmReason, setFalseAlarmReason] = useState('');
   const loadRequestId = useRef(0);
   const hasMoreHistory = historyEvents.length < totalHistoryCount;
   const historyCursorTs = historyEvents[historyEvents.length - 1]?.ts;
@@ -339,7 +331,7 @@ export default function LogScreen({ onPendingCountChange }) {
   const loadEvents = useCallback(async () => {
     if (!token) return;
     const requestId = ++loadRequestId.current;
-    const [activeResult, responseResult, historyResult] = await Promise.all([
+    const [activeResult, historyResult] = await Promise.all([
       fetchMobileEvents(token, {
         alertsOnly: true,
         status: 'active',
@@ -347,20 +339,16 @@ export default function LogScreen({ onPendingCountChange }) {
       }),
       fetchMobileEvents(token, {
         alertsOnly: true,
-        status: 'responding',
-        limit: ACTIVE_ALERT_LIMIT,
-      }),
-      fetchMobileEvents(token, {
-        alertsOnly: true,
         status: 'closed',
         limit: HISTORY_PAGE_SIZE,
         offset: 0,
+        ...historyFilterParams(historyFilter),
       }),
     ]);
     if (requestId !== loadRequestId.current) return;
 
-    if (!activeResult.ok || !responseResult.ok || !historyResult.ok) {
-      setError(activeResult.error || responseResult.error || historyResult.error || 'Could not load alerts');
+    if (!activeResult.ok || !historyResult.ok) {
+      setError(activeResult.error || historyResult.error || 'Could not load alerts');
       setLoading(false);
       return;
     }
@@ -369,15 +357,11 @@ export default function LogScreen({ onPendingCountChange }) {
       previous,
       sortActiveAlerts(activeResult.events || [])
     ));
-    setResponseEvents((previous) => reconcilePage(
-      previous,
-      sortActiveAlerts(responseResult.events || [])
-    ));
     setHistoryEvents((previous) => reconcileHistoryHead(previous, historyResult.events || []));
     setTotalHistoryCount(historyResult.totalCount);
     onPendingCountChange?.(activeResult.pendingCount || 0);
     setLoading(false);
-  }, [token, onPendingCountChange]);
+  }, [token, onPendingCountChange, historyFilter]);
 
   const retryLoad = useCallback(() => {
     setLoading(true);
@@ -401,6 +385,7 @@ export default function LogScreen({ onPendingCountChange }) {
       limit: HISTORY_PAGE_SIZE,
       beforeTs: historyCursorTs,
       beforeId: historyCursorId,
+      ...historyFilterParams(historyFilter),
     });
     if (result.ok) {
       setHistoryEvents((previous) => appendHistoryPage(previous, result.events || []));
@@ -409,7 +394,7 @@ export default function LogScreen({ onPendingCountChange }) {
       setError(result.error || 'Could not load more alert history');
     }
     setLoadingMore(false);
-  }, [section, loadingMore, hasMoreHistory, token, historyCursorTs, historyCursorId]);
+  }, [section, loadingMore, hasMoreHistory, token, historyCursorTs, historyCursorId, historyFilter]);
 
   const openAlert = useCallback((event) => setSelectedAlert(event), []);
   const closeAlert = useCallback(() => setSelectedAlert(null), []);
@@ -428,45 +413,44 @@ export default function LogScreen({ onPendingCountChange }) {
       });
     } else if (result.event) {
       // Keep the incident open so the responder can immediately choose the
-      // outcome instead of hunting for it in another tab.
+      // outcome from the active-alert modal.
       setSelectedAlert(result.event);
-      setResponseEvents((previous) => reconcilePage(
-        previous,
-        sortActiveAlerts([result.event, ...previous.filter((event) => event.id !== id)])
-      ));
     }
     await loadEvents();
   }, [selectedAlert, respondingId, token, loadEvents]);
 
-  const requestClose = useCallback((type) => {
+  const requestResolve = useCallback(() => {
     if (!selectedAlert) return;
-    setClosePrompt({ id: selectedAlert.id, type });
-    setFalseAlarmReason('');
+    setClosePrompt({ id: selectedAlert.id });
     closeAlert();
   }, [selectedAlert, closeAlert]);
   const cancelClose = useCallback(() => {
     setClosePrompt(null);
-    setFalseAlarmReason('');
   }, []);
   const confirmClose = useCallback(async () => {
     if (!closePrompt) return;
-    const reason = falseAlarmReason.trim();
-    if (closePrompt.type === 'dismissed' && !reason) {
-      setStatusMessage({ tone: 'error', title: 'Reason required', message: 'Enter why this detection was a false alarm.' });
-      return;
-    }
     const prompt = closePrompt;
     cancelClose();
-    const result = await updateMobileEventStatus(token, prompt.id, prompt.type, reason);
+    const result = await updateMobileEventStatus(token, prompt.id, 'resolved');
     if (!result.ok) {
       setStatusMessage({ tone: 'error', title: 'Could not close incident', message: result.error || 'The incident could not be updated.' });
     }
     await loadEvents();
-  }, [closePrompt, falseAlarmReason, cancelClose, token, loadEvents]);
+  }, [closePrompt, cancelClose, token, loadEvents]);
+  const dismissSelectedAlert = useCallback(async () => {
+    if (!selectedAlert) return;
+    const { id } = selectedAlert;
+    closeAlert();
+    const result = await updateMobileEventStatus(token, id, 'dismissed');
+    if (!result.ok) {
+      setStatusMessage({ tone: 'error', title: 'Could not mark false alarm', message: result.error || 'The incident could not be updated.' });
+    }
+    await loadEvents();
+  }, [selectedAlert, closeAlert, token, loadEvents]);
 
   const displayedEvents = useMemo(
-    () => (section === 'incoming' ? activeEvents : section === 'responses' ? responseEvents : historyEvents),
-    [section, activeEvents, responseEvents, historyEvents]
+    () => (section === 'incoming' ? activeEvents : historyEvents),
+    [section, activeEvents, historyEvents]
   );
   const listContentStyle = useMemo(
     () => [styles.listContent, { paddingBottom: tabBarClearance + spacing.sm }],
@@ -477,8 +461,13 @@ export default function LogScreen({ onPendingCountChange }) {
     [openAlert]
   );
   const showIncoming = useCallback(() => setSection('incoming'), []);
-  const showResponses = useCallback(() => setSection('responses'), []);
   const showHistory = useCallback(() => setSection('history'), []);
+  const changeHistoryFilter = useCallback((nextFilter) => {
+    setHistoryEvents([]);
+    setTotalHistoryCount(0);
+    setLoading(true);
+    setHistoryFilter(nextFilter);
+  }, []);
   const refreshControl = useMemo(() => (
     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
   ), [refreshing, onRefresh]);
@@ -488,14 +477,12 @@ export default function LogScreen({ onPendingCountChange }) {
     return (
       <View style={styles.emptyState}>
         <Text style={styles.emptyTitle}>
-          {section === 'incoming' ? 'No active alerts' : section === 'responses' ? 'No active responses' : 'No alert history yet'}
+          {section === 'incoming' ? 'No active alerts' : 'No matching history'}
         </Text>
         <Text style={styles.emptySub}>
           {section === 'incoming'
             ? 'Open incidents and their current responder will appear here automatically.'
-            : section === 'responses'
-              ? 'Incidents you claim with Respond Now will move here.'
-              : 'Resolved and false-alarm incidents will appear here.'}
+            : 'Try another event, outcome, or date filter.'}
         </Text>
       </View>
     );
@@ -519,15 +506,15 @@ export default function LogScreen({ onPendingCountChange }) {
     }
     if (selectedAlert.backendStatus === 'responding' && selectedAlert.respondingMine) {
       return [
-        { label: 'Resolve Incident', tone: 'primary', onPress: () => requestClose('resolved') },
-        { label: 'Mark as False Alarm', tone: 'secondary', onPress: () => requestClose('dismissed') },
+        { label: 'Resolve Incident', tone: 'primary', onPress: requestResolve },
+        { label: 'Mark as False Alarm', tone: 'secondary', onPress: dismissSelectedAlert },
       ];
     }
     if (selectedAlert.backendStatus === 'responding') {
       return [{ label: 'Close', tone: 'secondary', onPress: closeAlert }];
     }
     return [{ label: 'Close', tone: 'secondary', onPress: closeAlert }];
-  }, [selectedAlert, respondingId, respondToSelectedAlert, requestClose, closeAlert]);
+  }, [selectedAlert, respondingId, respondToSelectedAlert, requestResolve, dismissSelectedAlert, closeAlert]);
 
   return (
     <View style={styles.container}>
@@ -538,16 +525,7 @@ export default function LogScreen({ onPendingCountChange }) {
           activeOpacity={0.8}
         >
           <Text style={[styles.segmentText, section === 'incoming' && styles.segmentTextActive]}>
-            Active ({activeEvents.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.segmentButton, section === 'responses' && styles.segmentButtonActive]}
-          onPress={showResponses}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.segmentText, section === 'responses' && styles.segmentTextActive]}>
-            My Responses ({responseEvents.length})
+            Active
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -560,9 +538,12 @@ export default function LogScreen({ onPendingCountChange }) {
       </View>
 
       {section === 'history' ? (
-        <Text style={styles.resultText}>
-          {displayedEvents.length}{hasMoreHistory ? '+' : ''} history alert{displayedEvents.length !== 1 ? 's' : ''}
-        </Text>
+        <View style={styles.historyToolbar}>
+          <Text style={styles.resultText}>
+            {totalHistoryCount} result{totalHistoryCount !== 1 ? 's' : ''}
+          </Text>
+          <FilterDropdown value={historyFilter} onChange={changeHistoryFilter} />
+        </View>
       ) : null}
 
       {error && displayedEvents.length ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -616,26 +597,17 @@ export default function LogScreen({ onPendingCountChange }) {
       <ConfirmModal
         visible={Boolean(closePrompt)}
         onClose={cancelClose}
-        title={closePrompt?.type === 'dismissed' ? 'Mark as false alarm?' : 'Resolve this incident?'}
-        message={closePrompt?.type === 'dismissed'
-          ? 'This closes the incident and saves your reason to Event History.'
-          : 'Confirm that you assessed the situation and the area is safe.'}
+        title="Resolve this incident?"
+        message="Confirm that you assessed the situation and the area is safe."
         actions={[
           { label: 'Cancel', tone: 'secondary', onPress: cancelClose },
-          { label: closePrompt?.type === 'dismissed' ? 'Confirm False Alarm' : 'Confirm Resolution', tone: 'primary', onPress: confirmClose },
+          {
+            label: 'Confirm Resolution',
+            tone: 'primary',
+            onPress: confirmClose,
+          },
         ]}
-      >
-        {closePrompt?.type === 'dismissed' ? (
-          <TextInput
-            style={styles.reasonInput}
-            value={falseAlarmReason}
-            onChangeText={setFalseAlarmReason}
-            placeholder="False-alarm reason (required)"
-            multiline
-            maxLength={300}
-          />
-        ) : null}
-      </ConfirmModal>
+      />
     </View>
   );
 }
@@ -655,21 +627,23 @@ const styles = StyleSheet.create({
   },
   segmented: {
     flexDirection: 'row',
-    backgroundColor: colors.accentTint,
+    backgroundColor: colors.bgPanel,
     borderRadius: radius.full,
-    padding: 4,
+    padding: 3,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    ...shadow.sm,
   },
   segmentButton: {
     flex: 1,
-    minHeight: touch.min,
+    minHeight: 38,
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
   },
   segmentButtonActive: {
-    backgroundColor: colors.bgPanel,
-    ...shadow.sm,
+    backgroundColor: colors.accent,
   },
   segmentText: {
     fontSize: typography.sm,
@@ -677,13 +651,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   segmentTextActive: {
-    color: colors.accent,
-    fontWeight: '800',
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   resultText: {
     fontSize: typography.sm,
-    color: colors.textSecondary,
-    fontWeight: '600',
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  historyToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 10,
   },
   errorText: {
     fontSize: typography.sm,
@@ -691,38 +672,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 8,
   },
-  reasonInput: {
-    minHeight: 88,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    borderRadius: radius.md,
-    padding: 12,
-    color: colors.textPrimary,
-    backgroundColor: colors.bgPanel,
-    textAlignVertical: 'top',
-  },
   filterBtn: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    minHeight: touch.min,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    justifyContent: 'center',
+    width: 40,
+    height: 40,
     borderRadius: radius.full,
     backgroundColor: colors.bgPanel,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
     ...shadow.sm,
-  },
-  filterBtnText: {
-    fontSize: typography.sm,
-    fontWeight: '600',
-    color: colors.textPrimary,
-  },
-  filterChevron: {
-    fontSize: 12,
-    color: colors.accent,
-    fontWeight: '700',
   },
 
   menuOverlay: {
@@ -736,6 +695,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingVertical: 8,
     paddingHorizontal: 8,
+    maxHeight: '82%',
     borderWidth: 1,
     borderColor: colors.borderSubtle,
     ...shadow.md,
@@ -749,6 +709,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 10,
     paddingBottom: 8,
+  },
+  menuList: {
+    flexGrow: 0,
+  },
+  menuGroup: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 4,
   },
   menuItem: {
     minHeight: touch.min,
