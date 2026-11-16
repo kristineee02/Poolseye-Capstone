@@ -906,6 +906,8 @@ class DrowningWatcher:
                 "name": stable,
                 "conf": round(stable_conf, 2),
                 "alert": stable == "Drowning" and stable_conf >= self.conf,
+                # Keeps live CCTV drowning alerts distinct when pose has no person track yet.
+                "activity_track_id": best_id,
             })
 
         self._class_tracks = {
@@ -931,7 +933,13 @@ class DrowningWatcher:
             if latch is None:
                 latch = {}
                 self._latches.append(latch)
-            latch.update(xyxy=box["xyxy"], until=now + self.latch_sec, conf=box["conf"], seen=now)
+            latch.update(
+                xyxy=box["xyxy"],
+                until=now + self.latch_sec,
+                conf=box["conf"],
+                seen=now,
+                activity_track_id=box.get("activity_track_id"),
+            )
 
         held_labels = []
         for box in labels:
@@ -939,7 +947,14 @@ class DrowningWatcher:
             if latch is None:
                 held_labels.append(box)
                 continue
-            held = {**box, "name": "Drowning", "alert": True, "latched": True, "conf": latch["conf"]}
+            held = {
+                **box,
+                "name": "Drowning",
+                "alert": True,
+                "latched": True,
+                "conf": latch["conf"],
+                "activity_track_id": box.get("activity_track_id", latch.get("activity_track_id")),
+            }
             latch.update(xyxy=box["xyxy"], seen=now)
             held_labels.append(held)
             boxes.append(held)
@@ -947,7 +962,14 @@ class DrowningWatcher:
         for latch in self._latches:
             if latch["seen"] == now or now - latch["seen"] > self.gap_sec:
                 continue
-            held = {"xyxy": latch["xyxy"], "conf": latch["conf"], "name": "Drowning", "alert": True, "latched": True}
+            held = {
+                "xyxy": latch["xyxy"],
+                "conf": latch["conf"],
+                "name": "Drowning",
+                "alert": True,
+                "latched": True,
+                "activity_track_id": latch.get("activity_track_id"),
+            }
             held_labels.append(held)
             boxes.append(held)
         return held_labels, boxes
@@ -1026,7 +1048,9 @@ class DrowningWatcher:
                 pid, zone = int(owner["id"]), owner["zone"]
             else:
                 x1, y1, x2, y2 = box["xyxy"]
-                pid = UNTRACKED_PERSON_ID
+                # Negative ids: one streak per drowning track, not every miss mapped to #0.
+                activity_tid = int(box.get("activity_track_id") or 0)
+                pid = -activity_tid if activity_tid > 0 else UNTRACKED_PERSON_ID
                 zone = classify_zone((x1 + x2) / 2, y2, zones_px, orange_px)
             if pid not in seen or box["conf"] > seen[pid]["conf"]:
                 seen[pid] = {"id": pid, "zone": zone, "conf": box["conf"], "behavior": False, "latched": True}
@@ -1209,11 +1233,21 @@ def resize_max_width(frame, max_width: int):
 class FrameGrabber:
     """Reads a capture on its own thread and keeps a short history of recent frames."""
 
-    def __init__(self, cap, kind: str, max_width: int, publish_fps: float, source_path: Path | None = None):
+    def __init__(
+        self,
+        cap,
+        kind: str,
+        max_width: int,
+        publish_fps: float,
+        source_path: Path | None = None,
+        infer_max_width: int | None = None,
+    ):
         self.cap = cap
         self.kind = kind
         self.source_path = source_path
+        # Display JPEG can stay lean; inference keeps a wider frame so far CCTV people stay detectable.
         self.max_width = max_width
+        self.infer_max_width = max(max_width, int(infer_max_width or max_width))
         self.failed = False
 
 
@@ -1273,7 +1307,7 @@ class FrameGrabber:
             if now - self._last_publish < self._publish_interval * 0.9:
                 continue
             self._last_publish = now
-            frame = resize_max_width(frame, self.max_width)
+            frame = resize_max_width(frame, self.infer_max_width)
             with self._cond:
                 self._seq += 1
                 self._frame = frame
@@ -1847,8 +1881,9 @@ def capture_loop(cfg: dict):
     tracker_path = SCRIPTS_DIR / str(pose_cfg.get("tracker") or "tracker.yaml")
     tracker_cfg = str(tracker_path) if tracker_path.exists() else "botsort.yaml"
     print(f"[stream] tracker: {tracker_cfg}")
-    imgsz = int(pose_cfg.get("imgsz", 512))
+    imgsz = int(pose_cfg.get("imgsz", 640))
     max_width = int(pose_cfg.get("max_width", 720))
+    infer_max_width = int(pose_cfg.get("infer_max_width", max(max_width, 1280)))
     jpeg_quality = int(pose_cfg.get("jpeg_quality", 50))
     stream_fps = max(1.0, float(pose_cfg.get("stream_fps", 10)))
     max_infer_fps = max(0.5, float(pose_cfg.get("max_infer_fps", 8)))
@@ -1906,7 +1941,7 @@ def capture_loop(cfg: dict):
 
     print(
         f"[stream] speed: imgsz={imgsz} max_infer_fps={max_infer_fps:g} stream_fps={stream_fps:g} "
-        f"max_width={max_width} jpeg={jpeg_quality}"
+        f"infer_width={infer_max_width} display_width={max_width} jpeg={jpeg_quality}"
     )
     print("[stream] nested Yellow ⊃ Red ⊃ Orange | pose + crossing alerts")
 
@@ -2185,6 +2220,7 @@ def capture_loop(cfg: dict):
             max_width,
             stream_fps,
             source_path=video["path"] if video else None,
+            infer_max_width=infer_max_width,
         )
         results: deque = deque(maxlen=8)
         scene_lock = threading.Lock()
@@ -2196,7 +2232,9 @@ def capture_loop(cfg: dict):
 
         def publish_frame(frame, scene, seq: int, ts: float):
             annotated = render_scene(frame, scene, kpt_conf) if scene else frame
-            ok, buf = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])
+            # Annotate on the inference-sized frame, then downscale only for the MJPEG tunnel.
+            display = resize_max_width(annotated, max_width)
+            ok, buf = cv2.imencode(".jpg", display, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])
             if ok:
                 jpeg = buf.tobytes()
                 publish_jpeg(jpeg)
@@ -2247,12 +2285,8 @@ def capture_loop(cfg: dict):
             if len(snapshot) >= 2 and snapshot[-1]["seq"] != newest_result_seq:
                 newest_result_seq = snapshot[-1]["seq"]
                 needed = snapshot[-1]["ready_at"] - snapshot[-2]["ts"] + publish_interval
-                # Converge faster when inference speeds up so delay does not stick high.
+                # Sync the feed to pose readiness only. Waiting on drowning made live CCTV stick at 1s delay.
                 delay = min(MAX_DISPLAY_DELAY_SEC, max(needed, 0.85 * delay + 0.15 * needed))
-                activity = [r for r in snapshot if r.get("activity_ready_at")]
-                if activity:
-                    activity_needed = activity[-1]["activity_ready_at"] - activity[-1]["ts"] + publish_interval
-                    delay = min(MAX_DISPLAY_DELAY_SEC, max(delay, activity_needed))
                 if now - delay_logged_at >= 30:
                     print(f"[stream] feed shown {delay * 1000:.0f} ms behind capture so boxes match each frame")
                     delay_logged_at = now
