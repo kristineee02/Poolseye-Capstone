@@ -20,11 +20,11 @@
         "confirm_hits": 3,
         "confirm_window_sec": 1.5,
         "nms_iou": 0.5,
-        "imgsz": 640,
-        "max_infer_fps": 6,
-        "stream_fps": 15,
-        "max_width": 960,
-        "jpeg_quality": 65
+        "imgsz": 512,
+        "max_infer_fps": 8,
+        "stream_fps": 10,
+        "max_width": 720,
+        "jpeg_quality": 50
     },
     "TRACKING": {
         "alert_cooldown_sec": 3.0,
@@ -56,8 +56,8 @@
         "drowning_confirm_hits": 3,
         "drowning_class_confidence": 0.3,
         "class_switch_margin": 1.2,
-        "imgsz": 640,
-        "max_infer_fps": 3,
+        "imgsz": 512,
+        "max_infer_fps": 4,
         "drowning_latch_sec": 0.0,
         "hold_sec": 7.0,
         "gap_sec": 2.0,

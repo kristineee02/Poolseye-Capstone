@@ -102,8 +102,9 @@ _person_memory: dict[int, dict] = {}  # person id -> {"events": set, "foot": (x,
 # An event type stays quiet until it has gone undetected this long
 _event_quiet_sec = 120.0
 _event_last_seen: dict[tuple, float] = {}  # (event name, source kind, stable person id) -> last detection
-MAX_DISPLAY_DELAY_SEC = 2.5
-ACTIVITY_SHOW_SEC = 1.5
+# Keep the live MJPEG close to capture; lower = snappier hosted feed, slight box drift risk.
+MAX_DISPLAY_DELAY_SEC = 1.0
+ACTIVITY_SHOW_SEC = 1.0
 ACTIVITY_POSE_SHOW_SEC = 0.5
 STALE_RESULT_SEC = 3.0
 # Seconds of feed saved before an alert
@@ -1846,11 +1847,11 @@ def capture_loop(cfg: dict):
     tracker_path = SCRIPTS_DIR / str(pose_cfg.get("tracker") or "tracker.yaml")
     tracker_cfg = str(tracker_path) if tracker_path.exists() else "botsort.yaml"
     print(f"[stream] tracker: {tracker_cfg}")
-    imgsz = int(pose_cfg.get("imgsz", 416))
-    max_width = int(pose_cfg.get("max_width", 960))
-    jpeg_quality = int(pose_cfg.get("jpeg_quality", 65))
-    stream_fps = max(1.0, float(pose_cfg.get("stream_fps", 15)))
-    max_infer_fps = max(0.5, float(pose_cfg.get("max_infer_fps", 6)))
+    imgsz = int(pose_cfg.get("imgsz", 512))
+    max_width = int(pose_cfg.get("max_width", 720))
+    jpeg_quality = int(pose_cfg.get("jpeg_quality", 50))
+    stream_fps = max(1.0, float(pose_cfg.get("stream_fps", 10)))
+    max_infer_fps = max(0.5, float(pose_cfg.get("max_infer_fps", 8)))
 
     if not pose_path.exists():
         raise FileNotFoundError(f"Pose model not found: {pose_path}")
@@ -2203,7 +2204,8 @@ def capture_loop(cfg: dict):
 
         shown_seq = 0
         publish_interval = 1.0 / stream_fps
-        delay = 0.5
+        # Start lean; adapt up only as far as MAX_DISPLAY_DELAY_SEC so tunnel viewers stay near-live.
+        delay = 0.25
         newest_result_seq = 0
         ended_at = None
         connected_at = delay_logged_at = time.time()
@@ -2245,7 +2247,8 @@ def capture_loop(cfg: dict):
             if len(snapshot) >= 2 and snapshot[-1]["seq"] != newest_result_seq:
                 newest_result_seq = snapshot[-1]["seq"]
                 needed = snapshot[-1]["ready_at"] - snapshot[-2]["ts"] + publish_interval
-                delay = min(MAX_DISPLAY_DELAY_SEC, max(needed, 0.95 * delay + 0.05 * needed))
+                # Converge faster when inference speeds up so delay does not stick high.
+                delay = min(MAX_DISPLAY_DELAY_SEC, max(needed, 0.85 * delay + 0.15 * needed))
                 activity = [r for r in snapshot if r.get("activity_ready_at")]
                 if activity:
                     activity_needed = activity[-1]["activity_ready_at"] - activity[-1]["ts"] + publish_interval
