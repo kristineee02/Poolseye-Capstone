@@ -6,7 +6,7 @@
         "webcam_index": 0
     },
     "POSE": {
-        "model": "yolo11n-pose.pt",
+        "model": "pool_pose.pt",
         "tracker": "tracker.yaml",
         "confidence_threshold": 0.25,
         "keypoint_confidence": 0.3,
