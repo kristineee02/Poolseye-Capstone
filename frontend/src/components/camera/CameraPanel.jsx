@@ -382,6 +382,10 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
             <span className="legend-swatch" style={{ background: '#D6364A' }} />
             Unsupervised
           </span>
+          <span className="legend-item">
+            <span className="legend-swatch" style={{ background: '#787878' }} />
+            Unknown (not calibrated)
+          </span>
           {Object.values(ZONE_TYPES).map((t) => (
             <span className="legend-item" key={t.id}>
               <span

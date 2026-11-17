@@ -157,6 +157,13 @@ EVENT_CATALOG = {
         "severity": "LOW",
         "category": "supervision",
     },
+    "SUPERVISION_UNKNOWN": {
+        "type": "info",
+        "code": "SU",
+        "title": "Supervision Unknown",
+        "severity": "LOW",
+        "category": "supervision",
+    },
     "AFTER_HOURS_PRESENCE": {
         "type": "alarm",
         "code": "AHR",
@@ -557,8 +564,15 @@ def reset_people():
         _digest_signature.clear()
 
 
+def stable_person_id(track_id: int) -> int:
+    """Resolve a transient YOLO track id to the short-term persistent person id."""
+    track_id = int(track_id)
+    with _lock:
+        return int(_person_alias.get(track_id, track_id))
+
+
 def push_event(person_id: int, zone: str, event_name: str, is_alert: bool, supervision_data: dict = None):
-    """Append a dashboard-ready event the first time this event type is detected."""
+    """Append a dashboard event, suppressing only short duplicate bursts for the same person."""
     pid = int(person_id)
     from_upload = _source_kind == "video"
 
@@ -570,10 +584,7 @@ def push_event(person_id: int, zone: str, event_name: str, is_alert: bool, super
         _event_last_seen[key] = detected_at
         if last is not None and detected_at - last < _event_quiet_sec:
             return None
-        mem = _person_memory.setdefault(person, {"events": set(), "foot": None, "last_seen": time.time()})
-        if event_name in mem["events"]:
-            return None
-        mem["events"].add(event_name)
+        _person_memory.setdefault(person, {"events": set(), "foot": None, "last_seen": time.time()})
     person_id = person
 
     meta = EVENT_CATALOG.get(event_name, {
@@ -1463,6 +1474,8 @@ def annotate_frame(frame, model, zcfg, tracker, conf, kpt_conf, imgsz: int,
     for r in reports:
         label = labels.get(r["id"])
         r["supervision_status"] = label["status"] if label else None
+        person = next((p for p in people if p["id"] == r["id"]), None)
+        r["supervision_data"] = dict((person or {}).get("supervision_data") or {})
 
     return reports, {"people": draw_cache, "overlay": overlay}, supervision_events
 
@@ -1994,6 +2007,13 @@ def capture_loop(cfg: dict):
                     f"DROWNING.model must be a YOLO detection checkpoint; "
                     f"{drown_path.name} reports task={drowning_model.task!r}"
                 )
+            actual_classes = {str(name).strip().lower() for name in drowning_model.names.values()}
+            expected_classes = {"normal", "swimming", "floating", "drowning"}
+            if actual_classes != expected_classes:
+                raise RuntimeError(
+                    f"DROWNING.model must contain exactly Normal, Swimming, Floating, and Drowning; "
+                    f"{drown_path.name} reports {sorted(drowning_model.names.values())}"
+                )
             drowning = DrowningWatcher(drowning_model, drown_cfg)
             if drown_cfg.get("pose_crop_fallback", True):
                 activity_pose_model = YOLO(str(pose_path))
@@ -2036,10 +2056,10 @@ def capture_loop(cfg: dict):
             return calibrator_box["calibrator"]
         try:
             calibrator = SpatialCalibrator.from_config({**cfg, "ZONES": zcfg}, fw, fh)
-            mode = "surveyed homography" if calibrator.calibrated else "body-height scale (no surveyed calibration)"
+            mode = "surveyed homography" if calibrator.calibrated else "unavailable until surveyed calibration"
             print(f"[stream] SpatialCalibrator initialized ({fw}x{fh}) — proximity via {mode}")
         except Exception as cal_err:
-            print(f"[stream] Calibrator init warning: {cal_err} — falling back to linear scale")
+            print(f"[stream] Calibrator init warning: {cal_err} — metric proximity unavailable")
             calibrator = SpatialCalibrator(
                 pool_width_m=float(supervision_cfg.get('pool_real_width_meters', 15.0)),
                 pool_length_m=float(supervision_cfg.get('pool_real_length_meters', 25.0)),
@@ -2069,7 +2089,7 @@ def capture_loop(cfg: dict):
 
         for sev in supervision_events:
             event_name = sev.get("event")
-            pid = int(sev["id"])
+            pid = stable_person_id(sev["id"])
             zone = sev.get("zone")
             zone_label = ZONE_LABEL.get(zone, zone)
             if event_name == "UNSUPERVISED" and sev.get("is_alert"):
@@ -2077,13 +2097,13 @@ def capture_loop(cfg: dict):
                     _open_unsupervised[pid] = {"id": pid, "zone": zone, "zone_label": zone_label}
                 digest_supervision = True
                 print(f"  [UNSUPERVISED] Person #{pid} | Zone: {zone} (digest)")
-            elif event_name in ("SUPERVISED",) or (event_name == "UNSUPERVISED" and not sev.get("is_alert")):
+            elif event_name in ("SUPERVISED", "SUPERVISION_UNKNOWN") or (event_name == "UNSUPERVISED" and not sev.get("is_alert")):
                 with _digest_lock:
                     if pid in _open_unsupervised:
                         del _open_unsupervised[pid]
                         digest_supervision = True
                 # Keep a non-alert history row for supervised transitions only.
-                if event_name == "SUPERVISED":
+                if event_name in ("SUPERVISED", "SUPERVISION_UNKNOWN"):
                     supervision_data = dict(sev.get("supervision_data") or {})
                     nearest = supervision_data.get("nearest_person_id")
                     supervision_data["confidence"] = conf_by_id.get(sev["id"])
@@ -2091,7 +2111,7 @@ def capture_loop(cfg: dict):
                     if nearest is not None:
                         with _lock:
                             supervision_data["nearest_person_id"] = _person_alias.get(nearest, nearest)
-                    push_event(sev["id"], sev["zone"], "SUPERVISED", False, supervision_data)
+                    push_event(sev["id"], sev["zone"], event_name, False, supervision_data)
             elif event_name == "AFTER_HOURS_PRESENCE" and sev.get("is_alert"):
                 with _digest_lock:
                     _open_unsupervised[pid] = {
@@ -2115,7 +2135,7 @@ def capture_loop(cfg: dict):
         for d in drowning_events:
             if d.get("_sync_only"):
                 continue
-            pid = int(d["id"])
+            pid = stable_person_id(d["id"])
             zone = d.get("zone")
             with _digest_lock:
                 _open_drowning[pid] = {
@@ -2208,13 +2228,15 @@ def capture_loop(cfg: dict):
                     with _digest_lock:
                         merged = {}
                         for hit in open_drown:
-                            prev = _open_drowning.get(int(hit["id"])) or {}
-                            merged[int(hit["id"])] = {
+                            stable_id = stable_person_id(hit["id"])
+                            prev = _open_drowning.get(stable_id) or {}
+                            merged[stable_id] = {
                                 **hit,
+                                "id": stable_id,
                                 "conf": prev.get("conf") if prev.get("conf") is not None else hit.get("conf"),
                             }
                         for hit in drowning_events:
-                            pid = int(hit["id"])
+                            pid = stable_person_id(hit["id"])
                             merged[pid] = {
                                 "id": pid,
                                 "zone": hit.get("zone"),
@@ -2378,7 +2400,7 @@ def capture_loop(cfg: dict):
 
             if kind != "video" and len(snapshot) >= 2 and snapshot[-1]["seq"] != newest_result_seq:
                 newest_result_seq = snapshot[-1]["seq"]
-                needed = snapshot[-1]["ready_at"] - snapshot[-2]["ts"] + publish_interval
+                needed = snapshot[-1]["ready_at"] - snapshot[-1]["ts"] + publish_interval
                 # Sync the feed to pose readiness only. Waiting on drowning made live CCTV stick at 1s delay.
                 delay = min(MAX_DISPLAY_DELAY_SEC, max(needed, 0.85 * delay + 0.15 * needed))
                 if now - delay_logged_at >= 30:
@@ -2564,6 +2586,7 @@ def events():
                 "foot": r.get("foot"),
                 "foot_source": r.get("source"),
                 "supervision": r.get("supervision_status"),
+                "supervision_data": r.get("supervision_data") or {},
             }
             for r in reports
         ],

@@ -31,8 +31,8 @@
     },
     "TRACKING": {
         "alert_cooldown_sec": 3.0,
-        "lost_track_sec": 2.0,
-        "event_quiet_sec": 120
+        "lost_track_sec": 10.0,
+        "event_quiet_sec": 3.0
     },
     "DROWNING": {
         "enabled": true,
@@ -62,7 +62,7 @@
         "imgsz": 640,
         "max_infer_fps": 5,
         "drowning_latch_sec": 1.5,
-        "hold_sec": 4.0,
+        "hold_sec": 1.5,
         "gap_sec": 2.0,
         "rearm_sec": 60.0,
         "match_iou": 0.2,
@@ -79,13 +79,14 @@
         "threshold_meters": 0.7,
         "pool_real_width_meters": 15.0,
         "pool_real_length_meters": 25.0,
-        "check_zones": ["yellow"],
+        "check_zones": ["clear", "yellow", "red", "orange"],
         "supervisor_zones": ["clear", "yellow", "red", "orange"],
         "alert_cooldown_sec": 10.0
     },
     "CALIBRATION": {
-        "enabled": true,
-        "method": "zone_perspective",
+        "enabled": false,
+        "method": "surveyed_homography",
+        "status": "uncalibrated",
         "pool_real_width_meters": 15.0,
         "pool_real_length_meters": 25.0,
         "camera_height_meters": 3.5,
@@ -94,6 +95,7 @@
     "ZONES": {
         "coord_space": "editor",
         "editor_size": [1000, 512],
+        "transition_confirm_hits": 2,
         "orange_proximity": 0.02,
         "yellow": {
             "enabled": false,

@@ -66,6 +66,45 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, n))
 }
 
+function pointInPolygon(point, polygon) {
+  let inside = false
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const a = polygon[i]
+    const b = polygon[j]
+    const crosses = ((a.y > point.y) !== (b.y > point.y))
+      && point.x < ((b.x - a.x) * (point.y - a.y)) / ((b.y - a.y) || Number.EPSILON) + a.x
+    if (crosses) inside = !inside
+  }
+  return inside
+}
+
+function validateDetectionLayout(zones) {
+  const incomplete = zones.find((zone) => zone.activeDuringStandby !== false && zone.points.length > 0 && zone.points.length < 3)
+  if (incomplete) {
+    throw Object.assign(new Error(`${incomplete.name} needs at least three points.`), { status: 400 })
+  }
+  const active = zones.filter((zone) => zone.activeDuringStandby !== false && zone.points.length >= 3)
+  for (const type of Object.keys(TYPE_TO_DETECTION)) {
+    if (active.filter((zone) => zone.type === type).length > 1) {
+      throw Object.assign(new Error(`Only one active ${TYPE_TO_DETECTION[type].name} is supported by detection.`), { status: 400 })
+    }
+  }
+  const byType = Object.fromEntries(active.map((zone) => [zone.type, zone]))
+  if (byType.danger && !byType.warning) {
+    throw Object.assign(new Error('Configure an active Yellow Zone before the Red Zone.'), { status: 400 })
+  }
+  if (byType.transition && !byType.danger) {
+    throw Object.assign(new Error('Configure an active Red Zone before the Orange Zone.'), { status: 400 })
+  }
+  const contains = (outer, inner) => inner.points.every((point) => pointInPolygon(point, outer.points))
+  if (byType.warning && byType.danger && !contains(byType.warning, byType.danger)) {
+    throw Object.assign(new Error('Red Zone must be fully inside Yellow Zone.'), { status: 400 })
+  }
+  if (byType.danger && byType.transition && !contains(byType.danger, byType.transition)) {
+    throw Object.assign(new Error('Orange Zone must be fully inside Red Zone.'), { status: 400 })
+  }
+}
+
 function normalizeZones(input) {
   if (!Array.isArray(input)) {
     throw Object.assign(new Error('zones must be an array'), { status: 400 })
@@ -105,6 +144,7 @@ function emptyDetectionBlock(meta) {
 }
 
 function zonesToDetection(zones) {
+  validateDetectionLayout(zones)
   const detection = {
     coord_space: 'editor',
     editor_size: [EDITOR_WIDTH, EDITOR_HEIGHT],
@@ -116,12 +156,12 @@ function zonesToDetection(zones) {
 
   for (const zone of zones) {
     const meta = TYPE_TO_DETECTION[zone.type]
-    if (!meta) continue
+    if (!meta || zone.activeDuringStandby === false || (zone.points || []).length < 3) continue
     const points = (zone.points || []).map((p) => [p.x, p.y])
     const current = detection[meta.key]
     if (current.points.length > 0 && points.length < current.points.length) continue
     detection[meta.key] = {
-      enabled: zone.activeDuringStandby !== false && points.length >= 3,
+      enabled: true,
       name: zone.name,
       label: meta.label,
       geometry: 'polygon',
@@ -209,6 +249,7 @@ async function readLayout(db, cameraId = DEFAULT_CAMERA) {
 
 async function writeLayout(db, cameraId, zones, { persist } = { persist: true }) {
   const normalized = normalizeZones(zones)
+  validateDetectionLayout(normalized)
   const now = new Date().toISOString()
 
   if (persist) {
@@ -323,5 +364,7 @@ module.exports = {
   readLayout,
   seedGeofence,
   setLiveState,
+  validateDetectionLayout,
   writeLayout,
+  zonesToDetection,
 }

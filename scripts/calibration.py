@@ -151,6 +151,9 @@ class SpatialCalibrator:
         pool_l = float(sup_cfg.get("pool_real_length_meters") or cal_cfg.get("pool_real_length_meters", 25.0))
         frame_size = (frame_w, frame_h)
 
+        if not cal_cfg.get("enabled", False):
+            return cls(None, pool_w, pool_l, frame_size)
+
         # 1. Direct homography matrix provided
         h_matrix = cal_cfg.get("homography_matrix") or sup_cfg.get("homography_matrix")
         if h_matrix and len(h_matrix) == 3:

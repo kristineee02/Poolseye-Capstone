@@ -1,0 +1,40 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const { validateDetectionLayout, zonesToDetection } = require('./geofence')
+
+function zone(type, points, activeDuringStandby = true) {
+  return { id: type, name: type, type, points, activeDuringStandby }
+}
+
+const yellow = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }]
+const red = [{ x: 20, y: 20 }, { x: 80, y: 20 }, { x: 80, y: 80 }, { x: 20, y: 80 }]
+const orange = [{ x: 40, y: 40 }, { x: 60, y: 40 }, { x: 60, y: 60 }, { x: 40, y: 60 }]
+
+test('valid nested geofence maps to the three detector polygons', () => {
+  const detection = zonesToDetection([
+    zone('warning', yellow),
+    zone('danger', red),
+    zone('transition', orange),
+  ])
+  assert.equal(detection.yellow.enabled, true)
+  assert.equal(detection.red.enabled, true)
+  assert.equal(detection.orange.enabled, true)
+  assert.deepEqual(detection.orange.points[0], [40, 40])
+})
+
+test('inactive duplicate cannot replace the active detector polygon', () => {
+  const detection = zonesToDetection([
+    zone('warning', yellow),
+    zone('warning', [...yellow, { x: 50, y: 50 }], false),
+  ])
+  assert.equal(detection.yellow.enabled, true)
+  assert.equal(detection.yellow.points.length, 4)
+})
+
+test('invalid nesting is rejected instead of silently producing inaccurate zones', () => {
+  const outside = [{ x: 120, y: 120 }, { x: 150, y: 120 }, { x: 150, y: 150 }]
+  assert.throws(
+    () => validateDetectionLayout([zone('warning', yellow), zone('danger', outside)]),
+    /fully inside Yellow Zone/,
+  )
+})
