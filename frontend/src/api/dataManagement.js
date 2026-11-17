@@ -122,7 +122,7 @@ export function fetchResetLog(limit = 5) {
  * Downloads a fresh backup, saves it to the computer, then has the server confirm
  * the saved bytes match what it produced. Only a verified backup unlocks Reset.
  */
-export async function createBackup(categories, onProgress = () => {}) {
+export async function createBackup(categories, backupName = '', onProgress = () => {}) {
   // Snapshot creation has no meaningful byte total yet, so show an honest
   // indeterminate state instead of a simulated percentage.
   onProgress({ percent: null, stage: 'Preparing a consistent database snapshot…', indeterminate: true })
@@ -130,6 +130,7 @@ export async function createBackup(categories, onProgress = () => {}) {
   let res
   try {
     const query = new URLSearchParams({ categories: categories.join(',') })
+    if (backupName.trim()) query.set('name', backupName.trim())
     res = await fetch(`${API_BASE}/api/admin/data/backup?${query}`, {
       method: 'POST',
       headers: authHeaders(),
@@ -145,7 +146,11 @@ export async function createBackup(categories, onProgress = () => {}) {
 
   const backupId = res.headers.get('X-Backup-Id')
   const disposition = res.headers.get('Content-Disposition') || ''
-  const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] || 'poolseye-backup.sqlite3'
+  const encodedName = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1]
+  let fileName = /filename="([^"]+)"/.exec(disposition)?.[1] || 'poolseye-backup.sqlite3'
+  if (encodedName) {
+    try { fileName = decodeURIComponent(encodedName) } catch { /* use the safe ASCII fallback */ }
+  }
 
   let buffer
   try {

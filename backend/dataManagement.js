@@ -51,7 +51,19 @@ function httpError(status, message, code) {
   return err
 }
 
-function backupFileName(date) {
+function backupLabel(value) {
+  const raw = String(value || '').trim().slice(0, 80)
+  if (!raw) return ''
+  return raw
+    .replace(/[\x00-\x1f\x7f<>:"/\\|?*]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/-+/g, '-')
+    .replace(/^[ .-]+|[ .-]+$/g, '')
+    .slice(0, 72)
+    .replace(/[ .-]+$/g, '')
+}
+
+function backupFileName(date, requestedName = '') {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat('en-CA', {
       timeZone: TIME_ZONE,
@@ -60,7 +72,15 @@ function backupFileName(date) {
       hourCycle: 'h23',
     }).formatToParts(date).map((p) => [p.type, p.value])
   )
-  return `poolseye-backup-${parts.year}-${parts.month}-${parts.day}_${parts.hour}${parts.minute}${parts.second}.sqlite3`
+  const label = backupLabel(requestedName)
+  const suffix = `${parts.year}-${parts.month}-${parts.day}_${parts.hour}${parts.minute}${parts.second}`
+  if (!label) return `poolseye-backup-${suffix}.sqlite3`
+  return /\.(sqlite3?|db)$/i.test(label) ? label : `${label}.sqlite3`
+}
+
+function attachmentHeader(fileName) {
+  const fallback = String(fileName).replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_')
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`
 }
 
 function quoteIdent(name) {
@@ -650,7 +670,13 @@ function registerDataManagementRoutes(app, db, adminRequired) {
     backupInProgress = true
     const id = crypto.randomUUID()
     const createdAt = new Date()
-    const fileName = backupFileName(createdAt)
+    const requestedName = String(req.query.name || '').trim()
+    const safeName = backupLabel(requestedName)
+    if (requestedName && !safeName) {
+      backupInProgress = false
+      return res.status(400).json({ error: 'Backup name must include at least one letter or number.' })
+    }
+    const fileName = backupFileName(createdAt, safeName)
     const file = path.join(os.tmpdir(), `poolseye-backup-${id}.sqlite3`)
     const cleanup = () => fs.rm(file, { force: true }, () => {})
 
@@ -681,7 +707,7 @@ function registerDataManagementRoutes(app, db, adminRequired) {
 
       res.setHeader('Content-Type', 'application/vnd.sqlite3')
       res.setHeader('Content-Length', size)
-      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`)
+      res.setHeader('Content-Disposition', attachmentHeader(fileName))
       res.setHeader('Cache-Control', 'no-store')
       res.setHeader('X-Backup-Id', id)
       res.setHeader('X-Backup-Sha256', sha256)
@@ -818,6 +844,9 @@ module.exports = {
   CATEGORY_KEYS,
   // Exported for isolated database verification tests only.
   __test: {
+    backupFileName,
+    backupLabel,
+    attachmentHeader,
     buildBackupFile,
     filterBackupFile,
     requireUsableBackup,

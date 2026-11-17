@@ -67,6 +67,7 @@ export default function DataManagementCard({ showStatus }) {
   const [loadError, setLoadError] = useState('')
   const [loading, setLoading] = useState(true)
   const [backup, setBackup] = useState(null)
+  const [backupName, setBackupName] = useState('')
   const [backingUp, setBackingUp] = useState(false)
   const [backupProgress, setBackupProgress] = useState({ percent: null, stage: '', indeterminate: true })
   const [backupSelected, setBackupSelected] = useState(() => new Set(CATEGORIES.map((category) => category.key)))
@@ -120,13 +121,14 @@ export default function DataManagementCard({ showStatus }) {
     if (backingUp || !backupSelected.size) return
     setBackupProgress({ percent: null, stage: 'Starting backup…', indeterminate: true })
     setBackingUp(true)
-    const result = await createBackup([...backupSelected], setBackupProgress)
+    const result = await createBackup([...backupSelected], backupName, setBackupProgress)
     setBackingUp(false)
     if (!result.ok) {
       showStatus({ tone: 'error', title: 'Backup failed', message: result.error })
       return
     }
     setBackup(result.backup)
+    setBackupName('')
     setNow(Date.now())
     showStatus({
       tone: 'success',
@@ -290,6 +292,21 @@ export default function DataManagementCard({ showStatus }) {
             ))}
           </div>
         </div>
+
+        <label className="dm-backup-name">
+          <span>Backup name <small>(optional)</small></span>
+          <input
+            type="text"
+            value={backupName}
+            maxLength={80}
+            placeholder="Example: Before final defense"
+            aria-label="Optional backup name"
+            autoComplete="off"
+            onChange={(event) => setBackupName(event.target.value)}
+            disabled={backingUp}
+          />
+          <small>This will be the downloaded filename. The .sqlite3 extension is added automatically when needed.</small>
+        </label>
 
         <div className="settings-card-actions dm-backup-action">
           <button type="button" className="btn-primary" onClick={runBackup} disabled={backingUp || loading || !backupSelected.size}>

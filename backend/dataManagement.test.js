@@ -21,6 +21,18 @@ function close(db) {
   return new Promise((resolve) => db.close(() => resolve()))
 }
 
+test('custom backup name becomes the exact safe download filename', () => {
+  const date = new Date('2026-11-17T04:05:06.000Z')
+  assert.equal(__test.backupLabel('  Before Final Defense  '), 'Before Final Defense')
+  assert.equal(__test.backupFileName(date, 'Before Final Defense'), 'Before Final Defense.sqlite3')
+  assert.equal(__test.backupFileName(date, 'Chapter IV.db'), 'Chapter IV.db')
+  const fileName = __test.backupFileName(date, 'Unsafe / Name')
+  assert.equal(fileName, 'Unsafe - Name.sqlite3')
+  assert.equal(fileName.includes('/') || fileName.includes('\\') || fileName.includes('\n'), false)
+  assert.match(__test.backupFileName(date), /^poolseye-backup-\d{4}-\d{2}-\d{2}_\d{6}\.sqlite3$/)
+  assert.match(__test.attachmentHeader('Pagsusulit Ñ.sqlite3'), /filename\*=UTF-8''Pagsusulit%20%C3%91\.sqlite3/)
+})
+
 test('backup is an accessible exact snapshot and reset is selective, verified, and atomic', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'poolseye-data-test-'))
   const sourceFile = path.join(tempDir, 'source.sqlite3')
