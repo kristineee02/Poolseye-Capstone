@@ -332,6 +332,7 @@ const CameraPanel = forwardRef(function CameraPanel({ compact = false, onNotify,
             className="camera-stage-feed"
             src={streamSrc}
             alt="Main Pool CCTV"
+            decoding="sync"
             onError={() => setStreamStatus('offline')}
             onLoad={() => setStreamStatus('online')}
           />

@@ -104,9 +104,16 @@ _event_quiet_sec = 120.0
 _event_last_seen: dict[tuple, float] = {}  # (event name, source kind, stable person id) -> last detection
 # Keep the live MJPEG close to capture; lower = snappier hosted feed, slight box drift risk.
 MAX_DISPLAY_DELAY_SEC = 1.0
+# Uploaded files play on a short fixed lag so pose lag does not stutter the MJPEG feed.
+VIDEO_DISPLAY_DELAY_SEC = 0.12
+VIDEO_MAX_STREAM_FPS = 20.0
 ACTIVITY_SHOW_SEC = 1.0
 ACTIVITY_POSE_SHOW_SEC = 0.5
 STALE_RESULT_SEC = 3.0
+# Avoid hammering a cold Render API on every upload click.
+_ADMIN_VERIFY_CACHE_SEC = 45.0
+_admin_verify_cache: dict[str, float] = {}
+_admin_verify_lock = threading.Lock()
 # Seconds of feed saved before an alert
 CLIP_SECONDS = 5.0
 # Seconds of feed saved after an alert
@@ -1230,6 +1237,25 @@ def resize_max_width(frame, max_width: int):
     return cv2.resize(frame, (max_width, int(h * scale)), interpolation=cv2.INTER_AREA)
 
 
+def open_video_capture(path: Path | str):
+    """Open an uploaded file with a decoder tuned for steady sequential playback."""
+    cap = cv2.VideoCapture(str(path), cv2.CAP_FFMPEG)
+    if not cap.isOpened():
+        cap.release()
+        cap = cv2.VideoCapture(str(path))
+    if cap.isOpened():
+        # Prefer a small decode buffer so loop/restart stays responsive.
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
+    return cap
+
+
+def video_source_fps(cap) -> float:
+    fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+    if not fps or fps < 1.0 or fps > 120.0:
+        return 25.0
+    return fps
+
+
 class FrameGrabber:
     """Reads a capture on its own thread and keeps a short history of recent frames."""
 
@@ -1250,21 +1276,39 @@ class FrameGrabber:
         self.infer_max_width = max(max_width, int(infer_max_width or max_width))
         self.failed = False
 
-
         self.ended = False
         self.loops = 0
         self._frame = None
         self._ts = 0.0
         self._seq = 0
-        self._history: deque = deque(maxlen=max(10, int(publish_fps * (MAX_DISPLAY_DELAY_SEC + 1))))
-        self._publish_interval = 1.0 / publish_fps
-        self._last_publish = 0.0
         self._cond = threading.Condition()
         self._stop = False
-        fps = cap.get(cv2.CAP_PROP_FPS) if kind == "video" else 0
-        self._frame_interval = 1.0 / fps if fps and fps > 0 else (1.0 / 25 if kind == "video" else 0)
+        if kind == "video":
+            src_fps = video_source_fps(cap)
+            # Keep MJPEG near the file rate (capped) so uploads do not look like a slideshow.
+            target_fps = min(max(float(publish_fps), 1.0), src_fps, VIDEO_MAX_STREAM_FPS)
+            self._frame_interval = 1.0 / src_fps
+            self._publish_interval = 1.0 / target_fps
+            history_secs = max(2.0, VIDEO_DISPLAY_DELAY_SEC + 1.5)
+            self._history: deque = deque(maxlen=max(24, int(target_fps * history_secs)))
+            self.source_fps = src_fps
+            self.publish_fps = target_fps
+        else:
+            self._frame_interval = 0.0
+            self._publish_interval = 1.0 / max(float(publish_fps), 1.0)
+            self._history = deque(maxlen=max(10, int(publish_fps * (MAX_DISPLAY_DELAY_SEC + 1))))
+            self.source_fps = float(publish_fps)
+            self.publish_fps = float(publish_fps)
+        self._last_publish = 0.0
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
+
+    def _reopen_video(self) -> bool:
+        if not self.source_path:
+            return False
+        self.cap.release()
+        self.cap = open_video_capture(self.source_path)
+        return bool(self.cap.isOpened())
 
     def _run(self):
         fail = 0
@@ -1273,15 +1317,13 @@ class FrameGrabber:
             if self._frame_interval:
                 delay = next_frame_at - time.time()
                 if delay > 0:
-                    time.sleep(delay)
-                next_frame_at = max(next_frame_at + self._frame_interval, time.time() - self._frame_interval)
+                    time.sleep(min(delay, 0.05))
+                    continue
             ok, frame = self.cap.read()
             if (not ok or frame is None) and self.kind == "video":
                 self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 ok, frame = self.cap.read()
-                if (not ok or frame is None) and self.source_path:
-                    self.cap.release()
-                    self.cap = cv2.VideoCapture(str(self.source_path))
+                if (not ok or frame is None) and self._reopen_video():
                     ok, frame = self.cap.read()
                 if ok and frame is not None:
                     with self._cond:
@@ -1304,7 +1346,13 @@ class FrameGrabber:
                 continue
             fail = 0
             now = time.time()
-            if now - self._last_publish < self._publish_interval * 0.9:
+            if self.kind == "video":
+                # Pace from the file timeline; skip only when the tunnel FPS is below source FPS.
+                if now - self._last_publish < self._publish_interval * 0.85:
+                    next_frame_at = max(next_frame_at + self._frame_interval, now)
+                    continue
+                next_frame_at = max(next_frame_at + self._frame_interval, now)
+            elif now - self._last_publish < self._publish_interval * 0.9:
                 continue
             self._last_publish = now
             frame = resize_max_width(frame, self.infer_max_width)
@@ -1786,16 +1834,43 @@ def verify_admin(auth_header: str) -> tuple[bool, str]:
     """Confirm the dashboard token belongs to an admin by asking the backend."""
     if not auth_header.startswith("Bearer "):
         return False, "Sign in as an admin to upload videos."
-    try:
-        req = Request(ADMIN_VERIFY_API, headers={"Authorization": auth_header})
-        with urlopen(req, timeout=5) as resp:
-            return resp.status == 200, ""
-    except HTTPError as err:
-        if err.code in (401, 403):
-            return False, "Admin access only."
-        return False, f"Could not verify admin session ({err.code})."
-    except (URLError, TimeoutError, OSError):
-        return False, "Could not reach the backend to verify your admin session."
+    token = auth_header[7:].strip()
+    if not token:
+        return False, "Sign in as an admin to upload videos."
+    now = time.time()
+    with _admin_verify_lock:
+        cached_until = _admin_verify_cache.get(token, 0.0)
+        if cached_until > now:
+            return True, ""
+        # Drop expired entries so the cache cannot grow without bound.
+        expired = [key for key, until in _admin_verify_cache.items() if until <= now]
+        for key in expired:
+            _admin_verify_cache.pop(key, None)
+
+    last_error = "Could not reach the backend to verify your admin session."
+    for attempt in range(3):
+        try:
+            req = Request(ADMIN_VERIFY_API, headers={"Authorization": auth_header})
+            with urlopen(req, timeout=8) as resp:
+                if resp.status == 200:
+                    with _admin_verify_lock:
+                        _admin_verify_cache[token] = time.time() + _ADMIN_VERIFY_CACHE_SEC
+                    return True, ""
+                return False, f"Could not verify admin session ({resp.status})."
+        except HTTPError as err:
+            if err.code in (401, 403):
+                return False, "Admin access only."
+            if err.code == 503 and attempt < 2:
+                time.sleep(1.2 * (attempt + 1))
+                last_error = f"Could not verify admin session ({err.code})."
+                continue
+            return False, f"Could not verify admin session ({err.code})."
+        except (URLError, TimeoutError, OSError):
+            if attempt < 2:
+                time.sleep(1.0 * (attempt + 1))
+                continue
+            return False, last_error
+    return False, last_error
 
 
 def load_camera_settings(cfg: dict) -> dict:
@@ -1885,7 +1960,12 @@ def capture_loop(cfg: dict):
     max_width = int(pose_cfg.get("max_width", 720))
     infer_max_width = int(pose_cfg.get("infer_max_width", max(max_width, 1280)))
     jpeg_quality = int(pose_cfg.get("jpeg_quality", 50))
+    video_jpeg_quality = int(pose_cfg.get("video_jpeg_quality", max(jpeg_quality, 65)))
     stream_fps = max(1.0, float(pose_cfg.get("stream_fps", 10)))
+    video_stream_fps = max(
+        stream_fps,
+        min(VIDEO_MAX_STREAM_FPS, float(pose_cfg.get("video_stream_fps", VIDEO_MAX_STREAM_FPS))),
+    )
     max_infer_fps = max(0.5, float(pose_cfg.get("max_infer_fps", 8)))
 
     if not pose_path.exists():
@@ -1941,7 +2021,8 @@ def capture_loop(cfg: dict):
 
     print(
         f"[stream] speed: imgsz={imgsz} max_infer_fps={max_infer_fps:g} stream_fps={stream_fps:g} "
-        f"infer_width={infer_max_width} display_width={max_width} jpeg={jpeg_quality}"
+        f"video_stream_fps={video_stream_fps:g} infer_width={infer_max_width} "
+        f"display_width={max_width} jpeg={jpeg_quality} video_jpeg={video_jpeg_quality}"
     )
     print("[stream] nested Yellow ⊃ Red ⊃ Orange | pose + crossing alerts")
 
@@ -2176,7 +2257,7 @@ def capture_loop(cfg: dict):
             _source_kind = kind
             _active_camera_host = None
             print(f"[stream] playing uploaded video {video['name']}")
-            cap = cv2.VideoCapture(str(video["path"]))
+            cap = open_video_capture(video["path"])
             if not cap.isOpened():
                 print("[stream] uploaded video could not be opened — returning to live CCTV")
                 cap.release()
@@ -2213,15 +2294,22 @@ def capture_loop(cfg: dict):
 
         reset_tracking()
         _media.clear()
+        grab_fps = video_stream_fps if kind == "video" else stream_fps
+        encode_quality = video_jpeg_quality if kind == "video" else jpeg_quality
         print(f"[stream] connected ({kind}) — annotating frames for dashboard")
         grabber = FrameGrabber(
             cap,
             kind,
             max_width,
-            stream_fps,
+            grab_fps,
             source_path=video["path"] if video else None,
             infer_max_width=infer_max_width,
         )
+        if kind == "video":
+            print(
+                f"[stream] upload playback {grabber.source_fps:.1f} fps source → "
+                f"{grabber.publish_fps:.1f} fps MJPEG (delay {VIDEO_DISPLAY_DELAY_SEC * 1000:.0f} ms)"
+            )
         results: deque = deque(maxlen=8)
         scene_lock = threading.Lock()
         stop_inference = threading.Event()
@@ -2234,16 +2322,16 @@ def capture_loop(cfg: dict):
             annotated = render_scene(frame, scene, kpt_conf) if scene else frame
             # Annotate on the inference-sized frame, then downscale only for the MJPEG tunnel.
             display = resize_max_width(annotated, max_width)
-            ok, buf = cv2.imencode(".jpg", display, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])
+            ok, buf = cv2.imencode(".jpg", display, [int(cv2.IMWRITE_JPEG_QUALITY), encode_quality])
             if ok:
                 jpeg = buf.tobytes()
                 publish_jpeg(jpeg)
                 _media.add_frame(seq, ts, jpeg)
 
         shown_seq = 0
-        publish_interval = 1.0 / stream_fps
-        # Start lean; adapt up only as far as MAX_DISPLAY_DELAY_SEC so tunnel viewers stay near-live.
-        delay = 0.25
+        publish_interval = 1.0 / grabber.publish_fps
+        # Live CCTV adapts to pose readiness; uploads keep a fixed short lag for smooth motion.
+        delay = VIDEO_DISPLAY_DELAY_SEC if kind == "video" else 0.25
         newest_result_seq = 0
         ended_at = None
         connected_at = delay_logged_at = time.time()
@@ -2271,7 +2359,13 @@ def capture_loop(cfg: dict):
                 snapshot = list(results)
             now = time.time()
             if not snapshot and now - connected_at < STALE_RESULT_SEC:
-                time.sleep(0.01)
+                # Still publish raw frames immediately so uploads are not blank while pose warms up.
+                seq, ts, frame = grabber.latest(shown_seq, timeout=0.05)
+                if frame is not None:
+                    shown_seq = seq
+                    publish_frame(frame, None, seq, ts)
+                else:
+                    time.sleep(0.005)
                 continue
             if not snapshot or now - snapshot[-1]["ready_at"] > STALE_RESULT_SEC:
                 seq, ts, frame = grabber.latest(shown_seq, timeout=0.2)
@@ -2282,7 +2376,7 @@ def capture_loop(cfg: dict):
                     time.sleep(0.02)
                 continue
 
-            if len(snapshot) >= 2 and snapshot[-1]["seq"] != newest_result_seq:
+            if kind != "video" and len(snapshot) >= 2 and snapshot[-1]["seq"] != newest_result_seq:
                 newest_result_seq = snapshot[-1]["seq"]
                 needed = snapshot[-1]["ready_at"] - snapshot[-2]["ts"] + publish_interval
                 # Sync the feed to pose readiness only. Waiting on drowning made live CCTV stick at 1s delay.
@@ -2291,16 +2385,22 @@ def capture_loop(cfg: dict):
                     print(f"[stream] feed shown {delay * 1000:.0f} ms behind capture so boxes match each frame")
                     delay_logged_at = now
 
-            pending = grabber.frames_between(shown_seq, snapshot[-1]["seq"])
-            while len(pending) > 1 and pending[0][1] + delay < now - publish_interval:
-                pending.pop(0)
+            target_seq = snapshot[-1]["seq"] if kind != "video" else grabber.newest_seq
+            pending = grabber.frames_between(shown_seq, target_seq)
+            if kind == "video":
+                # Prefer even pacing over catching up by large jumps.
+                while len(pending) > 2 and pending[0][1] + delay < now - publish_interval:
+                    pending.pop(0)
+            else:
+                while len(pending) > 1 and pending[0][1] + delay < now - publish_interval:
+                    pending.pop(0)
             if not pending:
-                time.sleep(0.01)
+                time.sleep(0.005 if kind == "video" else 0.01)
                 continue
             seq, ts, frame = pending[0]
             wait = ts + delay - now
             if wait > 0:
-                time.sleep(min(wait, 0.02))
+                time.sleep(min(wait, 0.01 if kind == "video" else 0.02))
                 continue
             shown_seq = seq
             publish_frame(frame, scene_at(snapshot, seq, ts), seq, ts)
@@ -2308,7 +2408,8 @@ def capture_loop(cfg: dict):
         stop_inference.set()
         worker.join(timeout=5)
         grabber.stop()
-        time.sleep(1)
+        # Short pause so the next source can open quickly after an upload switch.
+        time.sleep(0.15)
 
 
 _jpeg_cond = threading.Condition()
@@ -2371,10 +2472,19 @@ def upload_video():
 
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     dest = UPLOAD_DIR / f"{uuid.uuid4().hex}{ext}"
-    file.save(dest)
+    # Stream to disk in chunks so large uploads do not stall the Flask worker as long.
+    with dest.open("wb") as out:
+        while True:
+            chunk = file.stream.read(1024 * 1024)
+            if not chunk:
+                break
+            out.write(chunk)
 
-    probe = cv2.VideoCapture(str(dest))
-    readable = probe.isOpened() and probe.read()[0]
+    probe = open_video_capture(dest)
+    readable = False
+    if probe.isOpened():
+        ok, first = probe.read()
+        readable = bool(ok and first is not None)
     probe.release()
     if not readable:
         _remove_upload(dest)

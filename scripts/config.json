@@ -20,12 +20,14 @@
         "confirm_hits": 2,
         "confirm_window_sec": 1.5,
         "nms_iou": 0.5,
-        "imgsz": 640,
+        "imgsz": 1280,
         "max_infer_fps": 6,
         "stream_fps": 10,
+        "video_stream_fps": 20,
         "infer_max_width": 1280,
         "max_width": 720,
-        "jpeg_quality": 50
+        "jpeg_quality": 50,
+        "video_jpeg_quality": 68
     },
     "TRACKING": {
         "alert_cooldown_sec": 3.0,

@@ -98,6 +98,9 @@
   width: 100%;
   height: 100%;
   object-fit: fill;
+  background: #11161d;
+  /* Prefer smoother MJPEG frame swaps over crisp-but-flickery nearest scaling. */
+  image-rendering: auto;
 }
 
 .camera-stage.is-offline {
