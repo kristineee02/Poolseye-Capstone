@@ -212,8 +212,25 @@ const ActiveAlertCard = React.memo(function ActiveAlertCard({ alert, busy, onRes
             : `${responderFirstName(alert)} is responding`}
         </Text>
       ) : null}
-      {alert.respondingMine ? (
+      {alert.respondingMine || !alert.respondingAt ? (
         <View style={styles.activeActions}>
+          {!alert.respondingAt ? (
+            <TouchableOpacity
+              style={[
+                styles.ackBtn,
+                styles.respondBtn,
+                { backgroundColor: m.accent },
+                ackShadow,
+              ]}
+              onPress={() => onRespond(alert.id)}
+              disabled={busy}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.ackText, { color: m.buttonText }]}>
+                {busy ? 'Updating…' : 'Respond now'}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity
             style={[styles.ackBtn, { backgroundColor: colors.safe }]}
             onPress={() => onResolve(alert.id)}
@@ -231,22 +248,6 @@ const ActiveAlertCard = React.memo(function ActiveAlertCard({ alert, busy, onRes
             <Text style={[styles.dismissText, { color: m.accent }]}>False Alarm</Text>
           </TouchableOpacity>
         </View>
-      ) : !alert.respondingAt ? (
-        <TouchableOpacity
-          style={[
-            styles.ackBtn,
-            styles.respondBtn,
-            { backgroundColor: m.accent },
-            ackShadow,
-          ]}
-          onPress={() => onRespond(alert.id)}
-          disabled={busy}
-          activeOpacity={0.85}
-        >
-          <Text style={[styles.ackText, { color: m.buttonText }]}>
-            {busy ? 'Updating…' : 'Respond now'}
-          </Text>
-        </TouchableOpacity>
       ) : null}
     </View>
   );
@@ -468,34 +469,44 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
   }, [token, loadAlerts]);
 
   const handleResolve = useCallback(async (id) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     closingAlertIds.current.add(id);
-    setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
-    setPinnedId((current) => (current === id ? null : current));
     const result = await updateMobileEventStatus(token, id, 'resolved');
     if (!result.ok) {
       closingAlertIds.current.delete(id);
-      setStatus({ tone: 'error', title: 'Could not resolve', message: result.error || 'Failed to resolve this alert.' });
+      setStatus({
+        tone: 'error',
+        title: 'Could not resolve',
+        message: result.error || 'Failed to resolve this alert. The siren stays on until the alert is closed.',
+      });
       await loadAlerts();
       return;
     }
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
+    setPinnedId((current) => (current === id ? null : current));
+    setSelectedAlert((current) => (current?.id === id ? null : current));
     onPendingCountChange?.(result.pendingCount);
     await loadAlerts();
     closingAlertIds.current.delete(id);
   }, [token, loadAlerts, onPendingCountChange]);
 
   const handleDismiss = useCallback(async (id) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     closingAlertIds.current.add(id);
-    setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
-    setPinnedId((current) => (current === id ? null : current));
     const result = await updateMobileEventStatus(token, id, 'dismissed');
     if (!result.ok) {
       closingAlertIds.current.delete(id);
-      setStatus({ tone: 'error', title: 'Could not dismiss', message: result.error || 'Failed to dismiss this alert.' });
+      setStatus({
+        tone: 'error',
+        title: 'Could not dismiss',
+        message: result.error || 'Failed to dismiss this alert. The siren stays on until the alert is closed.',
+      });
       await loadAlerts();
       return;
     }
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setActiveAlerts((prev) => prev.filter((a) => a.id !== id));
+    setPinnedId((current) => (current === id ? null : current));
+    setSelectedAlert((current) => (current?.id === id ? null : current));
     onPendingCountChange?.(result.pendingCount);
     await loadAlerts();
     closingAlertIds.current.delete(id);
@@ -556,8 +567,16 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
     if (responding && selectedAlert.backendStatus === 'pending') {
       return [{ label: 'Claiming alert...', tone: 'secondary', onPress: () => {} }];
     }
-    if (selectedAlert.respondingMine) {
-      return [
+    if (selectedAlert.respondingMine || selectedAlert.backendStatus === 'pending') {
+      const actions = [];
+      if (selectedAlert.backendStatus === 'pending' && !selectedAlert.respondingAt) {
+        actions.push({
+          label: 'Respond Now',
+          tone: 'alert',
+          onPress: () => handleRespond(selectedAlert.id),
+        });
+      }
+      actions.push(
         {
           label: 'Mark as Resolved',
           tone: 'primary',
@@ -568,7 +587,8 @@ export default function AlertsScreen({ onViewAllAlerts, onPendingCountChange, fo
           tone: 'secondary',
           onPress: dismissSelectedAlert,
         },
-      ];
+      );
+      return actions;
     }
     if (selectedAlert.backendStatus !== 'pending' || selectedAlert.respondingAt) {
       return [{ label: 'Close', tone: 'secondary', onPress: closeAlertModal }];

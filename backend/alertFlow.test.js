@@ -358,7 +358,22 @@ test('mobile workflow moves incidents from incoming to my responses to history',
   assert.equal(response.status, 200)
   assert.deepEqual((await response.json()).events.map((event) => event.id), [incident.id])
 
-  // Resolve follows the same lifecycle: it remains active after Respond Now
+  // Resolve / False Alarm from pending auto-claims then closes in one PATCH
+  // (siren stops without a separate Respond Now).
+  const directClose = (await ingestDetection(db, detection({
+    id: 'mobile-direct-close', person_id: 113, category: 'drowning', zone: 'deep',
+  }))).events[0]
+  response = await request(`/api/mobile/events/${directClose.id}`, {
+    method: 'PATCH', body: JSON.stringify({ status: 'resolved' }),
+  })
+  body = await response.json()
+  assert.equal(response.status, 200)
+  assert.equal(body.event.status, 'resolved')
+  assert.equal(body.event.closed_by_name, 'Flow Guard')
+  response = await request('/api/mobile/events?status=active')
+  assert.ok(!(await response.json()).events.some((event) => event.id === directClose.id))
+
+  // Resolve also follows Respond Now first: it remains active after claim
   // and disappears only after its owner verifies and closes the incident.
   const resolvedIncident = (await ingestDetection(db, detection({
     id: 'mobile-resolve-flow', person_id: 112, category: 'deep-water', zone: 'deep',

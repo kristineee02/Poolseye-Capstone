@@ -198,7 +198,7 @@ function ActiveAlert({ alert, supervised, busy, onDispatch, onResend }) {
             {busy === 'dispatch' ? 'Sending…' : 'Send to lifeguards'}
           </button>
           {alert.ts && Date.now() / 1000 - alert.ts < AUTO_SEND_WINDOW_SEC ? (
-            <p className="rr-hint">Auto-sends to lifeguards if not sent within 1 minute. Only a lifeguard can acknowledge or dismiss it.</p>
+            <p className="rr-hint">Auto-sends to lifeguards if not sent within 1 minute. Lifeguards acknowledge to claim it; resolved or false alarm closes it and stops the siren.</p>
           ) : null}
         </div>
       )}
@@ -428,7 +428,7 @@ export default function RightRail({ onNavigate }) {
           {!alarm?.alarm
             ? 'Silent'
             : alarm.reason === 'drowning'
-              ? 'Sounding — possible drowning. Stops once a lifeguard acknowledges or dismisses it.'
+              ? 'Sounding — possible drowning. Stops when a lifeguard marks it resolved or false alarm (acknowledge alone keeps the siren on).'
               : 'Sounding — manual alarm.'}
         </p>
         <div className="quick-actions">

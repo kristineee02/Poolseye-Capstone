@@ -45,6 +45,28 @@ async function eventForLifeguard(db, id, lifeguardId) {
   return event
 }
 
+/** Claim a pending alert for this lifeguard (same fields as Respond Now). */
+async function claimPendingAlert(db, id, lifeguardId) {
+  const now = Date.now() / 1000
+  const claimed = await run(
+    db,
+    `UPDATE events SET status = 'responding', responding_at = ?, responding_by = ?,
+      acknowledged_at = COALESCE(acknowledged_at, ?), acknowledged_by = COALESCE(acknowledged_by, ?),
+      dispatched_at = COALESCE(dispatched_at, ?)
+     WHERE id = ? AND status = 'pending' AND responding_by IS NULL`,
+    [now, lifeguardId, now, lifeguardId, now, id]
+  )
+  if (claimed?.changes) {
+    await run(
+      db,
+      `UPDATE users SET acknowledged_alerts = COALESCE(acknowledged_alerts, 0) + 1,
+        last_alert_acknowledged_at = ? WHERE id = ? AND role = 'lifeguard'`,
+      [new Date().toISOString(), lifeguardId]
+    )
+  }
+  return claimed
+}
+
 function registerMobileEventRoutes(app, db) {
   app.get('/api/mobile/events', lifeguardAuthRequired, async (req, res) => {
     try {
@@ -252,8 +274,20 @@ function registerMobileEventRoutes(app, db) {
         })
       }
       const closing = status === 'resolved' || status === 'dismissed'
-      if (closing && row.status !== 'responding') {
-        return res.status(400).json({ error: 'Respond Now before closing this incident.' })
+      // Resolve / False Alarm may be tapped while still pending: claim then close
+      // in one request so the drowning siren stops without a separate Respond Now.
+      if (closing && row.status === 'pending') {
+        await claimPendingAlert(db, id, lifeguardId)
+        const claimed = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
+        if (!claimed || claimed.status !== 'responding' || claimed.responding_by !== lifeguardId) {
+          const event = await eventForLifeguard(db, id, lifeguardId)
+          return res.status(409).json({
+            error: `${event.responder_name || 'Another lifeguard'} is already responding.`,
+            event,
+          })
+        }
+      } else if (closing && row.status !== 'responding') {
+        return res.status(400).json({ error: 'This alert has already been closed.' })
       }
       await setEventStatus(db, id, status, lifeguardId, null)
 

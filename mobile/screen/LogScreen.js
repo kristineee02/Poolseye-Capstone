@@ -502,7 +502,11 @@ export default function LogScreen({ onPendingCountChange }) {
       return [{ label: 'Claiming alert...', tone: 'secondary', onPress: () => {} }];
     }
     if (selectedAlert.backendStatus === 'pending') {
-      return [{ label: 'Respond Now', tone: 'alert', onPress: respondToSelectedAlert }];
+      return [
+        { label: 'Respond Now', tone: 'alert', onPress: respondToSelectedAlert },
+        { label: 'Resolve Incident', tone: 'primary', onPress: requestResolve },
+        { label: 'Mark as False Alarm', tone: 'secondary', onPress: dismissSelectedAlert },
+      ];
     }
     if (selectedAlert.backendStatus === 'responding' && selectedAlert.respondingMine) {
       return [
