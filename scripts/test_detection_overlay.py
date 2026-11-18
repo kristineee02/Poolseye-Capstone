@@ -75,7 +75,7 @@ class DetectionOverlayTest(unittest.TestCase):
         self.assertGreater(int(frame[20, 20].sum()), 0)
         self.assertEqual(int(frame[90, 90].sum()), 0)
 
-    def test_matched_activity_uses_only_activity_box_not_zone_box(self):
+    def test_matched_activity_still_draws_pose_person_box(self):
         frame = np.zeros((100, 100, 3), dtype=np.uint8)
         keypoints = np.zeros((17, 2), dtype=float)
         confidence = np.zeros(17, dtype=float)
@@ -100,14 +100,14 @@ class DetectionOverlayTest(unittest.TestCase):
         }
 
         with patch("scripts.live_server.draw_person") as zone_draw:
-            rendered = render_scene(
+            render_scene(
                 frame,
                 {"people": [tracked], "drowning": [swimming], "activity_poses": []},
                 0.3,
             )
 
-        zone_draw.assert_not_called()
-        self.assertEqual(tuple(rendered[70, 50]), ACTIVITY_COLORS["swimming"])
+        zone_draw.assert_called_once()
+        self.assertEqual(zone_draw.call_args.kwargs["activity"]["name"], "Swimming")
 
     def test_video_upload_interrupts_a_slow_live_camera_open(self):
         started = threading.Event()
@@ -150,7 +150,7 @@ class DetectionOverlayTest(unittest.TestCase):
                 "confidence_threshold": 0.3,
                 "display_confidence": 0.25,
                 "class_confirm_hits": 2,
-                "drowning_confirm_hits": 3,
+                "drowning_confirm_hits": 2,
                 "drowning_class_confidence": 0.3,
                 "class_switch_margin": 1.2,
             },
@@ -172,15 +172,14 @@ class DetectionOverlayTest(unittest.TestCase):
                 "confidence_threshold": 0.3,
                 "display_confidence": 0.25,
                 "class_confirm_hits": 2,
-                "drowning_confirm_hits": 3,
+                "drowning_confirm_hits": 2,
                 "drowning_class_confidence": 0.3,
             },
         )
         detection = {"xyxy": [10, 10, 60, 80], "name": "Drowning", "conf": 0.8, "alert": True}
 
         self.assertEqual(watcher._stabilize_detections([detection], 1.0), [])
-        self.assertEqual(watcher._stabilize_detections([detection], 1.3), [])
-        confirmed = watcher._stabilize_detections([detection], 1.6)
+        confirmed = watcher._stabilize_detections([detection], 1.3)
 
         self.assertEqual(confirmed[0]["name"], "Drowning")
         self.assertTrue(confirmed[0]["alert"])

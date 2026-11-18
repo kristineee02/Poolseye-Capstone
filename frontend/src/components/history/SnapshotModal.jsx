@@ -1,9 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '../ui/Icon'
 import EventThumb from './EventThumb'
 import { mediaUrl } from '../../config'
-import { cameraName, eventKind, handlingNote, isAlertEvent, sourceLabel, zoneLabel, formatDate, formatTime, formatDateTime } from './eventKinds'
+import {
+  buildCameraSequenceMap,
+  cameraName,
+  eventKind,
+  handlingNote,
+  isAlertEvent,
+  sourceLabel,
+  zoneLabel,
+  formatDate,
+  formatTime,
+  formatDateTime,
+} from './eventKinds'
 import './SnapshotModal.css'
 
 const SPEEDS = [0.5, 1, 1.5, 2]
@@ -55,7 +66,7 @@ function toggleFullscreen(el) {
   else el.requestFullscreen?.()
 }
 
-function EventPlayer({ event, kind, videoRef, onTime, onDuration }) {
+function EventPlayer({ event, kind, videoRef, onTime, onDuration, cameraLabel }) {
   const frameRef = useRef(null)
   const [clipFailed, setClipFailed] = useState(false)
   const [snapshotFailed, setSnapshotFailed] = useState(false)
@@ -134,7 +145,7 @@ function EventPlayer({ event, kind, videoRef, onTime, onDuration }) {
       )}
 
       <div className="review-player-chip">
-        <strong>{sourceLabel(event)}</strong>
+        <strong>{cameraLabel || sourceLabel(event)}</strong>
         <span>{formatDate(event.ts)} · {formatTime(event.ts, true)}</span>
       </div>
 
@@ -279,6 +290,11 @@ export default function SnapshotModal({
     return () => window.removeEventListener('keydown', onKey)
   }, [event, hasPrev, hasNext, onPrev, onNext, onClose])
 
+  const cameraSequenceMap = useMemo(
+    () => buildCameraSequenceMap(event ? [...events, event] : events),
+    [events, event],
+  )
+
   if (!event) return null
 
   const kind = eventKind(event)
@@ -297,7 +313,7 @@ export default function SnapshotModal({
 
   const details = [
     { icon: Icon.Calendar, label: 'Timestamp', value: `${formatDate(event.ts)}   ·   ${formatTime(event.ts, true)}` },
-    { icon: Icon.Camera, label: 'Camera', value: cameraName(event) },
+    { icon: Icon.Camera, label: 'Camera', value: cameraName(event, cameraSequenceMap) },
     { icon: Icon.MapPin, label: 'Detected in', value: zoneLabel(event) || '—' },
     { icon: Icon.Users, label: 'Person', value: event.person_id != null ? `#${event.person_id}` : '—' },
   ]
@@ -315,7 +331,7 @@ export default function SnapshotModal({
           <span className={`review-head-icon kind-${kind.id}`}><Icon.Camera /></span>
           <div className="review-head-text">
             <h2 id="review-modal-title">{event.title}</h2>
-            <p>{sourceLabel(event)}</p>
+            <p>{sourceLabel(event, cameraSequenceMap)}</p>
           </div>
           <button type="button" className="review-close" onClick={onClose} aria-label="Close">
             <Icon.X />
@@ -331,6 +347,7 @@ export default function SnapshotModal({
               videoRef={videoRef}
               onTime={setTime}
               onDuration={setDuration}
+              cameraLabel={cameraName(event, cameraSequenceMap)}
             />
             <ReviewStrip
               event={event}

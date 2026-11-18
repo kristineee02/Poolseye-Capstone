@@ -29,13 +29,65 @@ export function isUploadedVideo(event) {
   return event?.detection_source === 'Uploaded Video' || event?.camera === 'UPLOAD'
 }
 
-export function cameraName(event) {
-  if (isUploadedVideo(event)) return event?.source_name ? `Uploaded: ${event.source_name}` : 'Uploaded video'
-  return event?.camera || '—'
+function liveCameraNumber(camera) {
+  const match = String(camera || 'CAM-01').match(/(\d+)/)
+  return match ? Number(match[1]) : 1
 }
 
-export function sourceLabel(event) {
-  return isUploadedVideo(event) ? 'Uploaded video' : `${event?.camera || 'CAM-01'} · ${CAMERA_LABEL}`
+/** Stable key for grouping one uploaded-video session in history. */
+export function uploadSessionKey(event) {
+  const name = String(event?.source_name || '').trim()
+  if (name) return `upload:${name}`
+  return `upload:${event?.camera || 'UPLOAD'}`
+}
+
+/**
+ * Build sequence numbers for camera labels across a list of events.
+ * Uploads are numbered by first-seen source (1, 2, …); live cams use CAM-##.
+ */
+export function buildCameraSequenceMap(events = []) {
+  const uploadByKey = new Map()
+  const liveByCamera = new Map()
+  const uploadFirstTs = []
+
+  for (const event of events) {
+    if (isUploadedVideo(event)) {
+      const key = uploadSessionKey(event)
+      const ts = Number(event?.ts) || 0
+      const prev = uploadFirstTs.find((row) => row.key === key)
+      if (!prev) uploadFirstTs.push({ key, ts })
+      else if (ts && (!prev.ts || ts < prev.ts)) prev.ts = ts
+      continue
+    }
+    const camera = String(event?.camera || 'CAM-01')
+    if (!liveByCamera.has(camera)) {
+      liveByCamera.set(camera, liveCameraNumber(camera))
+    }
+  }
+
+  uploadFirstTs
+    .sort((a, b) => a.ts - b.ts || a.key.localeCompare(b.key))
+    .forEach((row, index) => {
+      uploadByKey.set(row.key, index + 1)
+    })
+
+  return { uploadByKey, liveByCamera }
+}
+
+/** Human-readable camera column, e.g. "Uploaded CCTV #2" or "Live CCTV #1". */
+export function cameraName(event, sequenceMap = null) {
+  if (isUploadedVideo(event)) {
+    const key = uploadSessionKey(event)
+    const n = sequenceMap?.uploadByKey?.get(key)
+    return n != null ? `Uploaded CCTV #${n}` : 'Uploaded CCTV'
+  }
+  const camera = String(event?.camera || 'CAM-01')
+  const n = sequenceMap?.liveByCamera?.get(camera) ?? liveCameraNumber(camera)
+  return `Live CCTV #${n}`
+}
+
+export function sourceLabel(event, sequenceMap = null) {
+  return cameraName(event, sequenceMap)
 }
 
 /** Who handled an alert, as shown to the admin (only lifeguards can close alerts). */

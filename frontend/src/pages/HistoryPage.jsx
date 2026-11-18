@@ -8,7 +8,16 @@ import { StatusModal, useStatusModal } from '../components/ui/Modal'
 import StatCard from '../components/analytics/StatCard'
 import EventThumb from '../components/history/EventThumb'
 import SnapshotModal from '../components/history/SnapshotModal'
-import { eventKind, isAlertEvent, zoneLabel, formatDate, formatTime, cameraName, handlingNote } from '../components/history/eventKinds'
+import {
+  eventKind,
+  isAlertEvent,
+  zoneLabel,
+  formatDate,
+  formatTime,
+  cameraName,
+  handlingNote,
+  buildCameraSequenceMap,
+} from '../components/history/eventKinds'
 import { fetchEvents, getAlertStreamUrl } from '../api/events'
 import { downloadCsv } from '../utils/csv'
 import '../components/history/HistoryTable.css'
@@ -120,6 +129,7 @@ export default function HistoryPage() {
   const pendingPick = useRef(null)
 
   const since = useMemo(() => sinceFor(dateRange), [dateRange])
+  const cameraSequenceMap = useMemo(() => buildCameraSequenceMap(events), [events])
 
   useEffect(() => {
     setPage(1)
@@ -189,12 +199,13 @@ export default function HistoryPage() {
       showStatus({ tone: 'notfound', title: 'Nothing to export', message: 'No events match your selected filters.' })
       return
     }
+    const exportMap = buildCameraSequenceMap(rows)
     const header = ['ID', 'Event', 'Kind', 'Camera', 'Zone', 'Person', 'Date', 'Time', 'Status', 'Handled by', 'Acknowledged at']
     const lines = rows.map((e) => [
       e.id,
       e.title,
       eventKind(e).label,
-      cameraName(e),
+      cameraName(e, exportMap),
       zoneLabel(e) || '',
       e.person_id != null ? `#${e.person_id}` : '',
       formatDate(e.ts),
@@ -356,7 +367,7 @@ export default function HistoryPage() {
                     <td>
                       <span className="history-camera">
                         <Icon.Camera />
-                        {cameraName(e)}
+                        {cameraName(e, cameraSequenceMap)}
                       </span>
                     </td>
                     <td>

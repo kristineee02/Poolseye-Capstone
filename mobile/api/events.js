@@ -10,8 +10,11 @@ export function toMobileAlert(event) {
   if (!event) return null
   const zone = event.zone_label || event.zone || 'Main Pool'
   const backendStatus = event.status || 'pending'
-  const detectionSource = event.detection_source || (event.camera === 'UPLOAD' ? 'Uploaded Video' : 'Live CCTV')
-  const sourceDisplay = event.source_name ? `${detectionSource}: ${event.source_name}` : detectionSource
+  const uploaded = event.detection_source === 'Uploaded Video' || event.camera === 'UPLOAD'
+  const cameraMatch = String(event.camera || 'CAM-01').match(/(\d+)/)
+  const sourceDisplay = uploaded
+    ? 'Uploaded CCTV'
+    : `Live CCTV #${cameraMatch ? Number(cameraMatch[1]) : 1}`
   return {
     id: event.id,
     type: event.type || 'info',
@@ -30,7 +33,7 @@ export function toMobileAlert(event) {
     eventName: event.event || event.event_name || null,
     confidence: event.confidence,
     camera: event.camera || 'CAM-01',
-    detectionSource,
+    detectionSource: sourceDisplay,
     sourceName: event.source_name || null,
     zone,
     isAlert: Boolean(event.is_alert),

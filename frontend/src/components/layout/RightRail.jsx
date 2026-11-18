@@ -181,7 +181,11 @@ function ActiveAlert({ alert, supervised, busy, onDispatch, onResend }) {
         <div className="active-alert-meta">
           <span>{alertTime(alert)}{age ? ` · ${age}` : ''}</span>
           {zone ? <span className="active-alert-zone">{zone}</span> : null}
-          <span>{alert.detection_source || (alert.camera === 'UPLOAD' ? 'Uploaded Video' : 'Live CCTV')}</span>
+          <span>
+            {alert.camera === 'UPLOAD' || alert.detection_source === 'Uploaded Video'
+              ? 'Uploaded CCTV'
+              : `Live CCTV #${String(alert.camera || 'CAM-01').match(/(\d+)/)?.[1] || 1}`}
+          </span>
         </div>
       </div>
 

@@ -804,8 +804,10 @@ class DrowningWatcher:
         return best
 
     def _still_in_water(self, water: list, zones_px, orange_px, use_zones: bool, now: float) -> list[dict]:
-        """Water boxes that have stayed upright without travelling for behavior_hold seconds."""
-        deep_on = use_zones and zones_px["orange"]["enabled"] and len(zones_px["orange"]["points"]) >= 2
+        """Flag sustained stillness in water: upright struggle or face-down passive drowning."""
+        pool_drawn = use_zones and any(
+            z["enabled"] and len(z.get("points") or []) >= 3 for z in zones_px.values()
+        )
         matched = set()
         for box in water:
             best, best_iou = None, 0.3
@@ -834,14 +836,20 @@ class DrowningWatcher:
             if len(window) < self.behavior_min_samples or window[-1][0] - window[0][0] < self.behavior_hold:
                 continue
             heights = sorted(h[4] for h in window)
-            size = heights[len(heights) // 2]
+            widths = sorted(h[3] for h in window)
+            size = max(1.0, heights[len(heights) // 2])
+            width = max(1.0, widths[len(widths) // 2])
             xs, ys = [h[1] for h in window], [h[2] for h in window]
             travel = math.hypot(max(xs) - min(xs), max(ys) - min(ys)) / size
-            aspect = sorted(h[4] / h[3] for h in window)[len(window) // 2]
-            if travel > self.behavior_travel or aspect < self.behavior_aspect:
+            aspect_hw = sorted(h[4] / h[3] for h in window)[len(window) // 2]
+            aspect_wh = width / size
+            upright_still = travel <= self.behavior_travel and aspect_hw >= self.behavior_aspect
+            # Face-down / floating flat and barely moving — classic passive drowning pose.
+            flat_still = travel <= self.behavior_travel and aspect_wh >= self.floating_aspect
+            if not (upright_still or flat_still):
                 continue
             x1, y1, x2, y2 = tr["box"]
-            if deep_on and classify_zone((x1 + x2) / 2, y2, zones_px, orange_px) != "orange":
+            if pool_drawn and classify_zone((x1 + x2) / 2, y2, zones_px, orange_px) == "clear":
                 continue
             still.append(tr["last"])
         return still
@@ -1052,10 +1060,22 @@ class DrowningWatcher:
                     box["behavior"] = True
                     continue
                 flagged_box = {**box, "name": "Drowning", "alert": True, "behavior": True}
-                labels = [flagged_box if b is box else b for b in labels]
-                if flagged_box not in labels:
+                replaced = False
+                next_labels = []
+                for label in labels:
+                    if _box_overlap_of_smaller(label["xyxy"], box["xyxy"]) >= 0.5:
+                        next_labels.append(flagged_box)
+                        replaced = True
+                    else:
+                        next_labels.append(label)
+                labels = next_labels
+                if not replaced:
                     labels.append(flagged_box)
-                boxes.append(flagged_box)
+                if not any(
+                    b.get("alert") and _box_overlap_of_smaller(b["xyxy"], flagged_box["xyxy"]) >= 0.5
+                    for b in boxes
+                ):
+                    boxes.append(flagged_box)
         labels, boxes = self._apply_drowning_latch(labels, boxes, now)
         self.boxes, self.labels, self.boxes_at = boxes, labels, now
 
@@ -1557,11 +1577,10 @@ def scene_at(results: list, seq: int, ts: float) -> dict:
     """Detections for a displayed frame, interpolated between the inferences on either side of it."""
     labels, poses = _activity_for(results, seq, ts)
     scene = _pose_scene_at(results, seq, ts)
-    people = scene["people"]
-    if scene.get("video") and labels:
-        # Drop video poses no activity box confirms (curtains, furniture)
-        people = [p for p in people if any(_box_iou(p["xyxy"], b["xyxy"]) >= 0.1 for b in labels)]
-    return {**scene, "people": people, "drowning": labels, "activity_poses": poses}
+    # Always keep pose people. Filtering them by activity IoU hid boxes/skeletons
+    # whenever the drowning model lagged or returned poorly aligned boxes, while
+    # supervision events could still fire from the unfiltered inference reports.
+    return {**scene, "people": scene["people"], "drowning": labels, "activity_poses": poses}
 
 
 def _pose_scene_at(results: list, seq: int, ts: float) -> dict:
@@ -1606,31 +1625,26 @@ def render_scene(frame, scene: dict, kpt_conf):
     activity, unmatched = match_activity_to_people(people, scene.get("drowning") or [])
     for index, item in enumerate(people):
         person_activity = activity.get(index)
-        if person_activity is not None:
-            # The activity model and pose tracker describe the same swimmer.
-            # Render only the activity box/short label so the zone-colored pose
-            # box and long Person/Zone/Event header are not drawn on top of it.
+        # Always draw the pose box + skeleton. Activity is an extra label/box on top,
+        # never a replacement that can hide the person when classes misalign.
+        draw_person(
+            out,
+            item["track_id"],
+            item["xyxy"],
+            item["foot"],
+            item["src"],
+            item["left"],
+            item["right"],
+            item["kxy"],
+            item["kcf"],
+            kpt_conf,
+            item["zone"],
+            item["event"],
+            supervision_data=item.get("supervision"),
+            activity=person_activity,
+        )
+        if person_activity is not None and person_activity.get("alert"):
             draw_drowning_boxes(out, [person_activity])
-            draw_skeleton(
-                out, item["kxy"], item["kcf"], kpt_conf,
-                bounds=person_activity["xyxy"],
-            )
-        else:
-            draw_person(
-                out,
-                item["track_id"],
-                item["xyxy"],
-                item["foot"],
-                item["src"],
-                item["left"],
-                item["right"],
-                item["kxy"],
-                item["kcf"],
-                kpt_conf,
-                item["zone"],
-                item["event"],
-                supervision_data=item.get("supervision"),
-            )
     person_boxes = [[float(v) for v in item["xyxy"]] for item in people]
     for pose in scene.get("activity_poses", []):
         kbox = _keypoint_box(pose["kxy"], pose["kcf"], kpt_conf)
@@ -1650,12 +1664,15 @@ def render_scene(frame, scene: dict, kpt_conf):
                 best_index, best_score = index, score
         if best_index is not None:
             pose_activity = unmatched.pop(best_index)
+        # Recovered swimmer: pose keypoints + optional activity class box.
+        skeleton_box = pose.get("xyxy") or kbox
         if pose_activity is not None:
-            # The activity detector supplies the stable full-body box; the crop
-            # pose supplies its keypoints. Draw both as one recovered swimmer.
             draw_drowning_boxes(out, [pose_activity])
-        skeleton_box = pose_activity["xyxy"] if pose_activity is not None else pose.get("xyxy")
+            skeleton_box = pose_activity["xyxy"]
         draw_skeleton(out, pose["kxy"], pose["kcf"], kpt_conf, bounds=skeleton_box)
+        if pose_activity is None:
+            x1, y1, x2, y2 = (int(round(v)) for v in kbox)
+            cv2.rectangle(out, (x1, y1), (x2, y2), (40, 180, 70), 2)
     draw_drowning_boxes(out, unmatched)
     return out
 

@@ -84,9 +84,8 @@ COLORS = {
 SUPERVISION_TAGS = {
     "supervised": ("SUPERVISED", COLORS["supervised"]),
     "unsupervised": ("UNSUPERVISED", COLORS["unsupervised"]),
-    "unknown": ("UNKNOWN", (120, 120, 120)),
     "after_hours": ("AFTER HOURS", COLORS["unsupervised"]),
-    "outside": ("NOT IN POOL", (120, 120, 120)),
+    # Outside the yellow check zone: no supervision tag (draw_person skips missing tags).
 }
 
 ZONE_LABEL = {
@@ -192,15 +191,40 @@ def pixels_to_meters(pixel_distance, frame_width, pool_real_width_m):
     return pixel_distance / ratio
 
 
-def person_separation(p1, p2, calibrator: SpatialCalibrator) -> float | None:
-    """Return surveyed ground distance in meters, or None when meters are not reliable."""
-    if calibrator is None or not getattr(calibrator, 'calibrated', False):
-        return None
+def _body_height_meters(p1, p2) -> float | None:
+    """Estimate ground distance from bbox height when no surveyed calibration exists."""
     try:
-        dist_m = float(calibrator.calculate_distance(p1['foot'], p2['foot']))
+        fx1, fy1 = p1["foot"]
+        fx2, fy2 = p2["foot"]
+        boxes = []
+        for person in (p1, p2):
+            xyxy = person.get("xyxy")
+            if xyxy is None or len(xyxy) < 4:
+                continue
+            height = float(xyxy[3]) - float(xyxy[1])
+            if height > 1.0:
+                boxes.append(height)
+        if not boxes:
+            return None
+        # Typical standing/torso height in frame ≈ 1.7 m reference.
+        px_per_m = (sum(boxes) / len(boxes)) / 1.7
+        if px_per_m <= 1e-6:
+            return None
+        return float(math.hypot(float(fx2) - float(fx1), float(fy2) - float(fy1)) / px_per_m)
     except (KeyError, TypeError, ValueError, ZeroDivisionError):
         return None
-    return dist_m if math.isfinite(dist_m) and dist_m >= 0 else None
+
+
+def person_separation(p1, p2, calibrator: SpatialCalibrator) -> float | None:
+    """Return ground distance in meters (surveyed homography, else body-height scale)."""
+    if calibrator is not None and getattr(calibrator, "calibrated", False):
+        try:
+            dist_m = float(calibrator.calculate_distance(p1["foot"], p2["foot"]))
+        except (KeyError, TypeError, ValueError, ZeroDivisionError):
+            dist_m = None
+        if dist_m is not None and math.isfinite(dist_m) and dist_m >= 0:
+            return dist_m
+    return _body_height_meters(p1, p2)
 
 
 def calculate_person_distances(people, frame_width=1920, pool_real_width_m=15.0, calibrator: SpatialCalibrator | None = None):
@@ -244,7 +268,8 @@ def check_supervision(people, supervision_cfg, frame_width_or_calibrator):
         calibrator = SpatialCalibrator(pool_width_m=pool_w, pool_length_m=pool_l, frame_size=(int(fw), int(fw * 9 / 16)))
 
     threshold = float(supervision_cfg.get('threshold_meters', 0.7))
-    check_zones = supervision_cfg.get('check_zones', ['clear', 'yellow', 'red', 'orange'])
+    # Proximity / unsupervised alerts apply only inside the yellow monitoring zone.
+    check_zones = supervision_cfg.get('check_zones', ['yellow'])
     supervisor_zones = supervision_cfg.get('supervisor_zones', ['clear', 'yellow', 'red', 'orange'])
 
     for p in people:
@@ -254,6 +279,19 @@ def check_supervision(people, supervision_cfg, frame_width_or_calibrator):
     candidates = [p for p in people if p['zone'] in supervisor_zones]
     people_in_pool = [p for p in people if p['zone'] in check_zones]
     unsupervised = []
+
+    for person in people:
+        if person['zone'] not in check_zones:
+            person['supervised'] = None
+            person['supervision_data'] = {
+                'supervised': None,
+                'status': 'outside',
+                'distance_reliable': False,
+                'separation_distance': None,
+                'supervision_threshold': threshold,
+                'nearest_person_id': None,
+                'boundary_direction': 'outside',
+            }
 
     for person in people_in_pool:
         nearest_distance = float('inf')
@@ -267,27 +305,23 @@ def check_supervision(people, supervision_cfg, frame_width_or_calibrator):
                 nearest_distance = dist_m
                 nearest_person_id = other['id']
 
-        has_other = any(other['id'] != person['id'] for other in candidates)
         if nearest_person_id is not None:
             status = 'supervised' if nearest_distance <= threshold else 'unsupervised'
-        elif has_other:
-            status = 'unknown'
         else:
-            # With no other detected person, the negative observation is reliable
-            # and no pixel-to-meter conversion is needed.
+            # Alone, or no usable distance — treat as unsupervised (never UNKNOWN).
             status = 'unsupervised'
-        has_supervision = True if status == 'supervised' else False if status == 'unsupervised' else None
+        has_supervision = status == 'supervised'
 
         person['supervised'] = has_supervision
         sep_dist = round(nearest_distance, 2) if nearest_distance != float('inf') else None
         person['supervision_data'] = {
             'supervised': has_supervision,
             'status': status,
-            'distance_reliable': nearest_person_id is not None,
+            'distance_reliable': nearest_person_id is not None and bool(getattr(calibrator, 'calibrated', False)),
             'separation_distance': sep_dist,
             'supervision_threshold': threshold,
             'nearest_person_id': nearest_person_id,
-            'boundary_direction': 'monitored' if status == 'supervised' else 'toward_pool' if status == 'unsupervised' else 'unknown',
+            'boundary_direction': 'monitored' if status == 'supervised' else 'toward_pool',
         }
 
         if status == 'unsupervised':
@@ -427,7 +461,7 @@ class PersonState:
     last_alert_key: str | None = None
     
     supervised: bool | None = None
-    supervision_status: str = "unknown"
+    supervision_status: str = "outside"
     smoothed_distance: float | None = None
     nearest_person_id: int | None = None
     last_person_seen_time: float = 0.0
@@ -574,7 +608,7 @@ class PersonTracker:
             pid = person['id']
             st = self.states.get(pid)
             if not st:
-                check_zones_inner = supervision_cfg.get('check_zones', ['clear', 'yellow', 'red', 'orange'])
+                check_zones_inner = supervision_cfg.get('check_zones', ['yellow'])
                 if person.get('zone') not in check_zones_inner:
                     continue
                 st = PersonState(
@@ -586,10 +620,10 @@ class PersonTracker:
                 )
                 self.states[pid] = st
 
-            check_zones = supervision_cfg.get('check_zones', ['clear', 'yellow', 'red', 'orange'])
+            check_zones = supervision_cfg.get('check_zones', ['yellow'])
             if person['zone'] not in check_zones:
                 st.supervised = None
-                st.supervision_status = 'unknown'
+                st.supervision_status = 'outside'
                 st.in_check_zone = False
                 continue
 
@@ -606,7 +640,9 @@ class PersonTracker:
                 raw_dist = None
                 nearest_id = None
 
-            status_now = str(sup_data.get('status') or 'unknown')
+            status_now = str(sup_data.get('status') or 'unsupervised')
+            if status_now not in ('supervised', 'unsupervised', 'after_hours', 'outside'):
+                status_now = 'unsupervised'
             supervised_now = True if status_now == 'supervised' else False if status_now == 'unsupervised' else None
             entering = not st.in_check_zone
             st.in_check_zone = True
@@ -633,7 +669,7 @@ class PersonTracker:
             events.append({
                 'id': pid,
                 'zone': person['zone'],
-                'event': 'SUPERVISED' if status_now == 'supervised' else 'UNSUPERVISED' if status_now == 'unsupervised' else 'SUPERVISION_UNKNOWN',
+                'event': 'SUPERVISED' if status_now == 'supervised' else 'UNSUPERVISED',
                 'is_alert': status_now == 'unsupervised',
                 'supervision_data': {
                     'supervised': supervised_now,
@@ -757,10 +793,15 @@ def supervision_label(person: dict, tracker: PersonTracker, enabled: bool = True
     st = tracker.states.get(person['id'])
     if st is not None and st.after_hours:
         return {**base, 'status': 'after_hours', 'supervised': False}
-    if not sup or st is None:
-        return {**base, 'status': 'unknown', 'supervised': None}
-    status = str(sup.get('status') or st.supervision_status or 'unknown')
-    return {**base, 'status': status, 'supervised': st.supervised}
+    status = str((sup or {}).get('status') or (st.supervision_status if st else '') or 'outside')
+    if status not in ('supervised', 'unsupervised', 'after_hours'):
+        # Outside yellow / no proximity rule — do not show UNKNOWN.
+        return None
+    return {
+        **base,
+        'status': status,
+        'supervised': st.supervised if st is not None else sup.get('supervised'),
+    }
 
 
 def _draw_status_tag(frame, x, y_top, tag, tag_color, detail):
@@ -815,17 +856,19 @@ def draw_person(frame, track_id, xyxy, foot, src, left, right, kxy, kcf, kpt_con
         if status in ("supervised", "unsupervised"):
             sep = supervision_data.get('separation_distance')
             details.append(f"{sep:.2f}m to nearest person" if sep is not None else "alone")
-        elif status == "unknown":
-            details.append("distance unavailable - calibrate camera")
         elif status == "after_hours":
             details.append("pool closed")
         if event:
             details.append(event)
         _draw_status_tag(frame, x1, y1, tag[0], tag[1], " | ".join(details))
     else:
-        label = f"Person #{track_id} | Zone: {ZONE_LABEL.get(zone, zone)} | Event: {event or '-'}"
+        # No supervision tag (outside yellow, etc.): keep a simple person label.
+        parts = [f"#{track_id}", ZONE_LABEL.get(zone, zone)]
         if activity_text:
-            label = f"{activity_text} | {label}"
+            parts.insert(0, activity_text)
+        if event:
+            parts.append(event)
+        label = " | ".join(parts)
         (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
         ty = max(th + 8, y1 - 8)
         cv2.rectangle(frame, (x1, ty - th - 6), (x1 + tw + 8, ty + 4), (0, 0, 0), -1)
@@ -1180,24 +1223,38 @@ def run_self_test() -> int:
     unsupervised_deck = check_supervision([p_deck, p_pool], sup_cfg, cal)
     check("deck person within 0.7m supervises pool person", p_pool.get("supervised") is True and len(unsupervised_deck) == 0)
 
-    # Check 4c: A hand-drawn zone is not physical calibration; paired distances stay Unknown.
+    # Check 4c: Without surveyed calibration, body-height scale still yields supervised/unsupervised.
     zone_cal = SpatialCalibrator.from_zone_polygon(
         [(380, 300), (520, 300), (560, 420), (340, 420)], frame_size=(960, 540),
     )
     check("drawn-zone calibrator is not treated as surveyed", zone_cal.calibrated is False)
     adult = {"id": 51, "foot": (430, 400), "zone": "yellow", "xyxy": [400, 200, 460, 400]}
     beside = {"id": 52, "foot": (485, 400), "zone": "yellow", "xyxy": [455, 205, 515, 400]}
-    uncertain = check_supervision([adult, beside], sup_cfg, zone_cal)
-    check("uncalibrated pair is Unknown rather than guessed meters",
-          adult["supervised"] is None and beside["supervised"] is None
-          and adult["supervision_data"]["status"] == "unknown"
-          and adult["supervision_data"]["separation_distance"] is None
-          and len(uncertain) == 0)
+    body_scale = check_supervision([adult, beside], sup_cfg, zone_cal)
+    check("uncalibrated pair uses body-height scale (never UNKNOWN)",
+          adult["supervision_data"]["status"] in ("supervised", "unsupervised")
+          and beside["supervision_data"]["status"] in ("supervised", "unsupervised")
+          and adult["supervision_data"]["separation_distance"] is not None
+          and "unknown" not in (adult["supervision_data"]["status"], beside["supervision_data"]["status"]))
+    check("nearby uncalibrated pair is supervised via body scale",
+          adult.get("supervised") is True and beside.get("supervised") is True and len(body_scale) == 0)
     solo_uncalibrated = {"id": 53, "foot": (481, 400), "zone": "yellow"}
     solo_result = check_supervision([solo_uncalibrated], sup_cfg, zone_cal)
     check("uncalibrated solo detection is reliably unsupervised",
           solo_uncalibrated["supervision_data"]["status"] == "unsupervised"
           and len(solo_result) == 1)
+
+    # Check 4d: Proximity / unsupervised logic is yellow-only by default.
+    yellow_only = {
+        "enabled": True,
+        "threshold_meters": 0.7,
+        "check_zones": ["yellow"],
+        "supervisor_zones": ["clear", "yellow", "red", "orange"],
+    }
+    in_red = {"id": 61, "foot": pt1_px, "zone": "red", "xyxy": [100, 100, 150, 220]}
+    alone_red = check_supervision([in_red], yellow_only, cal)
+    check("person in red is outside proximity check (no unsupervised)",
+          in_red["supervision_data"]["status"] == "outside" and len(alone_red) == 0)
 
     # Check 5: Status follows the current frame exactly — no smoothing or grace periods
     tr = PersonTracker()
