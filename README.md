@@ -95,3 +95,21 @@ Runtime URLs are configured with:
 - `FRONTEND_ORIGIN` — allowed browser origin(s) for CORS
 
 Local defaults remain `http://localhost:4000` and `http://localhost:8000` when those vars are unset.
+
+## CCTV and uploaded-video detection
+
+`scripts/live_server.py` uses the same pose, tracking, four-class activity, zone,
+crowding, and 0.7 m supervision pipeline for live CCTV and uploaded videos. The
+Geofence Editor automatically stores separate layouts for `CAM-01` and `UPLOAD`.
+Surveyed metric calibration is likewise separate in `scripts/config.json` under
+`CALIBRATION` and `UPLOAD_CALIBRATION`.
+
+Uploaded-video incidents are shown in the admin dashboard but cannot page real
+lifeguards or activate the IoT siren by default. For a controlled alarm-output
+demonstration only, set this in the backend environment and restart the backend:
+
+```text
+ALLOW_DEMO_EMERGENCY_OUTPUTS=true
+```
+
+Remove it or set it to `false` immediately after the demonstration.

@@ -31,6 +31,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from zone_check import (  # noqa: E402
+    COLORS,
     PersonTracker,
     ZONE_LABEL,
     SpatialCalibrator,
@@ -79,7 +80,7 @@ _latest_jpeg: bytes | None = None
 _latest_reports: list = []
 _event_log: deque = deque(maxlen=100)
 _running = True
-_zcfg: dict | None = None
+_zcfg_by_camera: dict[str, dict] = {}
 _source_kind = "rtsp"
 # Camera IP/port set from the dashboard Settings page; overrides the host in rtsp_url.
 _camera_lock = threading.Lock()
@@ -94,6 +95,7 @@ _instance_lock_handle = None
 _hours_lock = threading.Lock()
 _operating_hours: dict | None = None
 _after_hours_active = False
+_crowded_active = False
 # A new track id near a recently lost person inherits their history
 _PERSON_MEMORY_SEC = 10.0
 _REID_MAX_DIST_FRAC = 0.12  # of frame width
@@ -686,9 +688,10 @@ class DrowningWatcher:
         self.latch_sec = float(cfg.get("drowning_latch_sec", 5.0))
         self.class_window = max(0.5, float(cfg.get("class_window_sec", 2.0)))
         self.class_confirm_hits = max(1, int(cfg.get("class_confirm_hits", 2)))
-        self.drowning_confirm_hits = max(
-            self.class_confirm_hits, int(cfg.get("drowning_confirm_hits", 3))
-        )
+        # Drowning has its own confirmation requirement. Do not silently force
+        # it up to the generic class hit count; the configured one-hit critical
+        # display must be able to override supervision immediately.
+        self.drowning_confirm_hits = max(1, int(cfg.get("drowning_confirm_hits", 3)))
         self.drowning_class_conf = float(cfg.get("drowning_class_confidence", max(self.conf, 0.3)))
         self.class_switch_margin = max(1.0, float(cfg.get("class_switch_margin", 1.2)))
         self._latches: list[dict] = []
@@ -725,9 +728,25 @@ class DrowningWatcher:
 
     def start(self, pose_model, kpt_conf: float, person_filter: dict | None = None):
         self._pose_model, self._kpt_conf = pose_model, kpt_conf
-        self._person_filter = {**person_filter, "min_confidence": self.pose_crop_conf} if person_filter else None
+        self._person_filter = (
+            {
+                **person_filter,
+                "min_confidence": self.pose_crop_conf,
+                # The activity box already identifies a swimmer. Allow a
+                # partially submerged crop to draw its reliable keypoints even
+                # when the head or both shoulders are outside the frame.
+                "require_upper_body": False,
+                "min_keypoints": min(3, int(person_filter.get("min_keypoints", 3))),
+            }
+            if person_filter else None
+        )
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
+
+    def box_area_allowed(self, xyxy, frame_width: int, frame_height: int, use_zones: bool) -> bool:
+        x1, y1, x2, y2 = xyxy
+        area = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+        return area <= self.max_box_area * frame_width * frame_height
 
     def submit(self, frame, reports: list, zcfg: dict, people: list, seq: int, ts: float, use_zones: bool):
         """Hand the newest frame to the runner; an older frame still waiting is dropped."""
@@ -794,13 +813,16 @@ class DrowningWatcher:
                     }
 
     def _owner(self, xyxy, reports) -> dict | None:
-        best, best_iou = None, self.match_iou
+        best, best_score = None, max(0.2, self.match_iou)
         for r in reports:
             if r.get("xyxy") is None:
                 continue
-            iou = _box_iou(xyxy, [float(v) for v in r["xyxy"]])
-            if iou >= best_iou:
-                best, best_iou = r, iou
+            person_box = [float(v) for v in r["xyxy"]]
+            overlap = _box_overlap_of_smaller(xyxy, person_box)
+            iou = _box_iou(xyxy, person_box)
+            score = overlap + iou * 0.25
+            if score >= best_score:
+                best, best_score = r, score
         return best
 
     def _still_in_water(self, water: list, zones_px, orange_px, use_zones: bool, now: float) -> list[dict]:
@@ -913,9 +935,10 @@ class DrowningWatcher:
 
             stable = track["stable"]
             if stable is None:
-                # Normal/Swimming/Floating may be shown immediately, but a
-                # safety-critical Drowning label needs repeated model evidence.
-                if candidate != "Drowning" or candidate_ready:
+                # Require the configured evidence count before accepting an
+                # ordinary activity class. Drowning may intentionally use one
+                # confident hit for immediate safety response.
+                if candidate_ready:
                     stable = candidate
             elif candidate != stable and candidate_ready:
                 stable_score = scores.get(stable, 0.0)
@@ -1032,10 +1055,9 @@ class DrowningWatcher:
         # This model is trained for these four swimmer states. Do not expose an
         # accidental/unknown class id as a misleading activity label.
         detections = [d for d in detections if d["name"] is not None]
-        max_area = self.max_box_area * w * h
         detections = [
             d for d in detections
-            if (d["xyxy"][2] - d["xyxy"][0]) * (d["xyxy"][3] - d["xyxy"][1]) <= max_area
+            if self.box_area_allowed(d["xyxy"], w, h, use_zones)
         ]
         if self.floating_relabel:
             self._relabel_floating(detections, zones_px, orange_px, use_zones)
@@ -1121,7 +1143,11 @@ class DrowningWatcher:
         h, w = frame.shape[:2]
         candidates = []
         for label in sorted(self.labels, key=lambda item: item["conf"], reverse=True):
-            if any(_box_iou(label["xyxy"], person["xyxy"]) >= 0.2 for person in existing_people):
+            if any(
+                _box_overlap_of_smaller(label["xyxy"], person["xyxy"]) >= 0.3
+                or _box_iou(label["xyxy"], person["xyxy"]) >= 0.12
+                for person in existing_people
+            ):
                 continue
             x1, y1, x2, y2 = label["xyxy"]
             pad_x = max(30.0, (x2 - x1) * 0.35)
@@ -1420,8 +1446,19 @@ class FrameGrabber:
         self.cap.release()
 
 
+def crowding_state(person_count: int, crowding_cfg: dict | None) -> dict:
+    cfg = crowding_cfg or {}
+    threshold = max(2, int(cfg.get("person_threshold", 5)))
+    return {
+        "crowded": bool(cfg.get("enabled", True)) and person_count >= threshold,
+        "crowd_count": person_count,
+        "crowd_threshold": threshold,
+    }
+
+
 def annotate_frame(frame, model, zcfg, tracker, conf, kpt_conf, imgsz: int,
                    supervision_cfg: dict | None = None,
+                   crowding_cfg: dict | None = None,
                    calibrator: SpatialCalibrator | None = None,
                    after_hours: bool = False,
                    person_filter: dict | None = None,
@@ -1438,7 +1475,7 @@ def annotate_frame(frame, model, zcfg, tracker, conf, kpt_conf, imgsz: int,
         stream=False,
     )
     if not results:
-        return [], {"people": [], "overlay": None}, []
+        return [], {"people": [], "overlay": None, **crowding_state(0, crowding_cfg)}, []
 
     _, reports = process_result(
         results[0], zcfg, tracker, kpt_conf, persist=True,
@@ -1497,7 +1534,11 @@ def annotate_frame(frame, model, zcfg, tracker, conf, kpt_conf, imgsz: int,
         person = next((p for p in people if p["id"] == r["id"]), None)
         r["supervision_data"] = dict((person or {}).get("supervision_data") or {})
 
-    return reports, {"people": draw_cache, "overlay": overlay}, supervision_events
+    return reports, {
+        "people": draw_cache,
+        "overlay": overlay,
+        **crowding_state(len(draw_cache), crowding_cfg),
+    }, supervision_events
 
 
 def _lerp_point(p, q, t: float):
@@ -1609,14 +1650,27 @@ def _pose_scene_at(results: list, seq: int, ts: float) -> dict:
     if overlay:
         feet = {p["track_id"]: p["foot"] for p in people}
         overlay = {**overlay, "people": [{**p, "foot": feet.get(p["id"], p["foot"])} for p in overlay["people"]]}
-    return {"people": people, "overlay": overlay, "video": near.get("video", False)}
+    return {
+        "people": people,
+        "overlay": overlay,
+        "video": near.get("video", False),
+        "crowded": near.get("crowded", False),
+        "crowd_count": len(people),
+        "crowd_threshold": near.get("crowd_threshold", 5),
+    }
 
 
-def render_scene(frame, scene: dict, kpt_conf):
+def render_scene(frame, scene: dict, kpt_conf, overlay_cfg: dict | None = None):
     """Paint the latest inference result (proximity lines, then people) onto a camera frame."""
+    overlay_cfg = overlay_cfg or {}
+    show_keypoints = bool(overlay_cfg.get("show_keypoints", False))
+    show_foot_markers = bool(overlay_cfg.get("show_foot_markers", False))
+    show_proximity_lines = bool(overlay_cfg.get("show_proximity_lines", True))
+    show_supervision_indicator = bool(overlay_cfg.get("show_supervision_indicator", False))
+    show_supervision_banner = bool(overlay_cfg.get("show_supervision_banner", False))
     out = frame.copy()
     overlay = scene.get("overlay")
-    if overlay:
+    if overlay and show_proximity_lines:
         try:
             draw_supervision_overlay(out, overlay["people"], overlay["calibrator"], overlay["threshold"])
         except Exception:
@@ -1625,12 +1679,14 @@ def render_scene(frame, scene: dict, kpt_conf):
     activity, unmatched = match_activity_to_people(people, scene.get("drowning") or [])
     for index, item in enumerate(people):
         person_activity = activity.get(index)
-        # Always draw the pose box + skeleton. Activity is an extra label/box on top,
-        # never a replacement that can hide the person when classes misalign.
+        # When the four-class model matches this track, its trained activity box
+        # is the one displayed. Pose keypoints remain internal for tracking,
+        # zones, and proximity even when their visual overlay is disabled.
+        display_box = person_activity["xyxy"] if person_activity is not None else item["xyxy"]
         draw_person(
             out,
             item["track_id"],
-            item["xyxy"],
+            display_box,
             item["foot"],
             item["src"],
             item["left"],
@@ -1642,9 +1698,10 @@ def render_scene(frame, scene: dict, kpt_conf):
             item["event"],
             supervision_data=item.get("supervision"),
             activity=person_activity,
+            show_keypoints=show_keypoints,
+            show_foot_markers=show_foot_markers,
+            show_supervision_indicator=show_supervision_indicator,
         )
-        if person_activity is not None and person_activity.get("alert"):
-            draw_drowning_boxes(out, [person_activity])
     person_boxes = [[float(v) for v in item["xyxy"]] for item in people]
     for pose in scene.get("activity_poses", []):
         kbox = _keypoint_box(pose["kxy"], pose["kcf"], kpt_conf)
@@ -1665,21 +1722,40 @@ def render_scene(frame, scene: dict, kpt_conf):
         if best_index is not None:
             pose_activity = unmatched.pop(best_index)
         # Recovered swimmer: pose keypoints + optional activity class box.
-        skeleton_box = pose.get("xyxy") or kbox
         if pose_activity is not None:
             draw_drowning_boxes(out, [pose_activity])
-            skeleton_box = pose_activity["xyxy"]
-        draw_skeleton(out, pose["kxy"], pose["kcf"], kpt_conf, bounds=skeleton_box)
-        if pose_activity is None:
+        elif show_keypoints:
+            skeleton_box = pose.get("xyxy") or kbox
+            draw_skeleton(out, pose["kxy"], pose["kcf"], kpt_conf, bounds=skeleton_box)
+        else:
             x1, y1, x2, y2 = (int(round(v)) for v in kbox)
             cv2.rectangle(out, (x1, y1), (x2, y2), (40, 180, 70), 2)
     draw_drowning_boxes(out, unmatched)
+    unsupervised_count = sum(
+        1 for item in people
+        if (item.get("supervision") or {}).get("status") in ("unsupervised", "after_hours")
+    )
+    if show_supervision_banner and unsupervised_count:
+        label = (
+            "UNSUPERVISED PERSON DETECTED"
+            if unsupervised_count == 1
+            else f"{unsupervised_count} UNSUPERVISED PEOPLE DETECTED"
+        )
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.62, 2)
+        cv2.rectangle(out, (10, 10), (tw + 54, th + 30), COLORS["unsupervised"], -1)
+        cv2.putText(out, "!", (23, th + 21), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(out, label, (43, th + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 255, 255), 2, cv2.LINE_AA)
+    if scene.get("crowded") and bool(overlay_cfg.get("show_crowding_label", False)):
+        label = f"CROWDED  {int(scene.get('crowd_count', len(people)))} PEOPLE"
+        cv2.rectangle(out, (12, 12), (260, 45), (20, 20, 210), -1)
+        cv2.putText(out, label, (22, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
     return out
 
 
-def current_zcfg(fallback: dict) -> dict:
+def current_zcfg(fallback: dict, source_kind: str | None = None) -> dict:
+    camera_id = UPLOAD_CAMERA_ID if (source_kind or _source_kind) == "video" else "CAM-01"
     with _zcfg_lock:
-        return _zcfg if _zcfg is not None else fallback
+        return _zcfg_by_camera.get(camera_id, fallback)
 
 
 def merge_detection(detection: dict, fallback: dict) -> dict:
@@ -1694,23 +1770,25 @@ def merge_detection(detection: dict, fallback: dict) -> dict:
 
 
 def geofence_poll_loop(fallback: dict):
-    """Pull dashboard geofence coordinates so CCTV overlays track the editor."""
-    global _zcfg
-    last_revision = None
+    """Pull independent live-CCTV and uploaded-video layouts from the dashboard."""
+    last_revisions = {}
     while _running:
-        try:
-            with urlopen(GEOFENCE_API, timeout=2) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            detection = data.get("detection")
-            revision = data.get("revision")
-            if isinstance(detection, dict) and revision != last_revision:
-                merged = merge_detection(detection, fallback)
-                with _zcfg_lock:
-                    _zcfg = merged
-                last_revision = revision
-                print(f"[stream] geofence rev={revision} synced from dashboard")
-        except (URLError, TimeoutError, ValueError, OSError, json.JSONDecodeError):
-            pass
+        for camera_id in ("CAM-01", UPLOAD_CAMERA_ID):
+            try:
+                separator = "&" if "?" in GEOFENCE_API else "?"
+                url = f"{GEOFENCE_API}{separator}cameraId={camera_id}"
+                with urlopen(url, timeout=2) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                detection = data.get("detection")
+                revision = data.get("revision")
+                if isinstance(detection, dict) and revision != last_revisions.get(camera_id):
+                    merged = merge_detection(detection, fallback)
+                    with _zcfg_lock:
+                        _zcfg_by_camera[camera_id] = merged
+                    last_revisions[camera_id] = revision
+                    print(f"[stream] {camera_id} geofence rev={revision} synced from dashboard")
+            except (URLError, TimeoutError, ValueError, OSError, json.JSONDecodeError):
+                pass
         time.sleep(0.4)
 
 
@@ -1965,7 +2043,7 @@ def open_capture_interruptibly(kind: str, settings: dict):
 
 
 def capture_loop(cfg: dict):
-    global _latest_jpeg, _latest_reports, _running, _zcfg, _source_kind, _active_camera_host, _event_quiet_sec
+    global _latest_jpeg, _latest_reports, _running, _source_kind, _active_camera_host, _event_quiet_sec, _crowded_active
 
     pose_cfg = cfg.get("POSE", {})
     track_cfg = cfg.get("TRACKING", {})
@@ -1973,8 +2051,8 @@ def capture_loop(cfg: dict):
     fallback_zcfg = cfg["ZONES"]
     camera = load_camera_settings(cfg)
     with _zcfg_lock:
-        if _zcfg is None:
-            _zcfg = fallback_zcfg
+        _zcfg_by_camera.setdefault("CAM-01", fallback_zcfg)
+        _zcfg_by_camera.setdefault(UPLOAD_CAMERA_ID, fallback_zcfg)
 
     model_name = pose_cfg.get("model") or "yolo11n-pose.pt"
     pose_path = Path(model_name)
@@ -2061,18 +2139,22 @@ def capture_loop(cfg: dict):
         f"video_stream_fps={video_stream_fps:g} infer_width={infer_max_width} "
         f"display_width={max_width} jpeg={jpeg_quality} video_jpeg={video_jpeg_quality}"
     )
-    print("[stream] nested Yellow ⊃ Red ⊃ Orange | pose + crossing alerts")
+    print("[stream] Yellow contains separate Red / Orange areas | pose + crossing alerts")
 
-    def ensure_calibrator(frame, zcfg, supervision_cfg):
+    def ensure_calibrator(frame, zcfg, supervision_cfg, source_kind):
         fh, fw = frame.shape[:2]
+        calibration = cfg.get("UPLOAD_CALIBRATION", cfg.get("CALIBRATION", {})) \
+            if source_kind == "video" else cfg.get("CALIBRATION", {})
         key = json.dumps([
-            fw, fh, zcfg.get("coord_space"), zcfg.get("editor_size"),
+            source_kind, fw, fh, calibration, zcfg.get("coord_space"), zcfg.get("editor_size"),
             (zcfg.get("red") or {}).get("points"), (zcfg.get("yellow") or {}).get("points"),
         ], default=str)
         if calibrator_box["key"] == key:
             return calibrator_box["calibrator"]
         try:
-            calibrator = SpatialCalibrator.from_config({**cfg, "ZONES": zcfg}, fw, fh)
+            calibrator = SpatialCalibrator.from_config(
+                {**cfg, "CALIBRATION": calibration, "ZONES": zcfg}, fw, fh
+            )
             mode = "surveyed homography" if calibrator.calibrated else "unavailable until surveyed calibration"
             print(f"[stream] SpatialCalibrator initialized ({fw}x{fh}) — proximity via {mode}")
         except Exception as cal_err:
@@ -2222,13 +2304,16 @@ def capture_loop(cfg: dict):
                 print("[stream] uploaded video restarted — boxes only, alerts were logged on the first play")
             started = time.time()
             try:
-                zcfg = current_zcfg(fallback_zcfg)
+                zcfg = current_zcfg(fallback_zcfg, grabber.kind)
                 supervision_cfg = cfg.get("SUPERVISION", {})
                 reports, scene, supervision_events = annotate_frame(
-                    frame, model, zcfg, tracker, conf, kpt_conf, imgsz,
+                    frame, model, zcfg, tracker,
+                    conf,
+                    kpt_conf, imgsz,
                     supervision_cfg=supervision_cfg,
-                    calibrator=ensure_calibrator(frame, zcfg, supervision_cfg),
-                    after_hours=grabber.kind != "video" and after_hours_now(),
+                    crowding_cfg=cfg.get("CROWDING", {}),
+                    calibrator=ensure_calibrator(frame, zcfg, supervision_cfg, grabber.kind),
+                    after_hours=after_hours_now(),
                     person_filter=person_filter,
                     tracker_cfg=tracker_cfg,
                 )
@@ -2237,8 +2322,7 @@ def capture_loop(cfg: dict):
                 if drowning:
                     drowning.submit(
                         frame, reports, zcfg, scene["people"], seq, ts,
-                        # Zones are drawn for the CCTV view, not for uploaded footage
-                        use_zones=grabber.kind != "video",
+                        use_zones=True,
                     )
                     drowning_events = drowning.drain_events()
                     open_drown = drowning.open_alert_people()
@@ -2272,6 +2356,7 @@ def capture_loop(cfg: dict):
                         attach_activity(results, drowning.latest_result(), loops)
                 with _lock:
                     _latest_reports = [{**r, "event": None, "is_alert": False} for r in reports]
+                    _crowded_active = bool(scene.get("crowded"))
                 # Uploaded videos keep looping for dashboard playback, but
                 # incidents and notifications are emitted only on the first pass.
                 if should_emit_events(grabber.kind, loops):
@@ -2349,7 +2434,10 @@ def capture_loop(cfg: dict):
                 f"[stream] upload playback {grabber.source_fps:.1f} fps source → "
                 f"{grabber.publish_fps:.1f} fps MJPEG (delay {VIDEO_DISPLAY_DELAY_SEC * 1000:.0f} ms)"
             )
-        results: deque = deque(maxlen=8)
+        # Keep enough pose scenes for the slower activity model to attach its
+        # result to the exact source frame. Eight entries was too short on CPU
+        # and silently discarded activity boxes before they could be drawn.
+        results: deque = deque(maxlen=64)
         scene_lock = threading.Lock()
         stop_inference = threading.Event()
         worker = threading.Thread(
@@ -2358,7 +2446,7 @@ def capture_loop(cfg: dict):
         worker.start()
 
         def publish_frame(frame, scene, seq: int, ts: float):
-            annotated = render_scene(frame, scene, kpt_conf) if scene else frame
+            annotated = render_scene(frame, scene, kpt_conf, cfg.get("OVERLAY", {})) if scene else frame
             # Annotate on the inference-sized frame, then downscale only for the MJPEG tunnel.
             display = resize_max_width(annotated, max_width)
             ok, buf = cv2.imencode(".jpg", display, [int(cv2.IMWRITE_JPEG_QUALITY), encode_quality])
@@ -2398,21 +2486,29 @@ def capture_loop(cfg: dict):
                 snapshot = list(results)
             now = time.time()
             if not snapshot and now - connected_at < STALE_RESULT_SEC:
-                # Still publish raw frames immediately so uploads are not blank while pose warms up.
-                seq, ts, frame = grabber.latest(shown_seq, timeout=0.05)
-                if frame is not None:
-                    shown_seq = seq
-                    publish_frame(frame, None, seq, ts)
+                # Publish one preview frame while the models warm up, but do not
+                # let raw playback run ahead of the first inference result.
+                if shown_seq == 0:
+                    seq, ts, frame = grabber.latest(0, timeout=0.05)
+                    if frame is not None:
+                        shown_seq = seq
+                        publish_frame(frame, None, seq, ts)
                 else:
-                    time.sleep(0.005)
+                    time.sleep(0.01)
                 continue
-            if not snapshot or now - snapshot[-1]["ready_at"] > STALE_RESULT_SEC:
-                seq, ts, frame = grabber.latest(shown_seq, timeout=0.2)
-                if frame is not None:
-                    shown_seq = seq
-                    publish_frame(frame, None, seq, ts)
-                elif grabber.ended:
-                    time.sleep(0.02)
+            if not snapshot:
+                # Model initialization or a slow first inference: keep the
+                # preview frame instead of replacing it with an endless raw feed.
+                time.sleep(0.02)
+                continue
+
+            if now - snapshot[-1]["ready_at"] > STALE_RESULT_SEC:
+                # Never advance to unannotated frames after AI has started.
+                # On CPU the trained models can take longer than three seconds;
+                # the old fallback showed raw video indefinitely and made it
+                # look as though detection had stopped. Hold the last annotated
+                # frame until the next inference result is ready.
+                time.sleep(0.02)
                 continue
 
             if kind != "video" and len(snapshot) >= 2 and snapshot[-1]["seq"] != newest_result_seq:
@@ -2424,7 +2520,10 @@ def capture_loop(cfg: dict):
                     print(f"[stream] feed shown {delay * 1000:.0f} ms behind capture so boxes match each frame")
                     delay_logged_at = now
 
-            target_seq = snapshot[-1]["seq"] if kind != "video" else grabber.newest_seq
+            # Both CCTV and uploaded video may advance only as far as the newest
+            # pose result. This keeps every displayed frame paired with boxes,
+            # keypoints, tracking IDs, and the closest activity result.
+            target_seq = snapshot[-1]["seq"]
             pending = grabber.frames_between(shown_seq, target_seq)
             if kind == "video":
                 # Prefer even pacing over catching up by large jumps.
@@ -2574,6 +2673,7 @@ def health():
         "ok": True,
         "has_frame": ready,
         "people": n,
+        "crowded": _crowded_active,
         "events": n_events,
         "source": _source_kind,
         "camera_host": _active_camera_host,
@@ -2592,6 +2692,7 @@ def events():
     return jsonify({
         "ok": True,
         "stream_online": has_frame,
+        "crowded": _crowded_active,
         "events": log,
         "people": [
             {

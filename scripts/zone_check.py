@@ -1,16 +1,16 @@
 """
-PoolsEye - live CCTV → YOLO pose → nested pool-zone intrusion.
+PoolsEye - live CCTV → YOLO pose → pool-zone intrusion.
 
 Pipeline
 --------
 Tapo C320WS → RTSP → YOLO pose (default yolo11n-pose.pt) → person + 17
-keypoints → ankle/foot point → ByteTrack ID → nested zone classify →
+keypoints → ankle/foot point → ByteTrack ID → zone classification →
 crossing events (with cooldown).
 
-Zones (enforced orange ⊂ red ⊂ yellow):
+Zones (red and orange are independent areas inside yellow):
   yellow  outer safety     OUTSIDE→YELLOW  start monitoring (not an alert)
   red     warning boundary YELLOW→RED      RED BOUNDARY CROSSED
-  orange  deep pool        RED→ORANGE      DEEP POOL ENTRY
+  orange  deep pool        YELLOW→ORANGE   DEEP POOL ENTRY
 
 Drowning logic lives in pose_logic.py and is not run here. Both can later
 share the same person IDs and keypoints.
@@ -84,8 +84,17 @@ COLORS = {
 SUPERVISION_TAGS = {
     "supervised": ("SUPERVISED", COLORS["supervised"]),
     "unsupervised": ("UNSUPERVISED", COLORS["unsupervised"]),
-    "after_hours": ("AFTER HOURS", COLORS["unsupervised"]),
+    # After-hours remains a distinct internal event, but the clean camera UI
+    # presents the same safety state as every other unsupervised person.
+    "after_hours": ("UNSUPERVISED", COLORS["unsupervised"]),
     # Outside the yellow check zone: no supervision tag (draw_person skips missing tags).
+}
+
+ACTIVITY_TAG_COLORS = {
+    "normal": (80, 175, 40),
+    "swimming": (255, 160, 30),
+    "floating": (0, 140, 255),
+    "drowning": (0, 0, 255),
 }
 
 ZONE_LABEL = {
@@ -192,7 +201,12 @@ def pixels_to_meters(pixel_distance, frame_width, pool_real_width_m):
 
 
 def _body_height_meters(p1, p2) -> float | None:
-    """Estimate ground distance from bbox height when no surveyed calibration exists."""
+    """Estimate distance from body extent when surveyed calibration is unavailable.
+
+    A swimmer can be horizontal, so using box height alone makes the apparent
+    scale too small and incorrectly labels nearby swimmers as unsupervised.
+    The longest box dimension works for both upright and horizontal people.
+    """
     try:
         fx1, fy1 = p1["foot"]
         fx2, fy2 = p2["foot"]
@@ -201,12 +215,14 @@ def _body_height_meters(p1, p2) -> float | None:
             xyxy = person.get("xyxy")
             if xyxy is None or len(xyxy) < 4:
                 continue
+            width = float(xyxy[2]) - float(xyxy[0])
             height = float(xyxy[3]) - float(xyxy[1])
-            if height > 1.0:
-                boxes.append(height)
+            extent = max(width, height)
+            if extent > 1.0:
+                boxes.append(extent)
         if not boxes:
             return None
-        # Typical standing/torso height in frame ≈ 1.7 m reference.
+        # Typical visible head-to-foot body extent is approximately 1.7 m.
         px_per_m = (sum(boxes) / len(boxes)) / 1.7
         if px_per_m <= 1e-6:
             return None
@@ -334,15 +350,15 @@ def polygon_contains_points(outer, pts) -> bool:
 
 
 def validate_nesting(zcfg) -> list[str]:
-    """orange ⊂ red ⊂ yellow using vertices in the config's own coordinate space."""
+    """Red and orange must each stay inside yellow in the config coordinate space."""
     warnings = []
     yellow = zcfg["yellow"].get("points") or []
     red = zcfg["red"].get("points") or []
     orange = zcfg["orange"].get("points") or []
     if len(yellow) >= 3 and len(red) >= 3 and not polygon_contains_points(yellow, red):
-        warnings.append("red is not fully inside yellow (orange ⊂ red ⊂ yellow)")
-    if len(red) >= 3 and len(orange) >= 2 and not polygon_contains_points(red, orange):
-        warnings.append("orange is not fully inside red (orange ⊂ red ⊂ yellow)")
+        warnings.append("red is not fully inside yellow")
+    if len(yellow) >= 3 and len(orange) >= 2 and not polygon_contains_points(yellow, orange):
+        warnings.append("orange is not fully inside yellow")
     return warnings
 
 
@@ -804,82 +820,74 @@ def supervision_label(person: dict, tracker: PersonTracker, enabled: bool = True
     }
 
 
-def _draw_status_tag(frame, x, y_top, tag, tag_color, detail):
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    pad = 4
-    (tw, th), _ = cv2.getTextSize(tag, font, 0.5, 2)
-    (dw, dh), _ = cv2.getTextSize(detail, font, 0.42, 1)
-    h = max(th, dh) + pad * 2
-    top = y_top - h - 2
-    if top < 0:
-        top = y_top + 2
-    total_w = tw + dw + pad * 4
-    x = max(0, min(x, frame.shape[1] - total_w))
-    cv2.rectangle(frame, (x, top), (x + tw + pad * 2, top + h), tag_color, -1)
-    cv2.putText(frame, tag, (x + pad, top + h - pad - 1), font, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
-    dx = x + tw + pad * 2
-    cv2.rectangle(frame, (dx, top), (dx + dw + pad * 2, top + h), (0, 0, 0), -1)
-    cv2.putText(frame, detail, (dx + pad, top + h - pad - 1), font, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
+def _draw_compact_tags(frame, x, y_anchor, tags, placement="above"):
+    """Draw short stacked activity/supervision tags without IDs or detail text."""
+    if not tags:
+        return
+    font, scale, thickness, pad, gap = cv2.FONT_HERSHEY_SIMPLEX, 0.48, 2, 4, 2
+    measured = [(text, color, *cv2.getTextSize(text, font, scale, thickness)[0]) for text, color in tags]
+    row_h = max(height for _, _, _, height in measured) + pad * 2
+    total_h = len(measured) * row_h + (len(measured) - 1) * gap
+    if placement == "below":
+        top = y_anchor + 2
+        if top + total_h >= frame.shape[0]:
+            top = max(0, y_anchor - total_h - 2)
+    else:
+        top = y_anchor - total_h - 2
+        if top < 0:
+            top = y_anchor + 2
+    for text, color, width, height in measured:
+        right = min(frame.shape[1] - 1, x + width + pad * 2)
+        cv2.rectangle(frame, (x, top), (right, top + row_h), color, -1)
+        cv2.putText(
+            frame, text, (x + pad, top + row_h - pad - 1),
+            font, scale, (255, 255, 255), thickness, cv2.LINE_AA,
+        )
+        top += row_h + gap
 
 
 def draw_person(frame, track_id, xyxy, foot, src, left, right, kxy, kcf, kpt_conf, zone, event,
-                supervision_data: dict | None = None, activity: dict | None = None):
+                supervision_data: dict | None = None, activity: dict | None = None,
+                show_keypoints: bool = True, show_foot_markers: bool = True,
+                show_supervision_indicator: bool = False):
     """Draw one box and one label per person; activity is the drowning model's class for them."""
     x1, y1, x2, y2 = (int(v) for v in xyxy)
 
     status = supervision_data.get('status') if supervision_data else None
-    tag = SUPERVISION_TAGS.get(status)
-    if tag and status != "outside":
-        color = tag[1]
-    else:
-        color = COLORS[BOX_COLOR.get(zone, "clear")]
-    activity_text = f"{activity['name']} {activity['conf']:.2f}" if activity else None
-    if activity and activity.get("alert"):
-        tag = ("DROWNING", (0, 0, 255))
-        color = tag[1]
-        activity_text = SUPERVISION_TAGS.get(status, ("", None))[0] or None
+    activity_name = str(activity.get("name") or "").strip() if activity else ""
+    color = ACTIVITY_TAG_COLORS.get(activity_name.lower(), COLORS[BOX_COLOR.get(zone, "clear")])
+    is_drowning = activity_name.lower() == "drowning" and bool(activity.get("alert"))
+    if is_drowning:
+        # Activity safety takes visual priority.
+        color = ACTIVITY_TAG_COLORS["drowning"]
 
-    draw_skeleton(frame, kxy, kcf, kpt_conf, bounds=xyxy)
-    if left:
-        cv2.circle(frame, (int(left[0]), int(left[1])), 5, COLORS["ankle_l"], -1)
-    if right:
-        cv2.circle(frame, (int(right[0]), int(right[1])), 5, COLORS["ankle_r"], -1)
+    if show_keypoints:
+        draw_skeleton(frame, kxy, kcf, kpt_conf, bounds=xyxy)
+        if left:
+            cv2.circle(frame, (int(left[0]), int(left[1])), 5, COLORS["ankle_l"], -1)
+        if right:
+            cv2.circle(frame, (int(right[0]), int(right[1])), 5, COLORS["ankle_r"], -1)
     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-    fx, fy = int(foot[0]), int(foot[1])
-    cv2.circle(frame, (fx, fy), 7, COLORS["foot"], -1)
-    cv2.circle(frame, (fx, fy), 9, color, 2)
+    if show_supervision_indicator and status in ("supervised", "unsupervised", "after_hours"):
+        indicator_color = COLORS["supervised"] if status == "supervised" else COLORS["unsupervised"]
+        cv2.circle(frame, (x2, y1), 8, indicator_color, -1, cv2.LINE_AA)
+        cv2.circle(frame, (x2, y1), 9, (255, 255, 255), 1, cv2.LINE_AA)
+    if show_foot_markers:
+        fx, fy = int(foot[0]), int(foot[1])
+        cv2.circle(frame, (fx, fy), 7, COLORS["foot"], -1)
+        cv2.circle(frame, (fx, fy), 9, color, 2)
 
-    if tag:
-        details = [f"#{track_id}", ZONE_LABEL.get(zone, zone)]
-        if activity_text:
-            details.insert(0, activity_text)
-        if status in ("supervised", "unsupervised"):
-            sep = supervision_data.get('separation_distance')
-            details.append(f"{sep:.2f}m to nearest person" if sep is not None else "alone")
-        elif status == "after_hours":
-            details.append("pool closed")
-        if event:
-            details.append(event)
-        _draw_status_tag(frame, x1, y1, tag[0], tag[1], " | ".join(details))
-    else:
-        # No supervision tag (outside yellow, etc.): keep a simple person label.
-        parts = [f"#{track_id}", ZONE_LABEL.get(zone, zone)]
-        if activity_text:
-            parts.insert(0, activity_text)
-        if event:
-            parts.append(event)
-        label = " | ".join(parts)
-        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
-        ty = max(th + 8, y1 - 8)
-        cv2.rectangle(frame, (x1, ty - th - 6), (x1 + tw + 8, ty + 4), (0, 0, 0), -1)
+    activity_tags = []
+    if activity_name.lower() in ACTIVITY_TAG_COLORS:
+        activity_tags.append((f"P{track_id} · {activity_name.upper()}", ACTIVITY_TAG_COLORS[activity_name.lower()]))
+    # The camera overlay is activity-only. Supervision continues internally
+    # for alert/dashboard logic but never changes the activity box or label.
+    _draw_compact_tags(frame, x1, y1, activity_tags, placement="above")
+    if show_foot_markers:
         cv2.putText(
-            frame, label, (x1 + 4, ty),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA,
+            frame, f"foot={src}", (x1, min(frame.shape[0] - 8, y2 + 16)),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.40, COLORS["foot"], 1, cv2.LINE_AA,
         )
-    cv2.putText(
-        frame, f"foot={src}", (x1, min(frame.shape[0] - 8, y2 + 16)),
-        cv2.FONT_HERSHEY_SIMPLEX, 0.40, COLORS["foot"], 1, cv2.LINE_AA,
-    )
 
 
 def resolve_source(source: str, rtsp_url: str | None):
@@ -935,6 +943,7 @@ def person_filter_from_config(pose_cfg: dict) -> dict:
     return {
         "min_confidence": float(pose_cfg.get("person_confidence", 0.3)),
         "require_upper_body": bool(pose_cfg.get("require_upper_body", True)),
+        "require_side_agreement": bool(pose_cfg.get("require_side_agreement", True)),
         "upper_body_keypoint_conf": float(pose_cfg.get("upper_body_keypoint_conf", 0.35)),
         "min_keypoints": int(pose_cfg.get("min_keypoints", 5)),
         "keypoint_conf": float(pose_cfg.get("keypoint_confidence", 0.3)),
@@ -997,7 +1006,7 @@ def looks_like_person(box_conf, kcf, person_filter: dict | None, xyxy=None, kxy=
         spread = max(float(np.ptp(pts[:, 0])), float(np.ptp(pts[:, 1])))
         if spread < float(person_filter.get("min_keypoint_spread", 0.0)) * max(box_w, box_h):
             return False
-        if not _sides_agree(np.asarray(kxy), ok, box_w):
+        if person_filter.get("require_side_agreement", True) and not _sides_agree(np.asarray(kxy), ok, box_w):
             return False
     return True
 
@@ -1109,8 +1118,10 @@ def run_self_test() -> int:
     red = [(20, 20), (80, 20), (80, 80), (20, 80)]
     orange = [(40, 40), (60, 40), (60, 60), (40, 60)]
     check("red ⊂ yellow", polygon_contains_points(yellow, red))
-    check("orange ⊂ red", polygon_contains_points(red, orange))
-    check("orange not ⊂ too-small red", not polygon_contains_points([(0, 0), (10, 0), (10, 10), (0, 10)], orange))
+    check("orange ⊂ yellow", polygon_contains_points(yellow, orange))
+    check("orange need not be inside red", not polygon_contains_points(
+        [(0, 0), (10, 0), (10, 10), (0, 10)], orange,
+    ))
 
     zcfg = {
         "yellow": {"enabled": True, "points": yellow, "geometry": "polygon"},
@@ -1391,7 +1402,7 @@ def main():
     print(f"[zone] config {args.config}")
     print(f"[zone] model={model_path} (dataset/person_pose is not used)")
     print(f"[zone] coord_space={zcfg.get('coord_space')} editor_size={zcfg.get('editor_size')}")
-    print("[zone] nested Yellow ⊃ Red ⊃ Orange | drowning stays in pose_logic.py")
+    print("[zone] Yellow contains separate Red / Orange areas | drowning stays in pose_logic.py")
     print(f"[zone] source={source if kind != 'stream' else 'rtsp stream'}")
     model = YOLO(str(model_path))
 
