@@ -9,6 +9,7 @@ const { all, exec, get, run, migrateEventsTable } = require('./db')
 const { ingestDetection, setEventStatus } = require('./events')
 const { dispatchEvent, scheduleDetectionDispatch, escalationTick } = require('./dispatch')
 const { registerMobileEventRoutes } = require('./mobileEvents')
+const { alarmState } = require('./alarm')
 
 async function database(t) {
   const db = await new Promise((resolve, reject) => {
@@ -191,6 +192,35 @@ test('source attribution and requested priority order are persisted', async (t) 
   assert.equal(upload.source_name, 'scenario.mp4')
   assert.equal(upload.priority, 3)
   assert.equal(upload.priority_label, 'medium')
+})
+
+test('uploaded-video alerts stay on the dashboard without paging or sounding the real alarm', async (t) => {
+  const db = await database(t)
+  const previous = process.env.ALLOW_DEMO_EMERGENCY_OUTPUTS
+  delete process.env.ALLOW_DEMO_EMERGENCY_OUTPUTS
+  t.after(() => {
+    if (previous == null) delete process.env.ALLOW_DEMO_EMERGENCY_OUTPUTS
+    else process.env.ALLOW_DEMO_EMERGENCY_OUTPUTS = previous
+  })
+
+  const demo = (await ingestDetection(db, detection({
+    id: 'demo-drowning', camera: 'UPLOAD', source: 'Uploaded Video',
+    source_name: 'thesis-demo.mp4', category: 'drowning', event: 'POSSIBLE_DROWNING',
+    person_id: 82,
+  }))).events[0]
+  scheduleDetectionDispatch(db, demo)
+  await new Promise((resolve) => setTimeout(resolve, 80))
+
+  const stored = await get(db, 'SELECT * FROM events WHERE id = ?', [demo.id])
+  assert.equal(stored.status, 'pending')
+  assert.equal(stored.dispatched_at, null)
+  assert.equal(stored.notification_count, 0)
+  assert.deepEqual(await alarmState(db), { alarm: false, reason: null, eventId: null })
+
+  const live = (await ingestDetection(db, detection({
+    id: 'live-drowning', category: 'drowning', event: 'POSSIBLE_DROWNING', person_id: 83,
+  }))).events[0]
+  assert.deepEqual(await alarmState(db), { alarm: true, reason: 'drowning', eventId: live.id })
 })
 
 test('detector clear preserves workflow state and a new drowning episode is never suppressed', async (t) => {

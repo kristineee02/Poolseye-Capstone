@@ -3,6 +3,7 @@ const { HIDDEN_EVENTS_SQL, eventsWithResponders, setEventStatus } = require('./e
 const { lifeguardAuthRequired } = require('./mobileAuth')
 const { parseNotificationPrefs, mutedCategories } = require('./lifeguards')
 const { publishAlertChange } = require('./alertSync')
+const { DEMO_EVENT_SQL, demoEmergencyOutputsEnabled, externalOutputsAllowed } = require('./demoSafety')
 
 async function mutedFilter(db, lifeguardId) {
   const user = await get(db, 'SELECT notification_prefs FROM users WHERE id = ?', [lifeguardId])
@@ -16,6 +17,7 @@ async function mutedFilter(db, lifeguardId) {
 
 async function pendingCount(db, muted) {
   const where = ['is_alert = 1', "status = 'pending'"]
+  if (!demoEmergencyOutputsEnabled()) where.push(DEMO_EVENT_SQL)
   if (muted.sql) where.push(muted.sql)
   const row = await get(db, `SELECT COUNT(*) AS count FROM events WHERE ${where.join(' AND ')}`, muted.params)
   return Number(row?.count || 0)
@@ -60,6 +62,7 @@ function registerMobileEventRoutes(app, db) {
       const muted = await mutedFilter(db, req.lifeguard.id)
 
       const conditions = [HIDDEN_EVENTS_SQL]
+      if (!demoEmergencyOutputsEnabled()) conditions.push(DEMO_EVENT_SQL)
       const params = []
 
       if (alertsOnly) {
@@ -149,6 +152,7 @@ function registerMobileEventRoutes(app, db) {
       const lifeguardId = req.lifeguard.id
       const row = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
       if (!row) return res.status(404).json({ error: 'Alert not found' })
+      if (!externalOutputsAllowed(row)) return res.status(404).json({ error: 'Alert not found' })
       if (row.status === 'responding') {
         const event = await eventForLifeguard(db, id, lifeguardId)
         if (event.responding_mine) return res.json({ ok: true, event })
@@ -200,6 +204,7 @@ function registerMobileEventRoutes(app, db) {
       const lifeguardId = req.lifeguard.id
       const row = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
       if (!row) return res.status(404).json({ error: 'Alert not found' })
+      if (!externalOutputsAllowed(row)) return res.status(404).json({ error: 'Alert not found' })
       if (row.status !== 'pending') return res.status(400).json({ error: 'This alert is no longer awaiting response.' })
       const now = Date.now() / 1000
       const claimed = await run(db, `UPDATE events SET status = 'responding', responding_at = ?, responding_by = ?,
@@ -237,6 +242,7 @@ function registerMobileEventRoutes(app, db) {
       const lifeguardId = req.lifeguard?.id
       const row = await get(db, 'SELECT * FROM events WHERE id = ?', [id])
       if (!row) return res.status(404).json({ error: 'Alert not found' })
+      if (!externalOutputsAllowed(row)) return res.status(404).json({ error: 'Alert not found' })
 
       if (row.responding_by != null && row.responding_by !== lifeguardId) {
         const [event] = await forLifeguard(db, [row], lifeguardId)

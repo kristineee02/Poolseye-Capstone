@@ -1,6 +1,7 @@
 const express = require('express')
 const { get, all, run, transaction } = require('./db')
 const { dispatchEvent, scheduleDetectionDispatch, resendUrgent } = require('./dispatch')
+const { externalOutputsAllowed } = require('./demoSafety')
 const { publishAlertChange } = require('./alertSync')
 const { MEDIA_DIR, MEDIA_ROUTE, saveMedia, removeMedia } = require('./mediaStorage')
 
@@ -716,6 +717,9 @@ function registerEventRoutes(app, db, adminRequired) {
       if (!['pending', 'responding'].includes(row.status)) {
         return res.status(400).json({ error: 'Only active alerts can be sent to lifeguards.' })
       }
+      if (!externalOutputsAllowed(row)) {
+        return res.status(409).json({ error: 'Uploaded-video alerts are dashboard-only unless demo emergency outputs are explicitly enabled.' })
+      }
 
       const result = await dispatchEvent(db, row.id, { userId: req.user?.id })
       if (!result) return res.status(409).json({ error: 'This alert was already sent to lifeguards.' })
@@ -734,6 +738,9 @@ function registerEventRoutes(app, db, adminRequired) {
       if (!row) return res.status(404).json({ error: 'Event not found' })
       if (row.status !== 'pending') {
         return res.status(400).json({ error: 'Only active alerts can be re-sent to lifeguards.' })
+      }
+      if (!externalOutputsAllowed(row)) {
+        return res.status(409).json({ error: 'Uploaded-video alerts are dashboard-only unless demo emergency outputs are explicitly enabled.' })
       }
 
       const result = await resendUrgent(db, row.id)

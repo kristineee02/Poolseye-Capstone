@@ -1,6 +1,7 @@
 const { get, all, run } = require('./db')
 const { sendPush } = require('./push')
 const { publishAlertChange } = require('./alertSync')
+const { DEMO_EVENT_SQL, externalOutputsAllowed } = require('./demoSafety')
 
 // Alerts the admin has not acted on are sent to lifeguards automatically after this long.
 const AUTO_SEND_AFTER_SEC = 60
@@ -156,6 +157,8 @@ async function pushOpenGroup(db, event, { urgent = false } = {}) {
  * Returns null when the event was already dispatched.
  */
 async function dispatchEvent(db, eventId, { userId = null } = {}) {
+  const candidate = await get(db, 'SELECT * FROM events WHERE id = ?', [eventId])
+  if (!candidate || !externalOutputsAllowed(candidate)) return null
   const claimed = await run(
     db,
     'UPDATE events SET dispatched_at = ?, dispatched_by = ? WHERE id = ? AND dispatched_at IS NULL',
@@ -210,6 +213,7 @@ async function flushDetectionDigest(db) {
 /** Critical incidents page immediately; noncritical incidents coalesce briefly into one digest. */
 function scheduleDetectionDispatch(db, event) {
   if (!event?.is_alert || event.status !== 'pending') return
+  if (!externalOutputsAllowed(event)) return
   if (event.category === 'drowning') {
     dispatchEvent(db, event.id).catch((err) => console.error('Critical dispatch failed:', err))
     return
@@ -233,6 +237,8 @@ function scheduleDetectionDispatch(db, event) {
  * Returns null when the alert was never sent or someone is already responding.
  */
 async function resendUrgent(db, eventId) {
+  const candidate = await get(db, 'SELECT * FROM events WHERE id = ?', [eventId])
+  if (!candidate || !externalOutputsAllowed(candidate)) return null
   const claimed = await run(
     db,
     `UPDATE events SET escalated_at = ? WHERE id = ? AND dispatched_at IS NOT NULL
@@ -251,7 +257,10 @@ async function resendUrgent(db, eventId) {
 
 async function escalationTick(db) {
   const now = Date.now() / 1000
-  const base = `status = 'pending' AND is_alert = 1 AND COALESCE(category, '') <> 'broadcast'`
+  const demoFilter = String(process.env.ALLOW_DEMO_EMERGENCY_OUTPUTS || '').toLowerCase() === 'true'
+    ? '1 = 1'
+    : DEMO_EVENT_SQL
+  const base = `status = 'pending' AND is_alert = 1 AND COALESCE(category, '') <> 'broadcast' AND ${demoFilter}`
 
   const unsent = await all(
     db,

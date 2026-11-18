@@ -1,4 +1,5 @@
 const { get, run } = require('./db')
+const { DEMO_EVENT_SQL, demoEmergencyOutputsEnabled } = require('./demoSafety')
 
 // The alarm node polls about once a second; silence for this long means it is offline.
 const NODE_OFFLINE_SEC = 10
@@ -15,10 +16,12 @@ function deviceAuthorized(req) {
 
 async function alarmState(db) {
   if (manual.active) return { alarm: true, reason: 'manual', eventId: null }
+  const demoFilter = demoEmergencyOutputsEnabled() ? '1 = 1' : DEMO_EVENT_SQL
   const row = await get(
     db,
     `SELECT id, siren_activated_at FROM events
      WHERE category = 'drowning' AND is_alert = 1 AND status IN ('pending', 'responding')
+       AND ${demoFilter}
      ORDER BY ts DESC LIMIT 1`,
     []
   )
@@ -76,4 +79,4 @@ function registerAlarmRoutes(app, db, adminRequired) {
   })
 }
 
-module.exports = { registerAlarmRoutes }
+module.exports = { alarmState, registerAlarmRoutes }
