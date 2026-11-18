@@ -323,6 +323,8 @@ const RecentAlertsSection = React.memo(function RecentAlertsSection({
 }) {
   if (!alerts.length) return null;
 
+  const visibleAlerts = alerts.slice(0, 5);
+
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
@@ -343,11 +345,11 @@ const RecentAlertsSection = React.memo(function RecentAlertsSection({
         Latest open alerts that still need handling.
       </Text>
       <View style={styles.recentCard}>
-        {alerts.map((alert, index) => (
+        {visibleAlerts.map((alert, index) => (
           <OpenAlertRow
             key={alert.id}
             alert={alert}
-            showDivider={index < alerts.length - 1}
+            showDivider={index < visibleAlerts.length - 1}
             onSelect={onSelect}
           />
         ))}
