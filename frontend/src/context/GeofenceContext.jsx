@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { initialZones } from '../data/geofence'
 import { fetchGeofence, getGeofenceStreamUrl, publishLiveGeofence, saveGeofence } from '../api/geofence'
+import { STREAM_BASE } from '../config'
 
 const GeofenceContext = createContext(null)
 const CHANNEL_NAME = 'poolseye-geofence'
@@ -24,6 +25,7 @@ export function GeofenceProvider({ children }) {
   const lastSavedRef = useRef(cloneZones(initialZones))
   const zonesRef = useRef(initialZones)
   const dirtyRef = useRef(false)
+  const cameraIdRef = useRef('CAM-01')
 
   const [zones, setZonesState] = useState(initialZones)
   const [revision, setRevision] = useState(0)
@@ -32,6 +34,7 @@ export function GeofenceProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [syncError, setSyncError] = useState(null)
+  const [cameraId, setCameraId] = useState('CAM-01')
 
   const applyPayload = useCallback((payload, { markSaved = false, fromSelf = false } = {}) => {
     if (!payload?.zones) return
@@ -63,13 +66,14 @@ export function GeofenceProvider({ children }) {
       const snapshot = cloneZones(nextZones)
       const payload = {
         clientId: clientIdRef.current,
+        cameraId: cameraIdRef.current,
         zones: snapshot,
         persisted: false,
         updatedAt: new Date().toISOString(),
       }
       broadcastLocal(payload)
       try {
-        await publishLiveGeofence(snapshot, clientIdRef.current)
+        await publishLiveGeofence(snapshot, clientIdRef.current, cameraIdRef.current)
         setSyncError(null)
       } catch (err) {
         setSyncError(err.message || 'Live geofence sync unavailable')
@@ -90,7 +94,7 @@ export function GeofenceProvider({ children }) {
     const snapshot = cloneZones(overrideZones || zones)
     setSaving(true)
     try {
-      const payload = await saveGeofence(snapshot, clientIdRef.current)
+      const payload = await saveGeofence(snapshot, clientIdRef.current, cameraIdRef.current)
       applyPayload(payload, { markSaved: true, fromSelf: true })
       dirtyRef.current = false
       setDirty(false)
@@ -117,7 +121,9 @@ export function GeofenceProvider({ children }) {
 
   useEffect(() => {
     let cancelled = false
-    fetchGeofence()
+    cameraIdRef.current = cameraId
+    setLoading(true)
+    fetchGeofence(cameraId)
       .then((payload) => {
         if (cancelled) return
         applyPayload(payload, { markSaved: true })
@@ -131,7 +137,28 @@ export function GeofenceProvider({ children }) {
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [applyPayload])
+  }, [applyPayload, cameraId])
+
+  useEffect(() => {
+    let cancelled = false
+    const probeSource = async () => {
+      try {
+        const response = await fetch(`${STREAM_BASE}/health`, { cache: 'no-store' })
+        if (!response.ok || cancelled) return
+        const health = await response.json()
+        const nextCameraId = health.source === 'video' ? 'UPLOAD' : 'CAM-01'
+        setCameraId((current) => current === nextCameraId ? current : nextCameraId)
+      } catch {
+        /* keep the most recently known source while the stream is offline */
+      }
+    }
+    probeSource()
+    const timer = setInterval(probeSource, 3000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [])
 
   useEffect(() => {
     if (typeof BroadcastChannel === 'undefined') return undefined
@@ -139,7 +166,7 @@ export function GeofenceProvider({ children }) {
     channelRef.current = channel
     channel.onmessage = (event) => {
       const payload = event.data
-      if (!payload?.zones || payload.clientId === clientIdRef.current) return
+      if (!payload?.zones || payload.cameraId !== cameraIdRef.current || payload.clientId === clientIdRef.current) return
       applyPayload(payload, { markSaved: Boolean(payload.persisted) })
     }
     return () => {
@@ -151,14 +178,14 @@ export function GeofenceProvider({ children }) {
   useEffect(() => {
     let source
     try {
-      source = new EventSource(getGeofenceStreamUrl())
+      source = new EventSource(getGeofenceStreamUrl(cameraId))
     } catch {
       return undefined
     }
     source.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data)
-        if (!payload?.zones || payload.clientId === clientIdRef.current) return
+        if (!payload?.zones || payload.cameraId !== cameraIdRef.current || payload.clientId === clientIdRef.current) return
         if (dirtyRef.current && !payload.persisted) return
         applyPayload(payload, { markSaved: Boolean(payload.persisted) })
         setSyncError(null)
@@ -168,7 +195,7 @@ export function GeofenceProvider({ children }) {
     }
     source.onerror = () => {}
     return () => source.close()
-  }, [applyPayload])
+  }, [applyPayload, cameraId])
 
   useEffect(() => () => {
     if (liveTimerRef.current) clearTimeout(liveTimerRef.current)
@@ -184,10 +211,11 @@ export function GeofenceProvider({ children }) {
       loading,
       saving,
       syncError,
+      cameraId,
       save,
       discard,
     }),
-    [discard, dirty, loading, revision, save, saving, setZones, syncError, updatedAt, zones],
+    [cameraId, discard, dirty, loading, revision, save, saving, setZones, syncError, updatedAt, zones],
   )
 
   return <GeofenceContext.Provider value={value}>{children}</GeofenceContext.Provider>

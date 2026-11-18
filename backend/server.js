@@ -121,9 +121,10 @@ app.get('/api/mobile/events/stream', (req, res) => {
   }
 })
 
-app.get('/api/geofence', async (_req, res) => {
+app.get('/api/geofence', async (req, res) => {
   try {
-    const payload = await geofence.readLayout(db, geofence.DEFAULT_CAMERA)
+    const cameraId = String(req.query.cameraId || geofence.DEFAULT_CAMERA)
+    const payload = await geofence.readLayout(db, cameraId)
     if (!payload) return res.status(404).json({ error: 'Geofence layout not found' })
     res.json(payload)
   } catch (err) {
@@ -132,13 +133,15 @@ app.get('/api/geofence', async (_req, res) => {
   }
 })
 
-app.get('/api/geofence/live', (_req, res) => {
-  const payload = geofence.getLiveState()
+app.get('/api/geofence/live', (req, res) => {
+  const cameraId = String(req.query.cameraId || geofence.DEFAULT_CAMERA)
+  const payload = geofence.getLiveState(cameraId)
   if (!payload) return res.status(404).json({ error: 'Geofence layout not found' })
   res.json(payload)
 })
 
 app.get('/api/geofence/stream', (req, res) => {
+  const cameraId = String(req.query.cameraId || geofence.DEFAULT_CAMERA)
   const origin = req.headers.origin
   if (origin) res.setHeader('Access-Control-Allow-Origin', origin)
   res.setHeader('Content-Type', 'text/event-stream')
@@ -147,10 +150,10 @@ app.get('/api/geofence/stream', (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no')
   if (typeof res.flushHeaders === 'function') res.flushHeaders()
 
-  const current = geofence.getLiveState()
+  const current = geofence.getLiveState(cameraId)
   if (current) res.write(`data: ${JSON.stringify(current)}\n\n`)
 
-  const remove = geofence.addSseClient(res)
+  const remove = geofence.addSseClient(res, cameraId)
   const heartbeat = setInterval(() => {
     try { res.write(': ping\n\n') } catch { /* closed */ }
   }, 15000)
@@ -205,7 +208,8 @@ initDb()
     registerOperatingHoursRoutes(app, db, adminRequired)
     registerAlarmRoutes(app, db, adminRequired)
     registerDataManagementRoutes(app, db, adminRequired)
-    await geofence.seedGeofence(db)
+    await geofence.seedGeofence(db, geofence.DEFAULT_CAMERA)
+    await geofence.seedGeofence(db, 'UPLOAD')
     await seedCameraSettings(db)
     await seedOperatingHours(db)
     await removeLegacyDemoEvents(db)

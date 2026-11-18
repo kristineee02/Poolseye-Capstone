@@ -58,7 +58,7 @@ const LEGACY_PLACEHOLDER_ZONES = [
 ]
 
 const sseClients = new Set()
-let liveState = null
+const liveStates = new Map()
 
 function clamp(value, min, max) {
   const n = Number(value)
@@ -93,15 +93,15 @@ function validateDetectionLayout(zones) {
   if (byType.danger && !byType.warning) {
     throw Object.assign(new Error('Configure an active Yellow Zone before the Red Zone.'), { status: 400 })
   }
-  if (byType.transition && !byType.danger) {
-    throw Object.assign(new Error('Configure an active Red Zone before the Orange Zone.'), { status: 400 })
+  if (byType.transition && !byType.warning) {
+    throw Object.assign(new Error('Configure an active Yellow Zone before the Orange Zone.'), { status: 400 })
   }
   const contains = (outer, inner) => inner.points.every((point) => pointInPolygon(point, outer.points))
   if (byType.warning && byType.danger && !contains(byType.warning, byType.danger)) {
     throw Object.assign(new Error('Red Zone must be fully inside Yellow Zone.'), { status: 400 })
   }
-  if (byType.danger && byType.transition && !contains(byType.danger, byType.transition)) {
-    throw Object.assign(new Error('Orange Zone must be fully inside Red Zone.'), { status: 400 })
+  if (byType.warning && byType.transition && !contains(byType.warning, byType.transition)) {
+    throw Object.assign(new Error('Orange Zone must be fully inside Yellow Zone.'), { status: 400 })
   }
 }
 
@@ -172,7 +172,33 @@ function zonesToDetection(zones) {
   return detection
 }
 
-function toPayload(layout, zones, extra = {}) {
+function disabledDetection() {
+  return {
+    coord_space: 'editor',
+    editor_size: [EDITOR_WIDTH, EDITOR_HEIGHT],
+    orange_proximity: 0.02,
+    yellow: emptyDetectionBlock(TYPE_TO_DETECTION.warning),
+    red: emptyDetectionBlock(TYPE_TO_DETECTION.danger),
+    orange: emptyDetectionBlock(TYPE_TO_DETECTION.transition),
+  }
+}
+
+function storedZonesToDetection(zones) {
+  try {
+    return { detection: zonesToDetection(zones), validationError: null }
+  } catch (err) {
+    if (err?.status !== 400) throw err
+    return {
+      detection: disabledDetection(),
+      validationError: err?.message || 'Stored geofence layout is invalid.',
+    }
+  }
+}
+
+function toPayload(layout, zones, extra = {}, tolerateInvalid = false) {
+  const result = tolerateInvalid
+    ? storedZonesToDetection(zones)
+    : { detection: zonesToDetection(zones), validationError: null }
   return {
     cameraId: layout.camera_id,
     revision: layout.revision,
@@ -180,34 +206,37 @@ function toPayload(layout, zones, extra = {}) {
     editorSize: [layout.editor_width, layout.editor_height],
     updatedAt: layout.updated_at,
     zones,
-    detection: zonesToDetection(zones),
+    detection: result.detection,
+    ...(result.validationError ? { validationError: result.validationError } : {}),
     ...extra,
   }
 }
 
 function setLiveState(payload) {
-  liveState = payload
-  return liveState
+  if (payload?.cameraId) liveStates.set(payload.cameraId, payload)
+  return payload
 }
 
-function getLiveState() {
-  return liveState
+function getLiveState(cameraId = DEFAULT_CAMERA) {
+  return liveStates.get(cameraId) || null
 }
 
 function broadcast(payload) {
   const frame = `data: ${JSON.stringify(payload)}\n\n`
   for (const client of sseClients) {
+    if (client.cameraId !== payload.cameraId) continue
     try {
-      client.write(frame)
+      client.res.write(frame)
     } catch {
       sseClients.delete(client)
     }
   }
 }
 
-function addSseClient(res) {
-  sseClients.add(res)
-  return () => sseClients.delete(res)
+function addSseClient(res, cameraId = DEFAULT_CAMERA) {
+  const client = { res, cameraId }
+  sseClients.add(client)
+  return () => sseClients.delete(client)
 }
 
 async function readLayout(db, cameraId = DEFAULT_CAMERA) {
@@ -244,7 +273,10 @@ async function readLayout(db, cameraId = DEFAULT_CAMERA) {
     points: pointsByZone.get(z.id) || [],
   }))
 
-  return toPayload(layout, zones, { persisted: true })
+  // Old deployments may contain layouts saved before validation existed.
+  // Keep the backend online with detection disabled so an admin can repair and
+  // save the preserved points instead of crashing every startup.
+  return toPayload(layout, zones, { persisted: true }, true)
 }
 
 async function writeLayout(db, cameraId, zones, { persist } = { persist: true }) {
@@ -315,7 +347,7 @@ async function writeLayout(db, cameraId, zones, { persist } = { persist: true })
     ? await get(db, 'SELECT * FROM geofence_layouts WHERE camera_id = ?', [cameraId])
     : {
         camera_id: cameraId,
-        revision: (liveState?.revision || 0) + 1,
+        revision: (getLiveState(cameraId)?.revision || 0) + 1,
         coord_space: 'editor',
         editor_width: EDITOR_WIDTH,
         editor_height: EDITOR_HEIGHT,
@@ -335,23 +367,23 @@ function isLegacyPlaceholderLayout(zones) {
   return zoneSignature(zones) === zoneSignature(LEGACY_PLACEHOLDER_ZONES)
 }
 
-async function seedGeofence(db) {
-  const existing = await get(db, 'SELECT camera_id FROM geofence_layouts WHERE camera_id = ?', [DEFAULT_CAMERA])
+async function seedGeofence(db, cameraId = DEFAULT_CAMERA) {
+  const existing = await get(db, 'SELECT camera_id FROM geofence_layouts WHERE camera_id = ?', [cameraId])
   if (existing) {
-    let payload = await readLayout(db, DEFAULT_CAMERA)
-    if (isLegacyPlaceholderLayout(payload?.zones)) {
-      payload = await writeLayout(db, DEFAULT_CAMERA, [], { persist: true })
-      console.log('Cleared placeholder geofence layout for', DEFAULT_CAMERA)
+    let payload = await readLayout(db, cameraId)
+    if (cameraId === DEFAULT_CAMERA && isLegacyPlaceholderLayout(payload?.zones)) {
+      payload = await writeLayout(db, cameraId, [], { persist: true })
+      console.log('Cleared placeholder geofence layout for', cameraId)
     } else {
-      console.log('Geofence layout loaded for', DEFAULT_CAMERA)
+      console.log('Geofence layout loaded for', cameraId)
     }
     setLiveState(payload)
     return payload
   }
 
-  const payload = await writeLayout(db, DEFAULT_CAMERA, DEFAULT_ZONES, { persist: true })
+  const payload = await writeLayout(db, cameraId, DEFAULT_ZONES, { persist: true })
   setLiveState(payload)
-  console.log('Default geofence layout seeded for', DEFAULT_CAMERA)
+  console.log('Default geofence layout seeded for', cameraId)
   return payload
 }
 
@@ -364,6 +396,7 @@ module.exports = {
   readLayout,
   seedGeofence,
   setLiveState,
+  storedZonesToDetection,
   validateDetectionLayout,
   writeLayout,
   zonesToDetection,

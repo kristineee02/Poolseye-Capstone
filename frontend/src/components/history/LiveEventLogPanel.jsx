@@ -85,7 +85,7 @@ export default function LiveEventLogPanel({ onNewAlert }) {
       <div className="live-event-scroll" ref={listRef}>
         {events.length === 0 && !error ? (
           <div className="live-event-empty">
-            Waiting for zone crossings… walk Yellow → Red → Orange to generate events.
+            Waiting for zone crossings… enter Red or Orange from Yellow to generate an alert.
           </div>
         ) : (
           events.map((event) => (

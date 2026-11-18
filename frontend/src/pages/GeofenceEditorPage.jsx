@@ -31,7 +31,7 @@ const DEFAULT_NAMES = {
 }
 
 export default function GeofenceEditorPage() {
-  const { zones, setZones, dirty, saving, save, discard, syncError } = useGeofence()
+  const { zones, setZones, dirty, saving, save, discard, syncError, cameraId } = useGeofence()
   const { status, showStatus, closeStatus } = useStatusModal()
   const [activeZoneId, setActiveZoneId] = useState(zones[0]?.id ?? null)
   const [mode, setMode] = useState('add')
@@ -239,7 +239,7 @@ export default function GeofenceEditorPage() {
         <div className="geofence-title-block">
           <h1>Geofence editor</h1>
           <div className="sub">
-            Configure detection boundaries and preview zones on the live camera
+            Configure detection boundaries for {cameraId === 'UPLOAD' ? 'the uploaded video' : 'the live camera'}
             {dirty ? ' · unsaved changes' : ''}
           </div>
         </div>
@@ -255,7 +255,7 @@ export default function GeofenceEditorPage() {
           <Icon.Layout /><strong>Pool Layout / Preview</strong>
         </button>
         <button type="button" className={frameSource === 'live' ? 'active' : ''} onClick={useLiveFrame}>
-          <Icon.Camera /><strong>Live View (CCTV)</strong>
+          <Icon.Camera /><strong>{cameraId === 'UPLOAD' ? 'Uploaded Video View' : 'Live View (CCTV)'}</strong>
         </button>
       </nav>
 
@@ -265,12 +265,12 @@ export default function GeofenceEditorPage() {
             <header className="geofence-camera-bar">
               <div className="geofence-camera-title">
                 <strong>South Patio — Pool Perimeter</strong>
-                <span>CAM-01</span>
-                <span className="geofence-live-pill"><i /> Live CCTV</span>
+                <span>{cameraId}</span>
+                <span className="geofence-live-pill"><i /> {cameraId === 'UPLOAD' ? 'Uploaded Video' : 'Live CCTV'}</span>
               </div>
               <div className="geofence-camera-meta">
                 <span>1000 × 512</span>
-                <span>{frameSource === 'layout' ? 'Pool Layout' : 'Live CCTV'}</span>
+                <span>{frameSource === 'layout' ? 'Pool Layout' : cameraId === 'UPLOAD' ? 'Uploaded Video' : 'Live CCTV'}</span>
                 <span>{dirty ? 'Unsaved changes' : 'Saved geofence'}</span>
                 <span className="geofence-info" title="Edits preview live and are stored after you select Save zones"><Icon.Info /></span>
               </div>
@@ -424,7 +424,7 @@ export default function GeofenceEditorPage() {
         <div>
           <h1>Geofence editor</h1>
           <div className="sub">
-            Manually draw nested zones: Yellow (largest) ⊃ Red (inside yellow) ⊃ Orange (inside red)
+            Draw the Yellow pool boundary, then place Red and Orange areas independently inside it.
             {dirty ? ' · unsaved live preview on CCTV' : ''}
           </div>
         </div>
@@ -725,13 +725,13 @@ export default function GeofenceEditorPage() {
               <ol className="editor-help-list">
                 <li>
                   Choose a component: <b>Yellow Zone</b> (outer safety, largest),{' '}
-                  <b>Red Zone</b> (intrusion, inside yellow), or <b>Orange Zone</b> (deep pool, inside red).
+                  <b>Red Zone</b> (intrusion, inside yellow), or <b>Orange Zone</b> (deep pool, inside yellow).
                 </li>
                 <li>
                   Select <b>Add point</b>, then click the pool stage to place vertices one by one.
                 </li>
                 <li>
-                  Polygons close automatically at <b>3+ points</b>. Keep red fully inside yellow, and orange fully inside red.
+                  Polygons close automatically at <b>3+ points</b>. Keep both red and orange fully inside yellow; they may be separate.
                 </li>
                 <li>
                   Use <b>Move</b> to drag points, type X/Y values, or <b>Remove point</b> to delete a vertex.
