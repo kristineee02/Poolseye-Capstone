@@ -950,11 +950,17 @@ class DrowningWatcher:
 
             stable_confidences = [confidence for _, name, confidence in history if name == stable]
             stable_conf = sum(stable_confidences) / len(stable_confidences)
+            # Use drowning_class_conf so a confirmed Drowning label can arm the
+            # alert/siren path even when overall confidence_threshold is higher.
+            drowning_alert = (
+                stable == "Drowning"
+                and stable_conf >= min(self.conf, self.drowning_class_conf)
+            )
             stabilized.append({
                 **detection,
                 "name": stable,
                 "conf": round(stable_conf, 2),
-                "alert": stable == "Drowning" and stable_conf >= self.conf,
+                "alert": drowning_alert,
                 # Keeps live CCTV drowning alerts distinct when pose has no person track yet.
                 "activity_track_id": best_id,
             })
