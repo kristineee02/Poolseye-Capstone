@@ -877,7 +877,7 @@ class DrowningWatcher:
         return still
 
     def _relabel_floating(self, detections: list, zones_px, orange_px, use_zones: bool):
-        """Turn a person lying flat in the pool into Floating when the model called them Normal."""
+        """Rewrite flat Normal/Swimming boxes to Floating (model often confuses floaters as swimming)."""
         floats = [
             d for d in detections
             if d["name"].lower() == "floating" and d["conf"] >= self.floating_conf
