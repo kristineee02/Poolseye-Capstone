@@ -76,7 +76,7 @@
         "imgsz": 640,
         "max_infer_fps": 5,
         "drowning_latch_sec": 2.5,
-        "hold_sec": 1.5,
+        "hold_sec": 5.0,
         "gap_sec": 2.0,
         "rearm_sec": 45.0,
         "match_iou": 0.2,
@@ -86,7 +86,7 @@
         "angle_threshold": 20.0,
         "movement_threshold": 5.0,
         "confidence_threshold": 0.75,
-        "danger_time_threshold": 10
+        "danger_time_threshold": 5
     },
     "SUPERVISION": {
         "enabled": true,
